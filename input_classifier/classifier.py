@@ -1,4 +1,4 @@
-from .models import ClassificationContext, InputActions
+from .models import ClassificationContext, InputAction
 from .llm_adapter import BaseLLM
 from .prompt_builder import PromptBuilder
 from .validator import OutputValidator
@@ -28,7 +28,7 @@ class InputClassifier:
         self.prompt_builder = prompt_builder or PromptBuilder()
         self.validator = validator or OutputValidator()
 
-    def classify(self, player_input: str, context: ClassificationContext) -> InputActions:
+    def classify(self, player_input: str, context: ClassificationContext) -> InputAction:
         """Clasifica semánticamente la entrada de texto del jugador en base al contexto.
 
         Args:
@@ -36,7 +36,7 @@ class InputClassifier:
             context: Contexto mínimo necesario para resolución semántica y de entidades.
 
         Returns:
-            InputActions: Objeto con la acción, entidades, contenido y atributos identificados.
+            InputAction: Objeto con la acción, entidades, contenido y atributos identificados.
 
         Raises:
             InputClassifierError: Base para errores en el prompt, generación del LLM o validación.

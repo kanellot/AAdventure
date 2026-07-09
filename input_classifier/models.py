@@ -17,14 +17,14 @@ class ActionDetail(BaseModel):
     )
 
 
-class InputActions(BaseModel):
+class InputAction(BaseModel):
     """Contrato semántico de salida que envuelve la lista cronológica de acciones del jugador."""
     actions: list[ActionDetail] = Field(
         description="Lista de una o más acciones ordenadas cronológicamente que el jugador desea realizar."
     )
 
     @model_validator(mode="after")
-    def validate_min_actions(self) -> "InputActions":
+    def validate_min_actions(self) -> "InputAction":
         """Valida que la lista de acciones contenga al menos una acción."""
         if not self.actions:
             raise ValueError("La lista de acciones 'actions' debe contener al menos un elemento.")

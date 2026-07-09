@@ -3,7 +3,7 @@ from .exceptions import (
     ModelGenerationError,
     OutputValidationError,
 )
-from .models import ClassificationContext, InputActions
+from .models import ClassificationContext, InputAction
 from .llm_adapter import BaseLLM, LlamaCppAdapter
 from .classifier import InputClassifier
 
@@ -12,7 +12,7 @@ __all__ = [
     "BaseLLM",
     "LlamaCppAdapter",
     "ClassificationContext",
-    "InputActions",
+    "InputAction",
     "InputClassifierError",
     "ModelGenerationError",
     "OutputValidationError",

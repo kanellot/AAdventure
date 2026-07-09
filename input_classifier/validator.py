@@ -1,19 +1,19 @@
 from pydantic import ValidationError
-from .models import InputActions
+from .models import InputAction
 from .exceptions import OutputValidationError
 
 
 class OutputValidator:
     """Clase responsable de validar estructuralmente la respuesta obtenida del LLM."""
 
-    def validate(self, raw_output: dict) -> InputActions:
+    def validate(self, raw_output: dict) -> InputAction:
         """Valida que un diccionario cumpla exactamente con el esquema de InputAction (el formato {"actions": [...]}).
 
         Args:
             raw_output: Diccionario obtenido del LLMAdapter.
 
         Returns:
-            InputActions: Objeto InputAction validado estructuralmente.
+            InputAction: Objeto InputAction validado estructuralmente.
 
         Raises:
             OutputValidationError: Si el formato es incorrecto, faltan campos requeridos o hay tipos inválidos.
@@ -26,7 +26,7 @@ class OutputValidator:
 
         try:
             # Validación directa del formato {"actions": [ActionDetail, ...]}
-            return InputActions(**raw_output)
+            return InputAction(**raw_output)
         except ValidationError as ve:
             raise OutputValidationError(
                 f"La respuesta estructurada del modelo no coincide con el esquema InputAction esperado.\n"
