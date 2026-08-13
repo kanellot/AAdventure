@@ -1,400 +1,228 @@
 ### InputClassifier
+
 ### Responsabilidad
 
-El InputClassifier constituye el primer módulo de la pipeline de procesamiento del mensaje del jugador.
+El `InputClassifier` constituye el primer módulo de la pipeline de procesamiento del mensaje del jugador.
 
 Su responsabilidad consiste exclusivamente en transformar lenguaje natural en una representación semántica estructurada.
 
-No interpreta consecuencias.
-No modifica el estado del juego.
-No genera narrativa.
-No consulta reglas del juego.
+- No interpreta consecuencias.
+- No modifica el estado del juego.
+- No genera narrativa.
+- No consulta reglas del juego.
 
-Su única salida es un objeto JSON válido que representa fielmente la intención expresada por el jugador.
+Su única salida es un objeto estructurado `InputAction` (y su correspondiente representación JSON válida) que representa fielmente la intención o secuencia de intenciones expresadas por el jugador.
 
 Este módulo actúa como contrato de comunicación entre el jugador y el resto del motor.
 
-Objetivos
+---
+
+### Objetivos
 
 El módulo debe ser capaz de:
 
-identificar la acción principal del jugador;
-identificar las entidades mencionadas;
-resolver referencias contextuales cuando exista información suficiente;
-detectar modificadores presentes en el mensaje;
-extraer contenido textual asociado a la acción;
-producir un JSON estructurado;
-garantizar que dicho JSON cumple el esquema definido.
-Responsabilidades
+1. Identificar una o más acciones principales del jugador ordenadas cronológicamente;
+2. Identificar las entidades mencionadas (`targets`);
+3. Resolver referencias contextuales cuando exista información suficiente (pronombres, descripciones cortas);
+4. Detectar modificadores y atributos presentes en el mensaje (`attributes`);
+5. Producir una lista estructurada de acciones (`actions`);
+6. Garantizar que dicha salida cumple estrictamente el esquema definido mediante Pydantic.
 
-El módulo sí debe
+---
 
-clasificar la intención principal;
-identificar objetivos de la acción;
-extraer parámetros relevantes;
-mantener cualquier información adicional encontrada;
-validar la salida mediante un esquema.
+### Responsabilidades
 
-El módulo no debe
+#### El módulo sí debe:
+- Clasificar la intención o secuencia de intenciones principales;
+- Identificar objetivos de cada acción;
+- Extraer parámetros y matices relevantes (dirección, sigilo, velocidad, postura, tema de conversación, etc.);
+- Mantener cualquier información adicional encontrada en un diccionario abierto de atributos;
+- Validar la salida mediante un esquema estructurado estricto.
 
-modificar GameState;
-acceder a WorldData;
-ejecutar lógica del juego;
-decidir si una acción es válida;
-generar respuestas narrativas;
-inventar información ausente.
+#### El módulo no debe:
+- Modificar `GameState`;
+- Acceder a `WorldData`;
+- Ejecutar lógica del juego;
+- Decidir si una acción es válida dentro de las reglas;
+- Generar respuestas narrativas;
+- Inventar información ausente en la entrada o contexto.
 
+El `InputClassifier` únicamente coordina el proceso de clasificación semántica.
 
-El InputClassifier únicamente coordina el proceso.
+---
 
-Componentes
-1. InputClassifier
-Responsabilidad
+### Componentes principales
 
-Es la fachada pública del módulo.
+#### 1. InputClassifier (Fachada Pública)
+- **Responsabilidad**: Es la fachada pública del módulo y el único punto de entrada utilizado por el motor. Orquesta el flujo completo de clasificación mediante inyección de dependencias (`BaseLLM`, `PromptBuilder`, `OutputValidator`).
+- **Métodos públicos**:
+  ```python
+  class InputClassifier:
+      def __init__(
+          self,
+          llm_adapter: BaseLLM,
+          prompt_builder: PromptBuilder = None,
+          validator: OutputValidator = None
+      ): ...
 
-Orquesta el flujo completo de clasificación.
+      def classify(
+          self,
+          player_input: str,
+          context: ClassificationContext
+      ) -> InputAction: ...
+  ```
 
-No contiene lógica de IA.
+- **Flujo interno**:
+  ```text
+  recibe player_input + context
+          ↓
+  PromptBuilder.build()
+          ↓
+  BaseLLM.generate() (ej. LlamaCppAdapter)
+          ↓
+  OutputValidator.validate()
+          ↓
+  devuelve InputAction
+  ```
 
-No conoce cómo funciona el modelo.
+#### 2. BaseLLM y LlamaCppAdapter
+- **Responsabilidad**: Encapsular completamente el backend del modelo LLM mediante Inversión de Dependencias (DIP). El resto del sistema interactúa únicamente con la interfaz abstracta `BaseLLM`.
+- **Implementación actual**: `LlamaCppAdapter` utiliza `llama-cpp-python` para ejecutar modelos locales formateados en GGUF (por defecto Gemma 3 4B GGUF), forzando una respuesta en formato de objeto JSON estructurado (`response_format={"type": "json_object"}`).
+- **Método**:
+  ```python
+  class BaseLLM(ABC):
+      @abstractmethod
+      def generate(self, prompt: str) -> dict: ...
+  ```
 
-No conoce Pydantic.
+#### 3. PromptBuilder
+- **Responsabilidad**: Construir el prompt completo que se envía al modelo integrando las instrucciones de sistema desde una plantilla (`prompts/classifier.md`), el contexto lingüístico serializado y el mensaje del jugador. Posee una plantilla de respaldo (*fallback*) integrada.
 
-Su única responsabilidad consiste en coordinar:
+#### 4. OutputValidator
+- **Responsabilidad**: Garantizar que el diccionario retornado por el adaptador LLM cumple exactamente con el esquema Pydantic `InputAction`. Lanza una excepción `OutputValidationError` en caso de discrepancias estructurales.
 
-preparación del contexto;
-llamada al modelo;
-validación;
-devolución del resultado.
-Métodos públicos
-class InputClassifier:
+---
 
-    def classify(
-        self,
-        player_input: str,
-        context: ClassificationContext
-    ) -> InputAction
-Flujo interno
-recibe texto
+### Estructura de Salida y Contrato de Datos
 
-↓
+El contrato entre `InputClassifier` y el resto del motor se define mediante los modelos Pydantic `InputAction` y `ActionDetail`.
 
-construye prompt
-
-↓
-
-LLMAdapter.generate()
-
-↓
-
-OutputValidator.validate()
-
-↓
-
-InputAction
-Responsabilidad exacta
-
-Nunca interpreta.
-
-Nunca modifica resultados.
-
-Nunca altera el JSON recibido.
-
-Su única función es coordinar.
-
-2. LLMAdapter
-Responsabilidad
-
-Encapsular completamente el modelo LLM.
-
-El resto del sistema nunca interactúa directamente con llama.cpp.
-
-Esto permite sustituir el modelo sin afectar al resto del proyecto.
-
-Hoy puede utilizar:
-
-llama-cpp-python
-
-Mañana podría utilizar:
-
-Ollama
-OpenAI
-Mistral
-vLLM
-cualquier otro backend
-
-sin modificar InputClassifier.
-
-Métodos
-class LLMAdapter:
-
-    def generate(
-        self,
-        prompt: str
-    ) -> dict
-Responsabilidades
-
-Construir la llamada al modelo.
-
-Aplicar parámetros:
-
-temperatura
-stop tokens
-max tokens
-formato JSON
-
-Recibir la respuesta.
-
-Convertirla a diccionario.
-
-Nada más.
-
-No valida.
-
-No interpreta.
-
-No corrige.
-
-3. OutputValidator
-Responsabilidad
-
-Garantizar que la salida cumple exactamente el contrato esperado.
-
-Este componente utiliza Pydantic.
-
-Métodos
-class OutputValidator:
-
-    def validate(
-        self,
-        raw_json: dict
-    ) -> InputAction
-Responsabilidades
-
-Comprobar:
-
-JSON válido
-tipos correctos
-campos obligatorios
-listas
-atributos opcionales
-
-Si la validación falla:
-
-lanza excepción
-o devuelve un error controlado
-
-Nunca intenta "adivinar" información.
-
-Objeto InputAction
-
-Representa el contrato entre InputClassifier y el resto del motor.
-
-Una vez creado, todos los módulos posteriores trabajarán exclusivamente con este objeto.
-
-class InputAction(BaseModel):
-
+#### 1. Objeto `ActionDetail`
+Representa los detalles semánticos de una única acción identificada:
+```python
+class ActionDetail(BaseModel):
     action: str
+    targets: list[str] = []
+    attributes: dict[str, Any] = {}
+```
 
-    targets: list[str]
+- **`action`**: Nombre de la acción principal en mayúsculas (ej. `MOVE`, `TALK`, `LOOK`, `OPEN`, `USE`, `TAKE`, `GIVE`, `ATTACK`, `WAIT`, `EXPLAIN`).
+- **`targets`**: Lista de IDs de entidades involucradas (ej. `["npc_blacksmith"]`, `["item_sword"]`). Si no hay ninguna entidad, devuelve lista vacía `[]`.
+- **`attributes`**: Diccionario dinámico con matices u opciones extraídas (ej. `{"stealth": true}`, `{"direction": "north"}`, `{"topic": "safe_route"}`).
 
-    content: str | None
+#### 2. Objeto `InputAction`
+Representa la salida del módulo y envuelve la lista cronológica de acciones:
+```python
+class InputAction(BaseModel):
+    actions: list[ActionDetail]
+```
+Garantiza mediante validación Pydantic (`@model_validator`) que la lista `actions` contenga al menos un elemento.
 
-    attributes: dict[str, Any]
-Campos obligatorios
-
-Siempre deben existir.
-
+##### Representación JSON esperada:
+```json
 {
-    "action": "...",
-    "targets": [],
-    "content": null,
-    "attributes": {}
-}
-
-Incluso si están vacíos.
-
-action
-
-Acción principal detectada.
-
-Ejemplos
-
-MOVE
-
-TALK
-
-LOOK
-
-OPEN
-
-USE
-
-WAIT
-
-EXPLAIN
-
-targets
-
-Lista de entidades implicadas.
-
-Puede contener
-
-npc_blacksmith
-
-npc_guard
-
-item_sword
-
-door_main
-
-location_market
-
-Si no existe ninguna entidad:
-
-[]
-content
-
-Texto asociado a la acción.
-
-Ejemplo
-
-Le pregunto quién gobierna la ciudad.
-
-↓
-
-"¿Quién gobierna la ciudad?"
-
-Si no existe:
-
-null
-attributes
-
-Diccionario completamente abierto.
-
-Nunca posee un esquema fijo.
-
-Puede contener cualquier información relevante encontrada.
-
-Ejemplos
-
-{
-    "speed":"slow",
-    "direction":"north",
-    "emotion":"angry",
-    "weapon_state":"drawn",
-    "body_part":"head",
-    "distance":"close"
-}
-
-También puede estar vacío.
-
-{}
-Contexto de entrada
-
-El clasificador recibe únicamente el contexto mínimo necesario.
-
-class ClassificationContext:
-
-    visible_entities
-
-    previous_references
-
-    active_conversation
-
-    player_location
-
-No contiene GameState completo.
-
-No contiene reglas.
-
-No contiene lógica.
-
-Su única finalidad consiste en resolver referencias como:
-
-él
-
-ella
-
-esa espada
-
-allí
-
-la puerta
-
-aquello
-Flujo completo
-Jugador
-
-↓
-
-"Le doy la espada."
-
-↓
-
-InputClassifier
-
-↓
-
-LLMAdapter
-
-↓
-
-{
-    action:"GIVE",
-    targets:["npc_roderick"],
-    content:null,
-    attributes:{
-        item:"sword"
+  "actions": [
+    {
+      "action": "MOVE",
+      "targets": ["bld_tavern"],
+      "attributes": {
+        "stealth": true
+      }
+    },
+    {
+      "action": "LOOK",
+      "targets": ["bld_tavern"],
+      "attributes": {}
     }
+  ]
 }
+```
 
-↓
+---
 
-OutputValidator
+### Contexto de Entrada (`ClassificationContext`)
 
-↓
+El clasificador recibe únicamente el contexto lingüístico mínimo necesario para resolver referencias y entidades en la partida:
 
-InputAction
+```python
+class ClassificationContext(BaseModel):
+    visible_entities: list[str] = []
+    previous_references: dict[str, str] = {}
+    active_conversation: str | None = None
+    player_location: str | None = None
+```
 
-↓
+- `visible_entities`: Entidades presentes a la vista del jugador.
+- `previous_references`: Mapeo reciente de pronombres o sustantivos a IDs de entidades.
+- `active_conversation`: ID del NPC activo si hay una conversación en curso.
+- `player_location`: ID de la localización actual.
 
-ActionResolver
-Manejo de errores
+---
 
-El módulo debe distinguir claramente entre errores del modelo y errores de validación.
+### Flujo Completo de Ejemplo
 
-Error del modelo
+**Entrada del Jugador**: `"Voy sigilosamente hacia la taberna y miro adentro."`
 
-Ejemplos:
+```text
+Jugador
+   ↓
+"Voy sigilosamente hacia la taberna y miro adentro."
+   ↓
+InputClassifier.classify(player_input, context)
+   ↓
+PromptBuilder.build() -> genera el prompt con classifier.md
+   ↓
+LlamaCppAdapter.generate() -> LLM local llama-cpp
+   ↓
+{
+  "actions": [
+    {
+      "action": "MOVE",
+      "targets": ["bld_tavern"],
+      "attributes": {"stealth": true}
+    },
+    {
+      "action": "LOOK",
+      "targets": ["bld_tavern"],
+      "attributes": {}
+    }
+  ]
+}
+   ↓
+OutputValidator.validate() -> valida con Pydantic
+   ↓
+InputAction (Objeto Python validado)
+   ↓
+Siguientes componentes del motor (ActionResolver / Narrative Engine)
+```
 
-el modelo no responde;
-timeout;
-respuesta vacía;
-formato ilegible.
+---
 
-Se considera un error de generación y debe propagarse para que la capa superior decida cómo actuar (reintentar, registrar el fallo, etc.).
+### Manejo de Errores
 
-Error de validación
+El módulo define una jerarquía de excepciones personalizadas derivadas de `InputClassifierError`:
 
-Ejemplos:
+- **`InputClassifierError`**: Excepción base del módulo.
+- **`ModelGenerationError`**: Se produce durante la inicialización del modelo, la inferencia de `llama-cpp-python` o si el LLM retoma una salida ilegible o texto que no es JSON válido.
+- **`OutputValidationError`**: Se produce cuando el JSON retornado por el modelo no coincide con el esquema Pydantic `InputAction` (ej. falta la clave `"actions"` o sus elementos no son válidos).
 
-falta action;
-targets no es una lista;
-attributes tiene un tipo incorrecto.
+---
 
-La salida debe rechazarse mediante una excepción específica, garantizando que ningún módulo posterior reciba datos inconsistentes.
+### Principios de Diseño
 
-Principios de diseño
-
-El diseño del módulo debe seguir los siguientes principios:
-
-Responsabilidad única (SRP): cada clase tiene una única responsabilidad bien definida.
-Desacoplamiento: el resto del motor no conoce el proveedor del LLM ni la implementación del validador.
-Contrato estable: InputAction es la única interfaz pública del módulo.
-Extensibilidad: es posible cambiar el modelo, el prompt o el sistema de validación sin modificar el resto de la pipeline.
-Determinismo estructural: aunque la interpretación semántica dependa del LLM, la estructura de salida siempre será la misma.
-Fail-fast: cualquier salida inválida se detecta y rechaza antes de que alcance los módulos de resolución de acciones o narrativa.
-
-Con esta arquitectura, el InputClassifier queda definido como un componente de clasificación semántica puro, fácilmente sustituible y mantenible, que establece un contrato sólido entre la entrada del jugador y el resto del motor del juego.
+1. **Responsabilidad Única (SRP)**: Cada componente (`InputClassifier`, `PromptBuilder`, `BaseLLM`, `OutputValidator`) tiene un cometido específico y aislado.
+2. **Inversión de Dependencias (DIP)**: `InputClassifier` no depende de una librería de LLM específica, sino de la abstracción `BaseLLM`.
+3. **Contrato Estructurado Estable**: `InputAction` es la única estructura pública retornada hacia el resto del motor.
+4. **Extensibilidad**: Permite reemplazar el proveedor de LLM (ej. de llama-cpp a Ollama o OpenAI) o cambiar el prompt sin modificar la lógica del clasificador ni del resto del motor.
+5. **Soporte Secuencial Multi-Acción**: Permite traducir entradas compuestas en secuencias cronológicas de acciones.
+6. **Fail-Fast**: Toda respuesta que no cumpla con el formato es rechazada antes de propagarse en la pipeline del juego.
