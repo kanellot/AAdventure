@@ -1,0 +1,8 @@
+{
+  "model_path": "C:\\Users\\kanel\\.lmstudio\\models\\lmstudio-community\\gemma-3-4b-it-GGUF\\gemma-3-4b-it-Q4_K_M.gguf",
+  "n_ctx": 2048,
+  "n_gpu_layers": 0,
+  "n_threads": 4,
+  "temperature": 0.1,
+  "max_tokens": 512
+}
