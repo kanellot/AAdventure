@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from domains.world import Place
+from domains.npcs import NPC
 
 
 class NPCProjection(BaseModel):
@@ -48,7 +49,6 @@ class Turn(BaseModel):
 class PreActionContext(BaseModel):
     """Contexto de entrada enviado al clasificador semántico."""
     player_state: PlayerState
-    prev_turns: List[Turn] = Field(default_factory=list)
     player_input: str
 
 
@@ -56,3 +56,21 @@ class PostActionContext(BaseModel):
     """Contexto de salida después de ejecutar las acciones en el juego."""
     player_state: PlayerState
     clas_action: Actions
+
+
+class NarrativeContext(BaseModel):
+    """Contexto completo estructurado para el generador de narrativa (DungeonMaster/Narrador)."""
+    previous_player_state: PlayerState
+    current_player_state: PlayerState
+    
+    previous_place: Optional[Place] = None
+    current_place: Optional[Place] = None
+    
+    npcs_context: Dict[str, NPC] = Field(default_factory=dict)
+    player_input: str
+    executed_actions: Actions
+
+
+class NarrationResponse(BaseModel):
+    """Respuesta narrativa estructurada del Dungeon Master."""
+    narration: str

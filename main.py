@@ -3,8 +3,9 @@ import os
 import json
 from transformer_engine import DungeonMaster, TransformerModel
 from pydantic import ValidationError
-from domains import Actions, PreActionContext, Turn
+from domains import Actions, PreActionContext, NarrationResponse
 from game_state import GameState
+from context_builder import ContextBuilder
 
 
 # Colores ANSI para la consola
@@ -28,9 +29,9 @@ def main():
     print_banner()
 
     # Rutas de datos de la aventura
-    world_json_path = r"Resources/adventure_data/world_test.json"
-    npcs_json_path = r"Resources/adventure_data/npcs_test.json"
-    player_json_path = r"Resources/adventure_data/player_test.json"
+    world_json_path = r"Resources/adventure_data/world_2.json"
+    npcs_json_path = r"Resources/adventure_data/npcs_2.json"
+    player_json_path = r"Resources/adventure_data/player_2.json"
 
     # 1. Construir WorldState, PlayerState, GameState a partir de los archivos de aventura
     print(f"{Colors.OKCYAN}[INFO] Inicializando GameState y cargando datos de aventura...{Colors.ENDC}")
@@ -64,15 +65,11 @@ def main():
     # 3. Imprimir el PRE_ACTION inicial del juego recién cargado
     initial_pre_action_ctx = PreActionContext(
         player_state=game_state.player_state.data,
-        prev_turns=[],
         player_input=""
     )
     print(f"\n{Colors.OKCYAN}{Colors.BOLD}--- DEBUG: PRE_ACTION INICIAL (Estado Cargado) ---{Colors.ENDC}")
     print(initial_pre_action_ctx.model_dump_json(indent=2))
     print(f"{Colors.OKCYAN}--------------------------------------------------{Colors.ENDC}")
-
-    # Cola circular para guardar los últimos 3 turnos para contexto
-    prev_turns = []
 
     print(f"\nIntroduce tu acción. Escribe {Colors.BOLD}'exit'{Colors.ENDC} para salir.")
 
@@ -89,7 +86,6 @@ def main():
             # 3. Construir el objeto de contexto PRE_ACTION usando los datos reales
             pre_action_ctx = PreActionContext(
                 player_state=game_state.player_state.data,
-                prev_turns=list(prev_turns),
                 player_input=player_input
             )
 
@@ -106,7 +102,10 @@ def main():
                 response_model=Actions
             )
 
-            # 5. Mutar el estado del juego basándonos en la acción clasificada
+            # 5. Capturar el estado del jugador antes de la mutación
+            prev_player_state = game_state.player_state.data.model_copy(deep=True)
+
+            # 6. Mutar el estado del juego basándonos en la acción clasificada
             game_state.mutate(action_result)
 
             # DEBUG: Imprimir ACTION
@@ -114,15 +113,32 @@ def main():
             print(json.dumps(action_result, indent=2, ensure_ascii=False))
             print(f"{Colors.OKGREEN}-------------------------------------------------{Colors.ENDC}")
 
-            # Construir el objeto Turn y agregarlo a los turnos previos (máx 3)
-            turn_obj = Turn(
-                action=Actions.model_validate(action_result),
-                player_state=game_state.player_state.data,
+            # 7. Construir el contexto para la narración
+            narrative_ctx = ContextBuilder.build_narrative_context(
+                prev_state=prev_player_state,
+                curr_state=game_state.player_state.data,
+                executed_actions=Actions.model_validate(action_result),
                 player_input=player_input,
-                narration=""  # De momento, en esta fase no hay narración generada
+                world_state=game_state.world_state
             )
-            prev_turns.append(turn_obj)
-            prev_turns = prev_turns[-3:]
+
+            # DEBUG: Imprimir NARRATIVE_CONTEXT
+            print(f"\n{Colors.OKCYAN}{Colors.BOLD}--- DEBUG: NARRATIVE_CONTEXT (NarrativeContext) ---{Colors.ENDC}")
+            print(narrative_ctx.model_dump_json(indent=2))
+            print(f"{Colors.OKCYAN}--------------------------------------------------{Colors.ENDC}")
+
+            # 8. Generar narración usando el DungeonMaster
+            narrator_rules_path = r"Resources/system_data/rules/narrator.md"
+            narration_result = dm.execute(
+                rules_path=narrator_rules_path,
+                gamecontext=narrative_ctx,
+                player_input=player_input,
+                response_model=NarrationResponse
+            )
+            narration_text = narration_result["narration"]
+
+            # Imprimir la narración del Dungeon Master
+            print(f"\n{Colors.OKGREEN}{Colors.BOLD}[Dungeon Master] > {Colors.ENDC}{narration_text}")
 
         except ValidationError as ve:
             print(f"\n{Colors.FAIL}[ERROR DE VALIDACIÓN DE ESQUEMA (Pydantic)]:{Colors.ENDC}")

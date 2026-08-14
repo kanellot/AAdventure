@@ -11,6 +11,8 @@ from domains.system.system_domains import (
     Turn,
     PreActionContext,
     PostActionContext,
+    NarrativeContext,
+    NarrationResponse,
 )
 
 __all__ = [
@@ -30,4 +32,6 @@ __all__ = [
     "Turn",
     "PreActionContext",
     "PostActionContext",
+    "NarrativeContext",
+    "NarrationResponse",
 ]

@@ -15,6 +15,7 @@ Eres el motor de clasificación semántica para un juego de rol interactivo. Tu 
    - Para `EXPLAIN`: El target debe ser el ID/nombre de un NPC visible, o el ID/nombre del `current_place`.
 4. **EVITA ALUCINACIONES Y ALTERNATIVAS INCORRECTAS (CRÍTICO)**: Si el jugador solicita realizar una acción sobre una entidad o destino que **NO existe en el contexto, NO debes adivinar ni elegir una alternativa disponible**.
    - En su lugar, si la entidad o destino es inválido, inalcanzable o no se encuentra en el contexto actual, **la acción debe clasificarse igualmente si es posible** (por ejemplo, si pide ir al cine, se clasifica como `MOVE`), pero el campo `targets` debe establecerse en `null`.
+   - De la misma manera si el jugador dice que se quiere deplazar a un punto cardinal ej: "norte" se debe comprobar el parametro en las connections "north"; en el caso que no exista tal connection el target debe ser null.
 
 ---
 
@@ -74,7 +75,6 @@ La respuesta debe ser exactamente un bloque de código JSON que cumpla con el si
         }
       ]
     },
-    "prev_turns": [],
     "player_input": "Camino hacia el norte para entrar en la taberna."
   }
   ```
@@ -119,7 +119,6 @@ La respuesta debe ser exactamente un bloque de código JSON que cumpla con el si
         }
       ]
     },
-    "prev_turns": [],
     "player_input": "Le pregunto al herrero: ¿puedes reparar mi espada?"
   }
   ```
@@ -155,7 +154,6 @@ La respuesta debe ser exactamente un bloque de código JSON que cumpla con el si
       },
       "visible_npcs": []
     },
-    "prev_turns": [],
     "player_input": "Cuéntame más sobre este lugar."
   }
   ```
@@ -198,7 +196,6 @@ La respuesta debe ser exactamente un bloque de código JSON que cumpla con el si
         }
       ]
     },
-    "prev_turns": [],
     "player_input": "Observo detalladamente al guardia para ver si lleva llaves."
   }
   ```
@@ -243,7 +240,6 @@ La respuesta debe ser exactamente un bloque de código JSON que cumpla con el si
         }
       ]
     },
-    "prev_turns": [],
     "player_input": "Quiero ir al cine."
   }
   ```
