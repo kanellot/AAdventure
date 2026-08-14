@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from domains.world import Place
 from domains.npcs import NPC
+from domains.conversation import Conversation
 
 
 class NPCProjection(BaseModel):
@@ -23,6 +24,7 @@ class PlayerState(BaseModel):
     # Entidades dentro del alcance visual del jugador (lugar completo)
     current_place: Optional[Place] = None
     visible_npcs: List[NPCProjection] = Field(default_factory=list)
+    active_conversations: Optional[Conversation] = None
 
 
 class ActionItem(BaseModel):
@@ -74,3 +76,9 @@ class NarrativeContext(BaseModel):
 class NarrationResponse(BaseModel):
     """Respuesta narrativa estructurada del Dungeon Master."""
     narration: str
+
+
+class DialogueResponse(BaseModel):
+    """Respuesta estructurada del NPC para interacciones de diálogo."""
+    narration: str
+    dialogue_state: str  # "TALK" o "NORMAL"

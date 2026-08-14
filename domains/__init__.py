@@ -2,7 +2,7 @@ from domains.base import Entity
 from domains.world import World, Location, Place
 from domains.player import Player
 from domains.npcs import NPC
-from domains.conversation import Message, Messages, Conversation
+from domains.conversation import Message, Conversation
 from domains.system.system_domains import (
     PlayerState,
     NPCProjection,
@@ -13,6 +13,7 @@ from domains.system.system_domains import (
     PostActionContext,
     NarrativeContext,
     NarrationResponse,
+    DialogueResponse,
 )
 
 __all__ = [
@@ -23,7 +24,6 @@ __all__ = [
     "Player",
     "NPC",
     "Message",
-    "Messages",
     "Conversation",
     "PlayerState",
     "NPCProjection",
@@ -34,4 +34,5 @@ __all__ = [
     "PostActionContext",
     "NarrativeContext",
     "NarrationResponse",
+    "DialogueResponse",
 ]

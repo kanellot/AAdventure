@@ -1,6 +1,7 @@
 from typing import List, Dict
 from pydantic import Field
 from domains.base import Entity
+from domains.conversation import Conversation
 
 class Place(Entity):
     """Un lugar o sub-zona específica dentro de una localización."""
@@ -14,3 +15,4 @@ class Location(Entity):
 class World(Entity):
     """Representa el mundo completo del juego, que contiene múltiples localizaciones."""
     locations: List[Location] = Field(default_factory=list)
+    conversations: List[Conversation] = Field(default_factory=list)
