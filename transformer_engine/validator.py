@@ -1,28 +1,22 @@
-import os
-import json
-from jsonschema import validate, ValidationError
+from typing import Type
+from pydantic import BaseModel, ValidationError
 
 
 class Validator:
-    """Validador dinámico de JSON basado en la especificación JSON Schema."""
+    """Validador dinámico de JSON basado en modelos de dominio Pydantic."""
 
     @staticmethod
-    def validate_json(data: dict, schema_path: str):
-        """Valida que un diccionario de datos 'data' cumpla con el esquema JSON Schema.
+    def validate_json(data: dict, model: Type[BaseModel]) -> BaseModel:
+        """Valida que un diccionario de datos 'data' cumpla con el modelo Pydantic.
 
         Args:
             data: Diccionario de datos devuelto por el LLM.
-            schema_path: Ruta al archivo .json que define el esquema JSON Schema de validación.
+            model: La clase del modelo Pydantic (dominio) contra la cual validar.
+
+        Returns:
+            BaseModel: La instancia validada y tipada del modelo.
 
         Raises:
-            FileNotFoundError: Si el archivo de esquema no existe.
-            ValidationError: Si la estructura de 'data' no pasa la validación del esquema.
+            ValidationError: Si la estructura de 'data' no pasa la validación del modelo.
         """
-        if not os.path.exists(schema_path):
-            raise FileNotFoundError(f"No se encontró el archivo de esquema JSON en '{schema_path}'.")
-
-        with open(schema_path, "r", encoding="utf-8") as f:
-            schema = json.load(f)
-
-        # Validación nativa contra el esquema JSON Schema
-        validate(instance=data, schema=schema)
+        return model.model_validate(data)

@@ -2,7 +2,10 @@ import sys
 import os
 import json
 from transformer_engine import DungeonMaster, TransformerModel
-from jsonschema import ValidationError
+from pydantic import ValidationError
+from domains import Actions, PreActionContext, Turn
+from game_state import GameState
+
 
 # Colores ANSI para la consola
 class Colors:
@@ -24,34 +27,52 @@ def print_banner():
 def main():
     print_banner()
 
-    # Contexto lingüístico dinámico inicial como diccionario simple
-    context = {
-        "visible_entities": ["npc_blacksmith", "npc_guard", "bld_tavern", "bld_shop", "obj_fountain"],
-        "previous_references": {},
-        "active_conversation": None,
-        "player_location": "location_village_square"
-    }
+    # Rutas de datos de la aventura
+    world_json_path = r"Resources/adventure_data/world_test.json"
+    npcs_json_path = r"Resources/adventure_data/npcs_test.json"
+    player_json_path = r"Resources/adventure_data/player_test.json"
 
-    print(f"{Colors.OKCYAN}{Colors.BOLD}--- Contexto Inicial ---{Colors.ENDC}")
-    print(f"Localización: {context['player_location']}")
-    print(f"Entidades:    {context['visible_entities']}")
-    print("-" * 65 + "\n")
+    # 1. Construir WorldState, PlayerState, GameState a partir de los archivos de aventura
+    print(f"{Colors.OKCYAN}[INFO] Inicializando GameState y cargando datos de aventura...{Colors.ENDC}")
+    try:
+        game_state = GameState(
+            world_json_path=world_json_path,
+            npcs_json_path=npcs_json_path,
+            player_json_path=player_json_path
+        )
+        print(f"{Colors.OKGREEN}[INFO] GameState y entidades inicializados correctamente desde los archivos JSON.{Colors.ENDC}")
+    except Exception as e:
+        print(f"{Colors.FAIL}[ERROR CRÍTICO AL INICIALIZAR EL JUEGO]: {e}{Colors.ENDC}")
+        sys.exit(1)
 
-    # Rutas de configuración, reglas y esquemas
+    # Rutas de configuración y reglas del sistema
     config_path = r"Resources/system_data/llm_config.json"
-    rules_path = r"Resources/system_data/rules\classifier_rules.md"
-    schema_path = r"Resources/system_data/schemas\input_classification.json"
+    rules_path = r"Resources/system_data/rules/classifier_rules.md"
 
-    # Inicialización del adaptador del LLM y del DungeonMaster
+    # 2. Inicializar el modelo LLM de transformer_engine
+    print(f"{Colors.OKCYAN}[INFO] Inicializando modelo LLM...{Colors.ENDC}")
     try:
         adapter = TransformerModel(config_path=config_path)
         dm = DungeonMaster(llm_adapter=adapter)
         print(f"{Colors.OKGREEN}[INFO] TransformerModel y DungeonMaster inicializados correctamente.{Colors.ENDC}")
     except Exception as e:
-        print(f"{Colors.FAIL}[ERROR DE CONFIGURACIÓN]{Colors.ENDC}")
+        print(f"{Colors.FAIL}[ERROR DE CONFIGURACIÓN DEL LLM]{Colors.ENDC}")
         print(f"No se pudo cargar el clasificador semántico: {e}")
         print("\nPor favor, instala 'llama-cpp-python' y configura el modelo local GGUF.")
         sys.exit(1)
+
+    # 3. Imprimir el PRE_ACTION inicial del juego recién cargado
+    initial_pre_action_ctx = PreActionContext(
+        player_state=game_state.player_state.data,
+        prev_turns=[],
+        player_input=""
+    )
+    print(f"\n{Colors.OKCYAN}{Colors.BOLD}--- DEBUG: PRE_ACTION INICIAL (Estado Cargado) ---{Colors.ENDC}")
+    print(initial_pre_action_ctx.model_dump_json(indent=2))
+    print(f"{Colors.OKCYAN}--------------------------------------------------{Colors.ENDC}")
+
+    # Cola circular para guardar los últimos 3 turnos para contexto
+    prev_turns = []
 
     print(f"\nIntroduce tu acción. Escribe {Colors.BOLD}'exit'{Colors.ENDC} para salir.")
 
@@ -62,42 +83,50 @@ def main():
                 continue
 
             if player_input.lower() in ["exit", "quit", "q"]:
-                print(f"\n{Colors.OKBLUE}Saliendo... ¡Hasta pronto!{Colors.ENDC}")
-                break
+               print(f"\n{Colors.OKBLUE}Saliendo... ¡Hasta pronto!{Colors.ENDC}")
+               break
 
-            # Serializamos el contexto dinámico actual a JSON string
-            context_json_str = json.dumps(context, indent=2, ensure_ascii=False)
-
-            # Clasificación mediante el motor genérico DungeonMaster
-            action_result = dm.execute(
-                rules_path=rules_path,
-                game_context_json=context_json_str,
-                user_input=player_input,
-                schema_path=schema_path
+            # 3. Construir el objeto de contexto PRE_ACTION usando los datos reales
+            pre_action_ctx = PreActionContext(
+                player_state=game_state.player_state.data,
+                prev_turns=list(prev_turns),
+                player_input=player_input
             )
 
-            print(f"\n{Colors.OKGREEN}{Colors.BOLD}--- JSON de Entrada Clasificada ---{Colors.ENDC}")
-            print(json.dumps(action_result, indent=4, ensure_ascii=False))
-            print(f"{Colors.OKGREEN}-----------------------------------{Colors.ENDC}")
+            # DEBUG: Imprimir PRE_ACTION
+            print(f"\n{Colors.OKCYAN}{Colors.BOLD}--- DEBUG: PRE_ACTION (PreActionContext) ---{Colors.ENDC}")
+            print(pre_action_ctx.model_dump_json(indent=2))
+            print(f"{Colors.OKCYAN}--------------------------------------------{Colors.ENDC}")
 
-            # Resolución y actualización secuencial básica del contexto lingüístico
-            actions = action_result.get("actions", [])
-            for act in actions:
-                targets = act.get("targets", [])
-                action_name = act.get("action", "")
-                
-                if targets:
-                    main_target = targets[0]
-                    context["previous_references"]["eso"] = main_target
-                    if "npc_" in main_target:
-                        context["previous_references"]["él"] = main_target
-                        if action_name == "TALK":
-                            context["active_conversation"] = main_target
-                    elif "item_" in main_target:
-                        context["previous_references"]["objeto"] = main_target
+            # 4. Clasificar acción usando DungeonMaster
+            action_result = dm.execute(
+                rules_path=rules_path,
+                gamecontext=pre_action_ctx,
+                player_input=player_input,
+                response_model=Actions
+            )
+
+            # 5. Mutar el estado del juego basándonos en la acción clasificada
+            game_state.mutate(action_result)
+
+            # DEBUG: Imprimir ACTION
+            print(f"\n{Colors.OKGREEN}{Colors.BOLD}--- DEBUG: ACTION (Clasificación de Acciones) ---{Colors.ENDC}")
+            print(json.dumps(action_result, indent=2, ensure_ascii=False))
+            print(f"{Colors.OKGREEN}-------------------------------------------------{Colors.ENDC}")
+
+            # Construir el objeto Turn y agregarlo a los turnos previos (máx 3)
+            turn_obj = Turn(
+                action=Actions.model_validate(action_result),
+                player_state=game_state.player_state.data,
+                player_input=player_input,
+                narration=""  # De momento, en esta fase no hay narración generada
+            )
+            prev_turns.append(turn_obj)
+            prev_turns = prev_turns[-3:]
 
         except ValidationError as ve:
-            print(f"\n{Colors.FAIL}[ERROR DE VALIDACIÓN DE ESQUEMA]: {ve.message}{Colors.ENDC}")
+            print(f"\n{Colors.FAIL}[ERROR DE VALIDACIÓN DE ESQUEMA (Pydantic)]:{Colors.ENDC}")
+            print(f"{Colors.FAIL}{ve}{Colors.ENDC}")
         except KeyboardInterrupt:
             print(f"\n\n{Colors.OKBLUE}Saliendo...{Colors.ENDC}")
             break

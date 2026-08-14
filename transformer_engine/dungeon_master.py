@@ -1,3 +1,5 @@
+from typing import Type
+from pydantic import BaseModel
 from transformer_engine.base_llm import BaseLLM
 from transformer_engine.prompt_builder import PromptBuilder
 from transformer_engine.validator import Validator
@@ -16,28 +18,31 @@ class DungeonMaster:
     def execute(
         self,
         rules_path: str,
-        game_context_json: str,
-        user_input: str,
-        schema_path: str
+        gamecontext: BaseModel,
+        player_input: str,
+        response_model: Type[BaseModel]
     ) -> dict:
-        """Construye el prompt, delega la generación al LLM, valida el JSON contra el esquema y retorna el resultado.
+        """Construye el prompt, delega la generación al LLM, valida el JSON contra el modelo de dominio y retorna el resultado.
 
         Args:
             rules_path: Path al archivo Markdown de instrucciones de rol/reglas.
-            game_context_json: Estado actual serializado como JSON para inyectar en el contexto.
-            user_input: La entrada del jugador o acción a procesar.
-            schema_path: Path al archivo JSON Schema para validar el resultado.
+            gamecontext: Objeto de dominio Pydantic que contiene el contexto.
+            player_input: La entrada del jugador o acción a procesar.
+            response_model: Clase del modelo Pydantic para validar el resultado.
 
         Returns:
-            dict: La respuesta estructurada y validada correctamente.
+            dict: La respuesta estructurada y validada correctamente como diccionario.
         """
+        # Serializar el modelo de dominio a JSON string
+        game_context_json = gamecontext.model_dump_json(indent=2)
+
         # 1. Construir el prompt
-        prompt = PromptBuilder.build(rules_path, game_context_json, user_input)
+        prompt = PromptBuilder.build(rules_path, game_context_json, player_input)
 
         # 2. Generar respuesta usando el LLM
         raw_output = self.llm_adapter.generate(prompt)
 
-        # 3. Validar estructuralmente contra el archivo de esquema JSON Schema
-        Validator.validate_json(raw_output, schema_path)
+        # 3. Validar estructuralmente contra el modelo de dominio (Pydantic)
+        validated_instance = Validator.validate_json(raw_output, response_model)
 
-        return raw_output
+        return validated_instance.model_dump()
