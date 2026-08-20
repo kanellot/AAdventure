@@ -1,8 +1,20 @@
 {
-  "model_path": "C:\\Users\\kanel\\.lmstudio\\models\\lmstudio-community\\gemma-3-4b-it-GGUF\\gemma-3-4b-it-Q4_K_M.gguf",
+  "model_path": "C:\\Users\\kanel\\.lmstudio\\models\\google\\gemma-4-E2B-it-qat-q4_0-gguf\\gemma-4-E2B_q4_0-it.gguf",
   "n_ctx": 4096,
-  "n_gpu_layers": 0,
+  "n_gpu_layers": -1,
   "n_threads": 4,
-  "temperature": 0.1,
-  "max_tokens": 512
+  "inference_profiles": {
+    "classifier": {
+      "temperature": 0.0,
+      "max_tokens": 128
+    },
+    "narrator": {
+      "temperature": 0.8,
+      "max_tokens": 512
+    },
+    "dialogue": {
+      "temperature": 0.5,
+      "max_tokens": 256
+    }
+  }
 }

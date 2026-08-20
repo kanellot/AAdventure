@@ -1,60 +1,79 @@
 from typing import TYPE_CHECKING
-from domains import PlayerState, Actions, NarrativeContext, Place, NPC
+from domains import (
+    GameState,
+    Place,
+    NPC,
+    ActionCtx,
+    PlaceProjection,
+    NPCProjection,
+    NarrativeCtx,
+    NarrativeContext,
+    DialogueCtx,
+    DialogueContext,
+)
 
 if TYPE_CHECKING:
-    from game_state import WorldState
+    from game_data import WorldState
 
 
 class ContextBuilder:
-    """Clase encargada de construir el contexto estructurado para el generador de narrativa."""
+    """Clase encargada de construir los contextos estructurados para el clasificador, narrador y diálogo."""
 
     @staticmethod
-    def build_narrative_context(
-        prev_state: PlayerState,
-        curr_state: PlayerState,
-        executed_actions: Actions,
-        player_input: str,
-        world_state: "WorldState"
+    def build_action_ctx(
+        world_state: "WorldState",
+        player_input: str
+    ) -> ActionCtx:
+        """Construye un objeto ActionCtx con la lista de todos los lugares y NPCs del mundo."""
+        places_proj = [
+            PlaceProjection(id=p.id, name=p.name)
+            for p in world_state.places_by_id.values()
+        ]
+        npc_proj = [
+            NPCProjection(id=n.id, name=n.name)
+            for n in world_state.npcs.values()
+        ]
+        return ActionCtx(
+            places=places_proj,
+            npc=npc_proj,
+            player_input=player_input
+        )
+
+    @staticmethod
+    def build_narrative_ctx(
+        world_state: "WorldState",
+        current_place_name: str,
+        player_input: str
     ) -> NarrativeContext:
-        """Construye un objeto NarrativeContext a partir de los estados y la información global.
-
-        Args:
-            prev_state: Estado del jugador antes de la acción.
-            curr_state: Estado del jugador después de la acción.
-            executed_actions: Acción o acciones que acaban de ser ejecutadas.
-            player_input: Texto de entrada proporcionado por el jugador.
-            world_state: Estado completo del mundo (contiene NPCs e índices de lugares).
-
-        Returns:
-            NarrativeContext: Objeto de contexto listo para la generación narrativa.
-        """
-        # 1. Obtener los objetos Place completos (origen y destino)
-        prev_place = None
-        if prev_state.current_place:
-            prev_place = world_state.places_by_name.get(prev_state.current_place.name)
-
-        curr_place = None
-        if curr_state.current_place:
-            curr_place = world_state.places_by_name.get(curr_state.current_place.name)
-
-        # 2. Recopilar NPCs visibles relevantes de ambos lugares
-        relevant_npc_ids = set()
-        if prev_place:
-            relevant_npc_ids.update(prev_place.visible_entities)
+        """Construye un NarrativeContext conteniendo NarrativeCtx y la entrada del jugador."""
+        curr_place = world_state.places_by_name.get(current_place_name)
+        
+        visible_npcs = []
         if curr_place:
-            relevant_npc_ids.update(curr_place.visible_entities)
+            for entity_id in curr_place.visible_entities:
+                if entity_id in world_state.npcs:
+                    visible_npcs.append(world_state.npcs[entity_id])
 
-        npcs_context = {}
-        for npc_id in relevant_npc_ids:
-            if npc_id in world_state.npcs:
-                npcs_context[npc_id] = world_state.npcs[npc_id]
-
-        return NarrativeContext(
-            previous_player_state=prev_state,
-            current_player_state=curr_state,
-            previous_place=prev_place,
+        narrative_ctx = NarrativeCtx(
             current_place=curr_place,
-            npcs_context=npcs_context,
-            player_input=player_input,
-            executed_actions=executed_actions
+            visible_npcs=visible_npcs
+        )
+        return NarrativeContext(
+            narrative_ctx=narrative_ctx,
+            player_input=player_input
+        )
+
+    @staticmethod
+    def build_dialogue_ctx(
+        npc: NPC,
+        player_input: str
+    ) -> DialogueContext:
+        """Construye un DialogueContext conteniendo DialogueCtx y la entrada del jugador."""
+        dialogue_ctx = DialogueCtx(
+            npc=npc,
+            conversation=npc.conversation
+        )
+        return DialogueContext(
+            dialogue_ctx=dialogue_ctx,
+            player_input=player_input
         )

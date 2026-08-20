@@ -48,11 +48,12 @@ class TransformerModel(BaseLLM):
                 f"Error crítico al intentar cargar el archivo del modelo GGUF en '{self.model_path}': {e}"
             )
 
-    def generate(self, prompt: str) -> dict:
+    def generate(self, prompt: str, profile_name: str = "narrator") -> dict:
         """Envía el prompt al modelo local configurando la salida para formato JSON.
 
         Args:
             prompt: El texto completo del prompt.
+            profile_name: El nombre del perfil de inferencia a utilizar.
 
         Returns:
             dict: El JSON generado y parseado como diccionario.
@@ -60,13 +61,22 @@ class TransformerModel(BaseLLM):
         if not hasattr(self, "llm") or self.llm is None:
             raise RuntimeError("El modelo Llama no ha sido inicializado correctamente.")
 
-        temperature = self.config.get("temperature", 0.1)
-        max_tokens = self.config.get("max_tokens", 512)
+        # Obtener la configuración del perfil seleccionado
+        profiles = self.config.get("inference_profiles", {})
+        profile = profiles.get(profile_name, {})
+
+        # Caer de vuelta a los valores globales configurados en el JSON si no se especifican en el perfil
+        temperature = profile.get("temperature", self.config.get("temperature", 0.5))
+        max_tokens = profile.get("max_tokens", self.config.get("max_tokens", 512))
 
         try:
             # Solicita la inferencia forzando un formato JSON estructurado
             response = self.llm.create_chat_completion(
                 messages=[
+                    {
+                        "role": "system",
+                        "content": "Eres un motor de juego de rol estructurado. Tu salida debe ser estrictamente el objeto JSON solicitado, sin explicaciones, rodeos ni comentarios adicionales."
+                    },
                     {
                         "role": "user",
                         "content": prompt
