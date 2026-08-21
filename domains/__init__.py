@@ -1,7 +1,7 @@
 from domains.base import Entity
 from domains.world import World, Location, Place
 from domains.player import Player
-from domains.npcs import NPC, Service
+from domains.npcs import NPC, Service, NPCMotivations, LoreBlock
 from domains.conversation import ConversationRecord
 from domains.system.system_domains import (
     GameState,
@@ -16,6 +16,7 @@ from domains.system.system_domains import (
     DialogueCtx,
     DialogueContext,
     DialogueResponse,
+    MarkdownContext,
 )
 
 Action_ctx = ActionCtx
@@ -28,6 +29,8 @@ __all__ = [
     "Player",
     "NPC",
     "Service",
+    "NPCMotivations",
+    "LoreBlock",
     "ConversationRecord",
     "GameState",
     "NPCProjection",
@@ -42,4 +45,5 @@ __all__ = [
     "DialogueCtx",
     "DialogueContext",
     "DialogueResponse",
+    "MarkdownContext",
 ]

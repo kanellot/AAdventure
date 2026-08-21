@@ -3,9 +3,13 @@ import os
 import json
 from transformer_engine import DungeonMaster, TransformerModel
 from pydantic import ValidationError
-from domains import ActionResponse, ActionCtx, NarrativeResponse, DialogueResponse, TurnSummary, ConversationRecord
-from game_data import GameData
-from context_builder import ContextBuilder
+from domains import (
+    ActionResponse,
+    DialogueResponse,
+    NarrativeResponse,
+    MarkdownContext,
+)
+from game_engine import GameEngine
 
 
 # =====================================================================
@@ -36,7 +40,7 @@ NARRATOR_RULES_PATH = r"Resources/system_data/rules/narrator.md"
 
 def print_banner():
     print(f"{Colors.HEADER}{Colors.BOLD}" + "=" * 65)
-    print("       AAdventure: Motor Narrativo D&D (Punto de Entrada)")
+    print("       AAdventure: Motor Narrativo D&D con GameEngine")
     print("=" * 65 + f"{Colors.ENDC}")
 
 
@@ -47,15 +51,15 @@ def main():
     # INICIALIZACIÓN DEL SISTEMA Y DATOS DE JUEGO
     # =====================================================================
     
-    # 1. Construir WorldState, GameState, GameStateController
-    print(f"{Colors.OKCYAN}[INFO] Inicializando GameStateController y cargando datos de aventura...{Colors.ENDC}")
+    # 1. Construir GameEngine
+    print(f"{Colors.OKCYAN}[INFO] Inicializando GameEngine y cargando datos de aventura...{Colors.ENDC}")
     try:
-        game_state = GameData(
+        game_engine = GameEngine(
             world_json_path=WORLD_JSON_PATH,
             npcs_json_path=NPCS_JSON_PATH,
             player_json_path=PLAYER_JSON_PATH
         )
-        print(f"{Colors.OKGREEN}[INFO] GameData y entidades inicializados correctamente desde los archivos JSON.{Colors.ENDC}")
+        print(f"{Colors.OKGREEN}[INFO] GameEngine y entidades inicializados correctamente desde los archivos JSON.{Colors.ENDC}")
     except Exception as e:
         print(f"{Colors.FAIL}[ERROR CRÍTICO AL INICIALIZAR EL JUEGO]: {e}{Colors.ENDC}")
         sys.exit(1)
@@ -74,7 +78,7 @@ def main():
 
     # 3. Imprimir el GameState inicial del juego recién cargado
     print(f"\n{Colors.OKCYAN}{Colors.BOLD}--- DEBUG: GameState INICIAL (Estado Cargado) ---{Colors.ENDC}")
-    print(game_state.game_state_controller.data.model_dump_json(indent=2))
+    print(game_engine.game_state_controller.data.model_dump_json(indent=2))
     print(f"{Colors.OKCYAN}--------------------------------------------------{Colors.ENDC}")
 
     print(f"\nIntroduce tu acción. Escribe {Colors.BOLD}'exit'{Colors.ENDC} para salir.")
@@ -93,29 +97,26 @@ def main():
                break
 
             # Determinar el estado de la máquina de estados actual
-            current_state = game_state.game_state_controller.data.player_state.upper()
+            current_state = game_engine.game_state_controller.data.player_state.upper()
 
             if current_state == "TALK":
                 # --- ESTADO TALK (Conversación Activa) ---
-                # 1. Buscar el NPC destino
-                target_npc_name = game_state.game_state_controller.data.player_target
-                npc = None
-                if target_npc_name in game_state.world_state.npcs:
-                    npc = game_state.world_state.npcs[target_npc_name]
-                elif target_npc_name in game_state.world_state.npcs_by_name:
-                    npc = game_state.world_state.npcs_by_name[target_npc_name]
+                # 1. Buscar el NPC con el que se habla
+                target_npc_name = game_engine.game_state_controller.data.player_target
+                npc = game_engine.get_npc_by_name_or_id(target_npc_name)
 
                 if not npc:
                     print(f"\n{Colors.FAIL}[ERROR] No se pudo encontrar al NPC '{target_npc_name}' en el mundo.{Colors.ENDC}")
-                    game_state.game_state_controller.update_state("NORMAL")
+                    game_engine.game_state_controller.update_state("NORMAL")
                     continue
 
-                # 2. Construir contexto para el diálogo
-                dialogue_context = ContextBuilder.build_dialogue_ctx(npc, player_input)
+                # 2. Construir contexto para el diálogo en Markdown
+                md_dialogue = game_engine.get_dialogue_context_markdown(player_input)
+                dialogue_context = MarkdownContext(markdown_content=md_dialogue)
 
                 # DEBUG: Imprimir DialogueContext
                 print(f"\n{Colors.OKCYAN}{Colors.BOLD}--- DEBUG: DialogueContext ---{Colors.ENDC}")
-                print(dialogue_context.to_markdown())
+                print(md_dialogue)
                 print(f"{Colors.OKCYAN}-------------------------------{Colors.ENDC}")
 
                 # 3. Generar diálogo usando las reglas
@@ -127,7 +128,7 @@ def main():
                     profile_name="dialogue"
                 )
                 npc_response = dialogue_result["msg"]
-                dialogue_state = dialogue_result["state"].upper()
+                dialogue_obj = DialogueResponse.model_validate(dialogue_result)
 
                 # DEBUG: Imprimir DialogueResponse
                 print(f"\n{Colors.OKGREEN}{Colors.BOLD}--- DEBUG: DialogueResponse ---{Colors.ENDC}")
@@ -137,36 +138,27 @@ def main():
                 # Imprimir la respuesta del NPC
                 print(f"\n{Colors.OKGREEN}{Colors.BOLD}[{npc.name}] > {Colors.ENDC}{npc_response}")
 
-                # 4. Registrar diálogo en el NPC
-                if not npc.conversation:
-                    npc.conversation = ConversationRecord(id=f"c_{npc.id}", msg=[])
-                npc.conversation.msg.append({"Player": player_input})
-                npc.conversation.msg.append({"Npc": npc_response})
+                # 4. Procesar el resultado del diálogo en el GameEngine
+                eval_result = game_engine.process_dialogue(dialogue_obj, player_input)
+                if dialogue_obj.service and not eval_result.allowed:
+                    print(f"\n{Colors.FAIL}[ADVERTENCIA ENGINE] Transacción del servicio rechazada: {eval_result.reason}{Colors.ENDC}")
 
-                # 5. Si el diálogo ha finalizado, volver a NORMAL
-                if dialogue_state == "NORMAL":
-                    game_state.game_state_controller.update_state("NORMAL")
-                    game_state.game_state_controller.data.player_target = ""
+                # 5. Si el diálogo ha finalizado, imprimirlo
+                if game_engine.game_state_controller.data.player_state.upper() == "NORMAL":
                     print(f"\n{Colors.OKBLUE}[INFO] Conversación finalizada con {npc.name}. Volviendo a exploración.{Colors.ENDC}")
                 
-                # Almacenar en el historial de turnos anteriores de GameState
-                game_state.game_state_controller.data.prev_turns.append(TurnSummary(player_input=player_input, narration=npc_response))
-                game_state.game_state_controller.data.prev_turns = game_state.game_state_controller.data.prev_turns[-4:]
-                
-                game_state.game_state_controller.save(game_state.world_state)
+                game_engine.save()
 
                 # DEBUG: Imprimir GameState actualizado
                 print(f"\n{Colors.OKCYAN}{Colors.BOLD}--- DEBUG: GameState ---{Colors.ENDC}")
-                print(game_state.game_state_controller.data.model_dump_json(indent=2))
+                print(game_engine.game_state_controller.data.model_dump_json(indent=2))
                 print(f"{Colors.OKCYAN}------------------------{Colors.ENDC}")
 
             else:
                 # --- ESTADO NORMAL (Exploración) ---
-                # 1. Construir el objeto de contexto ActionCtx
-                action_ctx = ContextBuilder.build_action_ctx(
-                    game_state.world_state,
-                    player_input
-                )
+                # 1. Construir el contexto del clasificador en Markdown
+                md_classifier = game_engine.get_classifier_context_markdown(player_input)
+                action_ctx = MarkdownContext(markdown_content=md_classifier)
 
                 # 2. Clasificar acción usando DungeonMaster
                 action_result = dm.execute(
@@ -176,39 +168,34 @@ def main():
                     response_model=ActionResponse,
                     profile_name="classifier"
                 )
+                action_obj = ActionResponse.model_validate(action_result)
 
                 # DEBUG: Imprimir ActionResponse
                 print(f"\n{Colors.OKGREEN}{Colors.BOLD}--- DEBUG: ActionResponse ---{Colors.ENDC}")
                 print(json.dumps(action_result, indent=2, ensure_ascii=False))
                 print(f"{Colors.OKGREEN}------------------------------{Colors.ENDC}")
 
-                # 3. Capturar el estado del jugador antes de la mutación
-                prev_game_state = game_state.game_state_controller.data.model_copy(deep=True)
+                # 3. Procesar la acción en el GameEngine (validación y mutación integrada)
+                eval_result = game_engine.process_action(action_obj, player_input)
+                if not eval_result.allowed:
+                    print(f"\n{Colors.FAIL}[ADVERTENCIA ENGINE] Acción rechazada: {eval_result.reason}{Colors.ENDC}")
 
-                # 4. Mutar el estado del juego
-                game_state.mutate(action_result)
-
-                # 5. Comprobar si la mutación nos ha llevado al estado TALK
-                if game_state.game_state_controller.data.player_state.upper() == "TALK":
-                    # Buscar el NPC
-                    target_npc_name = game_state.game_state_controller.data.player_target
-                    npc = None
-                    if target_npc_name in game_state.world_state.npcs:
-                        npc = game_state.world_state.npcs[target_npc_name]
-                    elif target_npc_name in game_state.world_state.npcs_by_name:
-                        npc = game_state.world_state.npcs_by_name[target_npc_name]
-
+                # 4. Comprobar si la mutación nos ha llevado al estado TALK
+                if game_engine.game_state_controller.data.player_state.upper() == "TALK":
+                    target_npc_name = game_engine.game_state_controller.data.player_target
+                    npc = game_engine.get_npc_by_name_or_id(target_npc_name)
                     if not npc:
                         print(f"\n{Colors.FAIL}[ERROR] No se pudo encontrar al NPC '{target_npc_name}' en el mundo.{Colors.ENDC}")
-                        game_state.game_state_controller.update_state("NORMAL")
+                        game_engine.game_state_controller.update_state("NORMAL")
                         continue
 
                     # Construir contexto para el diálogo inicial
-                    dialogue_context = ContextBuilder.build_dialogue_ctx(npc, player_input)
+                    md_dialogue = game_engine.get_dialogue_context_markdown(player_input)
+                    dialogue_context = MarkdownContext(markdown_content=md_dialogue)
 
                     # DEBUG: Imprimir DialogueContext
                     print(f"\n{Colors.OKCYAN}{Colors.BOLD}--- DEBUG: DialogueContext ---{Colors.ENDC}")
-                    print(dialogue_context.to_markdown())
+                    print(md_dialogue)
                     print(f"{Colors.OKCYAN}-------------------------------{Colors.ENDC}")
 
                     # Generar primera réplica del NPC
@@ -220,7 +207,7 @@ def main():
                         profile_name="dialogue"
                     )
                     npc_response = dialogue_result["msg"]
-                    dialogue_state = dialogue_result["state"].upper()
+                    dialogue_obj = DialogueResponse.model_validate(dialogue_result)
 
                     # DEBUG: Imprimir DialogueResponse
                     print(f"\n{Colors.OKGREEN}{Colors.BOLD}--- DEBUG: DialogueResponse ---{Colors.ENDC}")
@@ -231,38 +218,31 @@ def main():
                     print(f"\n{Colors.OKGREEN}{Colors.BOLD}[{npc.name}] > {Colors.ENDC}{npc_response}")
 
                     # Registrar diálogo en el NPC
-                    if not npc.conversation:
-                        npc.conversation = ConversationRecord(id=f"c_{npc.id}", msg=[])
-                    npc.conversation.msg.append({"Player": player_input})
-                    npc.conversation.msg.append({"Npc": npc_response})
+                    game_engine.process_dialogue(dialogue_obj, player_input)
 
-                    if dialogue_state == "NORMAL":
-                        game_state.game_state_controller.update_state("NORMAL")
-                        game_state.game_state_controller.data.player_target = ""
+                    if game_engine.game_state_controller.data.player_state.upper() == "NORMAL":
+                        game_engine.game_state_controller.update_state("NORMAL")
+                        game_engine.game_state_controller.data.player_target = ""
                         print(f"\n{Colors.OKBLUE}[INFO] Conversación finalizada con {npc.name}. Volviendo a exploración.{Colors.ENDC}")
 
-                    # Almacenar en el historial de turnos anteriores de GameState
-                    game_state.game_state_controller.data.prev_turns.append(TurnSummary(player_input=player_input, narration=npc_response))
-                    game_state.game_state_controller.data.prev_turns = game_state.game_state_controller.data.prev_turns[-4:]
-
-                    game_state.game_state_controller.save(game_state.world_state)
+                    game_engine.save()
 
                     # DEBUG: Imprimir GameState actualizado
                     print(f"\n{Colors.OKCYAN}{Colors.BOLD}--- DEBUG: GameState ---{Colors.ENDC}")
-                    print(game_state.game_state_controller.data.model_dump_json(indent=2))
+                    print(game_engine.game_state_controller.data.model_dump_json(indent=2))
                     print(f"{Colors.OKCYAN}------------------------{Colors.ENDC}")
 
                 else:
                     # Seguir en exploración normal, usar narrador general
-                    narrative_ctx = ContextBuilder.build_narrative_ctx(
-                        world_state=game_state.world_state,
-                        current_place_name=game_state.game_state_controller.data.current_place.name,
-                        player_input=player_input
-                    )
+                    md_narrator = game_engine.get_narrative_context_markdown(player_input)
+                    if not eval_result.allowed:
+                        md_narrator += f"\n\n> [!WARNING]\n> El jugador intentó realizar una acción no válida: '{player_input}'. Razón del fallo: {eval_result.reason}. Narra por qué falló de manera orgánica."
+
+                    narrative_ctx = MarkdownContext(markdown_content=md_narrator)
 
                     # DEBUG: Imprimir NarrativeContext
                     print(f"\n{Colors.OKCYAN}{Colors.BOLD}--- DEBUG: NarrativeContext ---{Colors.ENDC}")
-                    print(narrative_ctx.to_markdown())
+                    print(md_narrator)
                     print(f"{Colors.OKCYAN}--------------------------------{Colors.ENDC}")
 
                     # Generar narración
@@ -283,15 +263,14 @@ def main():
                     # Imprimir narración
                     print(f"\n{Colors.OKGREEN}{Colors.BOLD}[Dungeon Master] > {Colors.ENDC}{narration_text}")
 
-                    # Almacenar en el historial de turnos anteriores de GameState
-                    game_state.game_state_controller.data.prev_turns.append(TurnSummary(player_input=player_input, narration=narration_text))
-                    game_state.game_state_controller.data.prev_turns = game_state.game_state_controller.data.prev_turns[-4:]
+                    # Registrar la narración en el historial
+                    game_engine.mutator.add_turn_to_history(game_engine.game_state_controller, player_input, narration_text)
 
-                    game_state.game_state_controller.save(game_state.world_state)
+                    game_engine.save()
 
                     # DEBUG: Imprimir GameState actualizado
                     print(f"\n{Colors.OKCYAN}{Colors.BOLD}--- DEBUG: GameState ---{Colors.ENDC}")
-                    print(game_state.game_state_controller.data.model_dump_json(indent=2))
+                    print(game_engine.game_state_controller.data.model_dump_json(indent=2))
                     print(f"{Colors.OKCYAN}------------------------{Colors.ENDC}")
 
         except ValidationError as ve:

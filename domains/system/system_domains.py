@@ -34,6 +34,7 @@ class GameState(BaseModel):
     player_target: str
     gold: int = 10
     active_quest: Optional[str] = None
+    completed_quests: List[str] = Field(default_factory=list)
     
     # Entidades dentro del alcance visual del jugador
     current_place: Optional[Place] = None
@@ -164,3 +165,11 @@ class DialogueResponse(BaseModel):
     msg: str
     state: str
     service: Optional[str] = None
+
+
+class MarkdownContext(BaseModel):
+    """Contenedor genérico para pasar un contexto en formato Markdown al LLM."""
+    markdown_content: str
+
+    def to_markdown(self) -> str:
+        return self.markdown_content
