@@ -1,9 +1,36 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, Field
 from domains.world import Place
 from domains.npcs import NPC
+from domains.player import Player
 from domains.conversation import ConversationRecord
 
+
+
+# =====================================================================
+# MODELOS BASE PARA LA ARQUITECTURA DE COMPORTAMIENTOS (BEHAVIOUR)
+# =====================================================================
+
+class ContextType(BaseModel):
+    """Clase base para todos los modelos de contexto que se envían al LLM."""
+    pass
+
+
+class ResponseType(BaseModel):
+    """Clase base para todos los modelos de respuesta estructurada que genera el LLM."""
+    pass
+
+
+class ResultType(BaseModel):
+    """Clase base para todos los modelos de respuesta estructurada que genera el Game engine."""
+    success: bool
+    message: str
+    data: Optional[Dict[str, Any]] = None
+
+
+# =====================================================================
+# MODELOS DE DOMINIO Y PROYECCIÓN
+# =====================================================================
 
 class PlaceProjection(BaseModel):
     """Proyección simplificada de un lugar (Place) que contiene sólo id y nombre."""
@@ -23,36 +50,32 @@ class TurnSummary(BaseModel):
     narration: str
 
 
+class RuntimeState(BaseModel):
+    """Información puramente de runtime y control de juego."""
+    player_state: str = "NORMAL"
+    player_target: str = ""
+    current_place: Optional[PlaceProjection] = None
+    prev_place: Optional[PlaceProjection] = None
+
+
 class GameState(BaseModel):
     """Representa la proyección del estado y percepción del jugador (Scope reducido).
     Este objeto es idóneo para convertirse a JSON y enviarse al LLM.
     """
-    player_id: str
-    player_name: str
-    player_description: str
-    player_state: str
-    player_target: str
-    gold: int = 10
-    active_quest: Optional[str] = None
-    completed_quests: List[str] = Field(default_factory=list)
-    
-    # Entidades dentro del alcance visual del jugador
-    current_place: Optional[Place] = None
-    visible_npcs: List[NPCProjection] = Field(default_factory=list)
-    prev_turns: List[TurnSummary] = Field(default_factory=list)
+    state: RuntimeState
+    player: Player
+    npcs: Dict[str, NPC] = Field(default_factory=dict)
+    place: Optional[Place] = None
 
 
-# =====================================================================
-# MODELOS PARA EL CLASIFICADOR
-# =====================================================================
 
-class ActionResponse(BaseModel):
+
+class ActionResponse(ResponseType):
     """Respuesta del clasificador de acciones del jugador."""
     action: Optional[str] = None
     target: Optional[List[str]] = None
 
-
-class ActionCtx(BaseModel):
+class ActionCtx(ContextType):
     """Contexto de entrada para el clasificador de acciones."""
     places: List[PlaceProjection] = Field(default_factory=list)
     npc: List[NPCProjection] = Field(default_factory=list)
@@ -87,7 +110,7 @@ class NarrativeCtx(BaseModel):
     visible_npcs: List[NPC] = Field(default_factory=list)
 
 
-class NarrativeContext(BaseModel):
+class NarrativeContext(ContextType):
     """Contenedor del contexto de narración enviado al LLM del narrador."""
     narrative_ctx: NarrativeCtx
     player_input: str
@@ -113,7 +136,7 @@ class NarrativeContext(BaseModel):
         return md
 
 
-class NarrativeResponse(BaseModel):
+class NarrativeResponse(ResponseType):
     """Respuesta del narrador (Dungeon Master)."""
     msg: str
 
@@ -128,7 +151,7 @@ class DialogueCtx(BaseModel):
     conversation: Optional[ConversationRecord] = None
 
 
-class DialogueContext(BaseModel):
+class DialogueContext(ContextType):
     """Contenedor del contexto de diálogo enviado al LLM de conversación."""
     dialogue_ctx: DialogueCtx
     player_input: str
@@ -160,16 +183,76 @@ class DialogueContext(BaseModel):
         return md
 
 
-class DialogueResponse(BaseModel):
+class DialogueResponse(ResponseType):
     """Respuesta estructurada del NPC en el diálogo."""
     msg: str
     state: str
     service: Optional[str] = None
 
 
-class MarkdownContext(BaseModel):
+class MarkdownContext(ContextType):
     """Contenedor genérico para pasar un contexto en formato Markdown al LLM."""
     markdown_content: str
 
     def to_markdown(self) -> str:
         return self.markdown_content
+
+
+# =====================================================================
+# MODELOS PARA MOVE NARRATOR Y EXPLAIN LOOK NARRATOR
+# =====================================================================
+
+class MoveNarratorCtx(ContextType):
+    """Contexto para la acción de narración de desplazamiento."""
+    origin_place: Optional[Place] = None
+    destination_place: Optional[Place] = None
+    player_input: Optional[str] = None
+
+    def to_markdown(self) -> str:
+        md = "# TRANSICIÓN DE MOVIMIENTO\n"
+        if self.origin_place:
+            md += f"## ORIGEN\n* **Nombre**: {self.origin_place.name}\n* **Descripción**: {self.origin_place.description}\n"
+        if self.destination_place:
+            md += f"## DESTINO\n* **Nombre**: {self.destination_place.name}\n* **Descripción**: {self.destination_place.description}\n"
+        if self.player_input:
+            md += f"\n* **player_input**: \"{self.player_input}\""
+        return md
+
+
+class MoveNarratorResponse(ResponseType):
+    """Respuesta del LLM para la narración de desplazamiento."""
+    msg: str
+
+
+class MoveNarratorResult(ResultType):
+    """Resultado del Game Engine para la narración de desplazamiento."""
+    pass
+
+
+class ExplainLookNarratorCtx(ContextType):
+    """Contexto para la acción de explicación/inspección de entidades."""
+    entity: Optional[Union[Place, NPC]] = None
+    player_input: Optional[str] = None
+    failed_reason: Optional[str] = None
+
+    def to_markdown(self) -> str:
+        md = "# DETALLE DE ENTIDAD\n"
+        if self.entity:
+            md += f"## ENTIDAD: {self.entity.name}\n"
+            md += f"* **ID**: {self.entity.id}\n"
+            md += f"* **Descripción actual**: {self.entity.description}\n"
+        if self.player_input:
+            md += f"\n* **player_input**: \"{self.player_input}\""
+        if self.failed_reason:
+            md += f"\n\n> [!WARNING]\n> La acción del jugador falló. Razón: {self.failed_reason}. Narra de manera inmersiva por qué falló o no fue posible en este entorno."
+        return md
+
+
+class ExplainLookResponse(ResponseType):
+    """Respuesta descriptiva del LLM para la acción de explicación/inspección."""
+    msg: str
+
+
+class ExplainLookResult(ResultType):
+    """Resultado del Game Engine para la acción de explicación/inspección."""
+    pass

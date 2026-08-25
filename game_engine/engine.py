@@ -1,9 +1,16 @@
 from typing import Optional, List
+from pydantic import BaseModel, Field
 from game_engine.state import WorldState, GameStateController
-from game_engine.evaluator import ActionEvaluator, EvaluationResult
-from game_engine.mutator import GameStateMutator
-from game_engine.context_builder import ContextBuilder
-from domains import NPC, Service, ActionResponse, DialogueResponse, TurnSummary
+from domains import NPC, ResultType
+from transformer_engine import DungeonMaster
+from game_engine.actions import Behaviour, ExplorationClassifierAction, MoveNarratorAction, ExplainLookNarratorAction, DialogueClassificatorAction, DialogueNarratorAction
+
+class TurnOutput(BaseModel):
+    """Representa la respuesta unificada de un turno de juego para la interfaz."""
+    msg: str
+    author: str
+    info_msg: Optional[str] = None
+
 
 class GameEngine:
     """Clase orquestadora principal (Fachada) que coordina las reglas, mutaciones y contextos del juego."""
@@ -14,11 +21,6 @@ class GameEngine:
         
         # 2. Inicializar la proyección del GameState
         self.game_state_controller = GameStateController.create_from_world(self.world_state)
-        
-        # 3. Guardar instancias de las clases de soporte
-        self.evaluator = ActionEvaluator()
-        self.mutator = GameStateMutator()
-        self.context_builder = ContextBuilder()
 
     def get_npc_by_name_or_id(self, target: str) -> Optional[NPC]:
         """Busca un NPC por su ID o su nombre en el estado del mundo."""
@@ -28,111 +30,148 @@ class GameEngine:
             return self.world_state.npcs_by_name[target]
         return None
 
-    # =====================================================================
-    # INTERFAZ DE PROCESAMIENTO Y MUTACIÓN
-    # =====================================================================
-
-    def process_action(self, action: ActionResponse, player_input: str) -> EvaluationResult:
-        """Evalúa y ejecuta una acción clasificada en modo normal (MOVE, TALK, LOOK, EXPLAIN)."""
-        # 1. Evaluar viabilidad
-        eval_result = self.evaluator.evaluate_action(
-            world_state=self.world_state,
-            game_state=self.game_state_controller.data,
-            action=action
-        )
-
-        # 2. Mutar el estado si es permitido
-        if eval_result.allowed:
-            self.mutator.mutate_action(
-                world_state=self.world_state,
-                game_state_controller=self.game_state_controller,
-                action=action,
-                eval_result=eval_result
-            )
-            # Guardamos para sincronizar con world_state
-            self.save()
-            # Re-inicializar el campo de visión / percepción para asegurar total consistencia
-            current_target = self.game_state_controller.data.player_target
-            current_prev_turns = self.game_state_controller.data.prev_turns
-            self.game_state_controller = GameStateController.create_from_world(self.world_state, prev_turns=current_prev_turns)
-            self.game_state_controller.data.player_target = current_target
-
-        return eval_result
-
-    def process_dialogue(self, dialogue: DialogueResponse, player_input: str) -> EvaluationResult:
-        """Procesa y aplica las consecuencias de un turno de diálogo (mensajes, servicios, afinidad)."""
-        target_npc_name = self.game_state_controller.data.player_target
-        npc = self.get_npc_by_name_or_id(target_npc_name)
-        
-        if not npc:
-            return EvaluationResult(allowed=False, reason=f"No hay una conversación activa con ningún NPC válido (actual: '{target_npc_name}').")
-
-        # 1. Procesar servicio si el LLM indicó que se está brindando uno
-        service_eval = None
-        if dialogue.service:
-            service_eval = self.evaluator.evaluate_dialogue_service(
-                game_state=self.game_state_controller.data,
-                npc=npc,
-                service_id=dialogue.service
-            )
-            if service_eval.allowed:
-                service = service_eval.metadata.get("service")
-                if service:
-                    self.mutator.apply_service(self.game_state_controller, npc, service)
-
-        # 2. Registrar el mensaje en el historial del NPC
-        self.mutator.record_conversation(npc, player_input, dialogue.msg)
-
-        # 3. Registrar el turno en el historial del jugador
-        self.mutator.add_turn_to_history(self.game_state_controller, player_input, dialogue.msg)
-
-        # 4. Actualizar el estado de diálogo (ej. volver a exploración NORMAL si cerró)
-        if dialogue.state:
-            self.mutator.mutate_dialogue_state(self.game_state_controller, dialogue.state)
-
-        # Retornar el resultado de la transacción del servicio (si hubo una) o éxito general
-        return service_eval if service_eval is not None else EvaluationResult(allowed=True)
-
     def change_npc_affinity(self, npc_name_or_id: str, delta: float):
         """Modifica externamente la afinidad de un NPC."""
         npc = self.get_npc_by_name_or_id(npc_name_or_id)
         if npc:
-            self.mutator.modify_affinity(npc, delta)
+            npc.affinity = round(max(0.0, min(1.0, npc.affinity + delta)), 4)
+        for n in self.game_state_controller.data.npcs.values():
+            if n.id == npc_name_or_id or n.name == npc_name_or_id:
+                n.affinity = round(max(0.0, min(1.0, n.affinity + delta)), 4)
+
+    def get_player_name(self) -> str:
+        """Devuelve el nombre del jugador cargado en el estado."""
+        if self.game_state_controller.data.player:
+            return self.game_state_controller.data.player.name
+        return "Jugador"
 
     def save(self):
         """Sincroniza y persiste los cambios del controlador de vuelta al WorldState."""
-        self.game_state_controller.save(self.world_state)
+        self.game_state_controller.save()
 
     # =====================================================================
-    # GENERACIÓN DE CONTEXTO EN MARKDOWN
+    # ORQUESTACIÓN DE TURNOS POR COMPORTAMIENTO (BEHAVIOUR)
     # =====================================================================
 
-    def get_classifier_context_markdown(self, player_input: str) -> str:
-        """Devuelve el Markdown para el Clasificador semántico."""
-        return self.context_builder.build_classifier_context(
-            world_state=self.world_state,
-            game_state=self.game_state_controller.data,
-            player_input=player_input
-        )
+    def execute_turn(self, player_input: str, dm: DungeonMaster) -> TurnOutput:
+        """Ejecuta un turno completo de juego, procesando la lógica de estado y seleccionando acciones."""
+        # 1. Determinar el estado antes de procesar el turno
+        was_talking = self.game_state_controller.data.state.player_state.upper() == "TALK"
+        target_npc_before = self.game_state_controller.data.state.player_target
 
-    def get_narrative_context_markdown(self, player_input: str) -> str:
-        """Devuelve el Markdown detallado del lugar y NPCs para el Narrador."""
-        return self.context_builder.build_narrative_context(
-            world_state=self.world_state,
-            game_state=self.game_state_controller.data,
-            player_input=player_input
-        )
+        current_state = self.game_state_controller.data.state.player_state.upper()
 
-    def get_dialogue_context_markdown(self, player_input: str) -> str:
-        """Devuelve el Markdown de diálogo del NPC activo con sus servicios/lore desbloqueados."""
-        target_npc_name = self.game_state_controller.data.player_target
-        npc = self.get_npc_by_name_or_id(target_npc_name)
-        if not npc:
-            return "## ERROR\nNo hay una conversación activa."
+        final_msg = ""
+        final_author = "Dungeon Master"
+
+        # 2. Seleccionar y ejecutar los pasos del turno
+        if current_state == "TALK":
+            # Si el jugador está conversando con un NPC, el primer paso es clasificar el input
+            step_1 = DialogueClassificatorAction(target_npc_before)
+            res_1 = self._run_step(step_1, player_input, dm)
+            if not res_1.success:
+                return TurnOutput(author="SYSTEM", msg=res_1.message)
+
+            status = "TALK"
+            if hasattr(res_1, "status"):
+                status = res_1.status
+            elif res_1.data and "status" in res_1.data:
+                status = res_1.data["status"]
+
+            # Con el estado clasificado (TALK o END_TALK), ejecutamos el narrador de diálogo
+            step_2 = DialogueNarratorAction(target_npc_before, status=status)
+            res_2 = self._run_step(step_2, player_input, dm)
+            if not res_2.success:
+                return TurnOutput(author="SYSTEM", msg=res_2.message)
+
+            # Buscar el nombre real del NPC para usarlo como autor
+            npc = self.get_npc_by_name_or_id(target_npc_before)
+            final_author = npc.name if npc else target_npc_before
+            final_msg = res_2.message
+        else:
+            # En exploración normal, el primer paso es clasificar el input del jugador
+            step_1 = ExplorationClassifierAction()
+            res_1 = self._run_step(step_1, player_input, dm)
             
-        return self.context_builder.build_dialogue_context(
-            world_state=self.world_state,
-            game_state=self.game_state_controller.data,
-            npc=npc,
-            player_input=player_input
+            # Si el paso 1 falló (ej. movimiento no permitido, npc no existe)
+            if not res_1.success:
+                if res_1.data and "reason" in res_1.data:
+                    # ejecutamos el narrador para describir orgánicamente el fallo al jugador
+                    step_2 = ExplainLookNarratorAction(target=res_1.data.get("target"), failed_reason=res_1.data["reason"])
+                    res_2 = self._run_step(step_2, player_input, dm)
+                    if not res_2.success:
+                        return TurnOutput(author="SYSTEM", msg=res_2.message)
+                    final_author = "Dungeon Master"
+                    final_msg = res_2.message
+                else:
+                    return TurnOutput(author="SYSTEM", msg=res_1.message)
+            else:
+                # Si el clasificador tuvo éxito, ejecutamos la acción correspondiente
+                if res_1.data and "action" in res_1.data:
+                    action = res_1.data["action"]
+                    target = res_1.data.get("target")
+
+                    step_2 = None
+                    if action == "MOVE":
+                        step_2 = MoveNarratorAction(target)
+                        final_author = "Dungeon Master"
+                    elif action == "TALK":
+                        step_2 = DialogueNarratorAction(target, status="TALK")
+                        npc = self.get_npc_by_name_or_id(target)
+                        final_author = npc.name if npc else target
+                    elif action in ["LOOK", "EXPLAIN"]:
+                        step_2 = ExplainLookNarratorAction(target)
+                        final_author = "Dungeon Master"
+
+                    if step_2:
+                        res_2 = self._run_step(step_2, player_input, dm)
+                        if not res_2.success:
+                            return TurnOutput(author="SYSTEM", msg=res_2.message)
+                        final_msg = res_2.message
+                    else:
+                        # Si no hay step_2 pero fue exitoso
+                        final_msg = res_1.message
+                else:
+                    final_msg = res_1.message
+
+        # 3. Determinar si la conversación finalizó durante este turno para agregar info_msg
+        info_msg = None
+        is_talking_now = self.game_state_controller.data.state.player_state.upper() == "TALK"
+        if was_talking and not is_talking_now:
+            info_msg = f"[INFO] Conversación finalizada con {target_npc_before}. Volviendo a exploración."
+
+        return TurnOutput(msg=final_msg, author=final_author, info_msg=info_msg)
+
+    def _run_step(self, step: Behaviour, player_input: str, dm: DungeonMaster) -> ResultType:
+        """Ejecuta las fases del Step: generar contexto -> llamar LLM -> validar -> execute."""
+        # 1. Generar contexto estructurado (MarkdownContext/ContextType)
+        ctx = step.generar_ctx(self.game_state_controller, player_input)
+
+        # 2. Obtener respuesta estructurada del LLM usando DungeonMaster
+        llm_raw = dm.execute(
+            rules_path=step.rules_path,
+            gamecontext=ctx,
+            player_input=player_input,
+            response_model=step.response_model,
+            profile_name=step.profile_name
         )
+        llm_response = step.response_model.model_validate(llm_raw)
+
+        # 3. Ejecutar lógica, validaciones y mutación del estado
+        result = step.execute(self.game_state_controller, player_input, llm_response)
+
+        # Persistir cambios del GameState al WorldState y guardar archivos
+        self.save()
+
+        # Re-inicializar el controlador si volvimos/estamos en exploración normal para mantener consistencia
+        if self.game_state_controller.data.state.player_state.upper() != "TALK":
+            current_target = self.game_state_controller.data.state.player_target
+            current_prev_place = self.game_state_controller.data.state.prev_place
+            self.game_state_controller = GameStateController.create_from_world(
+                self.world_state, 
+                target=current_target,
+                prev_place=current_prev_place
+            )
+
+        return result
+

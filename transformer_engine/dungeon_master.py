@@ -45,14 +45,25 @@ class DungeonMaster:
         prompt = PromptBuilder.build(rules_path, gamecontext, game_context_str, player_input)
 
         # DEBUG: Imprimir el prompt completo antes de enviarlo al modelo
-        print("\n" + "=" * 65)
-        print(f"DEBUG: PROMPT ENVIADO AL MODELO ({rules_path})")
-        print("=" * 65)
-        print(prompt)
-        print("=" * 65 + "\n")
+        import sys
+        main_mod = sys.modules.get('__main__')
+        if getattr(main_mod, 'DEBUG_PROMPS', 0) or getattr(main_mod, 'DEBUG_PROMPTS', 0):
+            print("\n" + "=" * 65)
+            print(f"DEBUG: PROMPT ENVIADO AL MODELO ({rules_path})")
+            print("=" * 65)
+            print(prompt)
+            print("=" * 65 + "\n")
 
         # 3. Generar respuesta usando el LLM
         raw_output = self.llm_adapter.generate(prompt, profile_name=profile_name)
+
+        # DEBUG: Imprimir respuesta del modelo
+        if getattr(main_mod, 'DEBUG_RESPONSE', 0):
+            print("\n" + "=" * 65)
+            print(f"DEBUG: RESPUESTA LLM RECIBIDA (profile={profile_name})")
+            print("=" * 65)
+            print(raw_output)
+            print("=" * 65 + "\n")
 
         # 3. Validar estructuralmente contra el modelo de dominio (Pydantic)
         validated_instance = Validator.validate_json(raw_output, response_model)

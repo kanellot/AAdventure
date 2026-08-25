@@ -1,10 +1,14 @@
 from domains.base import Entity
-from domains.world import World, Location, Place
+from domains.world import World, Location, Place, LocationInfo, PlaceInfo
 from domains.player import Player
-from domains.npcs import NPC, Service, NPCMotivations, LoreBlock
+from domains.npcs import NPC, Service, NPCMotivations, LoreBlock, NPCInfo
 from domains.conversation import ConversationRecord
 from domains.system.system_domains import (
+    ContextType,
+    ResponseType,
+    ResultType,
     GameState,
+    RuntimeState,
     NPCProjection,
     PlaceProjection,
     TurnSummary,
@@ -17,6 +21,12 @@ from domains.system.system_domains import (
     DialogueContext,
     DialogueResponse,
     MarkdownContext,
+    MoveNarratorCtx,
+    MoveNarratorResponse,
+    MoveNarratorResult,
+    ExplainLookNarratorCtx,
+    ExplainLookResponse,
+    ExplainLookResult,
 )
 
 Action_ctx = ActionCtx
@@ -32,7 +42,12 @@ __all__ = [
     "NPCMotivations",
     "LoreBlock",
     "ConversationRecord",
+    "ContextType",
+    "ResponseType",
+    "ResultType",
     "GameState",
+    "RuntimeState",
+
     "NPCProjection",
     "PlaceProjection",
     "TurnSummary",
@@ -46,4 +61,15 @@ __all__ = [
     "DialogueContext",
     "DialogueResponse",
     "MarkdownContext",
+    
+    "LocationInfo",
+    "PlaceInfo",
+    "NPCInfo",
+
+    "MoveNarratorCtx",
+    "MoveNarratorResponse",
+    "MoveNarratorResult",
+    "ExplainLookNarratorCtx",
+    "ExplainLookResponse",
+    "ExplainLookResult",
 ]

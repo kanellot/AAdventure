@@ -3,6 +3,11 @@ from domains.base import Entity
 from domains.conversation import ConversationRecord
 from pydantic import BaseModel, Field
 
+class NPCInfo(BaseModel):
+    """Información simplificada de un NPC."""
+    id: str
+    nombre: str
+
 class NPCMotivations(BaseModel):
     """Representa las motivaciones y preferencias de un NPC para modular la afinidad."""
     likes: List[str] = Field(default_factory=list)

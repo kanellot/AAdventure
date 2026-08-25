@@ -9,7 +9,7 @@ Deberás identificar la acción que el jugador desea llevar a cabo y clasificarl
 4. **LOOK**: Cuando el jugador quiere mirar o examinar detalladamente un lugar (place) o un NPC. El target puede ser un lugar o un NPC de la lista.
 
 ## REGLAS CRÍTICAS DE TARGET Y NULOS
-* **Validación**: El valor de `target` debe ser una lista que contenga únicamente el ID exacto de la entidad (lugar o NPC) correspondiente que esté presente en las listas del contexto.
+* **Validación**: El valor de `target` debe ser el ID exacto de la entidad (lugar o NPC) correspondiente que esté presente en las listas del contexto.
 * **Valores Nulos**: Si no se puede identificar o clasificar la acción a realizar, devuelve `"action": null`. Si el target al que hace referencia el jugador no está en las listas de contexto o no se puede identificar, devuelve `"target": null`.
 
 ## FORMATO DE SALIDA (ESTRICTAMENTE JSON)
@@ -17,7 +17,7 @@ La respuesta debe ser estrictamente un objeto JSON con el siguiente formato exac
 ```json
 {
   "action": "MOVE",
-  "target": ["entity"]
+  "target": "entity"
 }
 ```
 *Nota: Tanto "action" como "target" pueden ser null si no se pueden clasificar o identificar.*

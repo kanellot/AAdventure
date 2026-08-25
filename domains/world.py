@@ -1,6 +1,16 @@
 from typing import List, Dict
-from pydantic import Field
+from pydantic import BaseModel, Field
 from domains.base import Entity
+
+class LocationInfo(BaseModel):
+    """Información simplificada de una localización."""
+    id: str
+    nombre: str
+
+class PlaceInfo(BaseModel):
+    """Información simplificada de un lugar (lugar/sub-zona)."""
+    id: str
+    nombre: str
 
 class Place(Entity):
     """Un lugar o sub-zona específica dentro de una localización."""
