@@ -1,10 +1,11 @@
 import os
+from typing import Any
 
 class PromptBuilder:
     """Clase responsable de la ingeniería de prompts y construcción de la entrada para el LLM."""
 
     @staticmethod
-    def build(rules_path: str, game_context_json: str, user_input: str) -> str:
+    def build(rules_path: str, gamecontext: Any, game_context_str: str, user_input: str) -> str:
         """Construye e integra el prompt final para el LLM cargando las reglas desde rules_path.
 
         Soporta plantillas con placeholders {{context_json}} y {{player_input}},
@@ -12,8 +13,9 @@ class PromptBuilder:
 
         Args:
             rules_path: Ruta al archivo Markdown que contiene las instrucciones o reglas.
-            game_context_json: Representación JSON del contexto actual (ej. de PlayerState).
-            user_input: Entrada del jugador en lenguaje natural o en formato estructurado.
+            gamecontext: El objeto Pydantic original para inspeccionar sus características.
+            game_context_str: Representación formateada (JSON o Markdown) del contexto actual.
+            user_input: Entrada del jugador en lenguaje natural.
 
         Returns:
             str: El prompt formateado y listo para ser enviado al LLM.
@@ -26,16 +28,17 @@ class PromptBuilder:
 
         # Si el template tiene las marcas de reemplazo de variables, las sustituimos
         if "{{context_json}}" in template or "{{player_input}}" in template:
-            prompt = template.replace("{{context_json}}", game_context_json)
+            prompt = template.replace("{{context_json}}", game_context_str)
             prompt = prompt.replace("{{player_input}}", user_input)
         else:
             # Si no las tiene, concatenamos de manera predeterminada en un prompt estructurado
+            context_block_header = "markdown" if hasattr(gamecontext, "to_markdown") else "json"
             prompt = (
                 f"# REGLAS E INSTRUCCIONES DEL ROL\n"
                 f"{template}\n\n"
                 f"# CONTEXTO DEL JUEGO (ESTADO ACTUAL)\n"
-                f"```json\n"
-                f"{game_context_json}\n"
+                f"```{context_block_header}\n"
+                f"{game_context_str}\n"
                 f"```\n\n"
                 f"# ACCIÓN DEL JUGADOR / SOLICITUD\n"
                 f"\"{user_input}\"\n\n"

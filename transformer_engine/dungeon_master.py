@@ -20,7 +20,8 @@ class DungeonMaster:
         rules_path: str,
         gamecontext: BaseModel,
         player_input: str,
-        response_model: Type[BaseModel]
+        response_model: Type[BaseModel],
+        profile_name: str = "narrator"
     ) -> dict:
         """Construye el prompt, delega la generación al LLM, valida el JSON contra el modelo de dominio y retorna el resultado.
 
@@ -29,18 +30,40 @@ class DungeonMaster:
             gamecontext: Objeto de dominio Pydantic que contiene el contexto.
             player_input: La entrada del jugador o acción a procesar.
             response_model: Clase del modelo Pydantic para validar el resultado.
+            profile_name: El nombre del perfil de inferencia a utilizar en el LLM.
 
         Returns:
             dict: La respuesta estructurada y validada correctamente como diccionario.
         """
-        # Serializar el modelo de dominio a JSON string
-        game_context_json = gamecontext.model_dump_json(indent=2)
+        # 1. Obtener la representación de contexto (preferiblemente Markdown)
+        if hasattr(gamecontext, "to_markdown") and callable(getattr(gamecontext, "to_markdown")):
+            game_context_str = gamecontext.to_markdown()
+        else:
+            game_context_str = gamecontext.model_dump_json(indent=2)
 
-        # 1. Construir el prompt
-        prompt = PromptBuilder.build(rules_path, game_context_json, player_input)
+        # 2. Construir el prompt
+        prompt = PromptBuilder.build(rules_path, gamecontext, game_context_str, player_input)
 
-        # 2. Generar respuesta usando el LLM
-        raw_output = self.llm_adapter.generate(prompt)
+        # DEBUG: Imprimir el prompt completo antes de enviarlo al modelo
+        import sys
+        main_mod = sys.modules.get('__main__')
+        if getattr(main_mod, 'DEBUG_PROMPS', 0) or getattr(main_mod, 'DEBUG_PROMPTS', 0):
+            print("\n" + "=" * 65)
+            print(f"DEBUG: PROMPT ENVIADO AL MODELO ({rules_path})")
+            print("=" * 65)
+            print(prompt)
+            print("=" * 65 + "\n")
+
+        # 3. Generar respuesta usando el LLM
+        raw_output = self.llm_adapter.generate(prompt, profile_name=profile_name)
+
+        # DEBUG: Imprimir respuesta del modelo
+        if getattr(main_mod, 'DEBUG_RESPONSE', 0):
+            print("\n" + "=" * 65)
+            print(f"DEBUG: RESPUESTA LLM RECIBIDA (profile={profile_name})")
+            print("=" * 65)
+            print(raw_output)
+            print("=" * 65 + "\n")
 
         # 3. Validar estructuralmente contra el modelo de dominio (Pydantic)
         validated_instance = Validator.validate_json(raw_output, response_model)

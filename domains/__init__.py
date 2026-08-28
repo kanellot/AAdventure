@@ -1,20 +1,35 @@
 from domains.base import Entity
-from domains.world import World, Location, Place
+from domains.world import World, Location, Place, LocationInfo, PlaceInfo
 from domains.player import Player
-from domains.npcs import NPC
-from domains.conversation import Message, Conversation
+from domains.npcs import NPC, Service, NPCMotivations, LoreBlock, NPCInfo
+from domains.conversation import ConversationRecord
 from domains.system.system_domains import (
-    PlayerState,
+    ContextType,
+    ResponseType,
+    ResultType,
+    GameState,
+    RuntimeState,
     NPCProjection,
-    ActionItem,
-    Actions,
-    Turn,
-    PreActionContext,
-    PostActionContext,
+    PlaceProjection,
+    TurnSummary,
+    ActionResponse,
+    ActionCtx,
+    NarrativeCtx,
     NarrativeContext,
-    NarrationResponse,
+    NarrativeResponse,
+    DialogueCtx,
+    DialogueContext,
     DialogueResponse,
+    MarkdownContext,
+    MoveNarratorCtx,
+    MoveNarratorResponse,
+    MoveNarratorResult,
+    ExplainLookNarratorCtx,
+    ExplainLookResponse,
+    ExplainLookResult,
 )
+
+Action_ctx = ActionCtx
 
 __all__ = [
     "Entity",
@@ -23,16 +38,38 @@ __all__ = [
     "Place",
     "Player",
     "NPC",
-    "Message",
-    "Conversation",
-    "PlayerState",
+    "Service",
+    "NPCMotivations",
+    "LoreBlock",
+    "ConversationRecord",
+    "ContextType",
+    "ResponseType",
+    "ResultType",
+    "GameState",
+    "RuntimeState",
+
     "NPCProjection",
-    "ActionItem",
-    "Actions",
-    "Turn",
-    "PreActionContext",
-    "PostActionContext",
+    "PlaceProjection",
+    "TurnSummary",
+    "ActionResponse",
+    "ActionCtx",
+    "Action_ctx",
+    "NarrativeCtx",
     "NarrativeContext",
-    "NarrationResponse",
+    "NarrativeResponse",
+    "DialogueCtx",
+    "DialogueContext",
     "DialogueResponse",
+    "MarkdownContext",
+    
+    "LocationInfo",
+    "PlaceInfo",
+    "NPCInfo",
+
+    "MoveNarratorCtx",
+    "MoveNarratorResponse",
+    "MoveNarratorResult",
+    "ExplainLookNarratorCtx",
+    "ExplainLookResponse",
+    "ExplainLookResult",
 ]
