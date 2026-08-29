@@ -19,10 +19,10 @@ class Colors:
     BOLD = "\033[1m"
 
 # Configuración de depuración en consola (0 = Desactivado, 1 = Activado)
-DEBUG_PROMPS = 0
-DEBUG_PROMPTS = 0
-DEBUG_RESPONSE = 0
-DEBUG_STATE = 0
+DEBUG_PROMPS = 1
+DEBUG_PROMPTS = 1
+DEBUG_RESPONSE = 1
+DEBUG_STATE = 1
 
 # Rutas de los archivos JSON de datos de aventura
 WORLD_JSON_PATH = r"Resources/adventure_data/world_2.json"
@@ -40,6 +40,24 @@ def print_banner():
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="AAdventure - Motor Narrativo D&D con GameEngine")
+    parser.add_argument("--editor", "-e", action="store_true", help="Lanza el editor gráfico de historias")
+    parser.add_argument("aad_file", nargs="?", default=None, help="Ruta al archivo de aventura .aad")
+    args = parser.parse_args()
+
+    if args.editor:
+        print(f"{Colors.OKCYAN}[INFO] Lanzando el Editor de Historias de AAdventure...{Colors.ENDC}")
+        try:
+            from editor.main import start_editor
+            start_editor()
+            sys.exit(0)
+        except ImportError as ie:
+            print(f"{Colors.FAIL}[ERROR] No se pudo iniciar el editor gráfico.{Colors.ENDC}")
+            print(f"Asegúrate de instalar PySide6: pip install PySide6")
+            print(f"Error detallado: {ie}")
+            sys.exit(1)
+
     print_banner()
 
     # =====================================================================
@@ -47,14 +65,24 @@ def main():
     # =====================================================================
     
     # 1. Construir GameEngine
-    print(f"{Colors.OKCYAN}[INFO] Inicializando GameEngine y cargando datos de aventura...{Colors.ENDC}")
+    if args.aad_file:
+        print(f"{Colors.OKCYAN}[INFO] Inicializando GameEngine y cargando aventura desde: {args.aad_file}...{Colors.ENDC}")
+        world_path = args.aad_file
+        npcs_path = None
+        player_path = None
+    else:
+        print(f"{Colors.OKCYAN}[INFO] Inicializando GameEngine y cargando datos de aventura por defecto...{Colors.ENDC}")
+        world_path = WORLD_JSON_PATH
+        npcs_path = NPCS_JSON_PATH
+        player_path = PLAYER_JSON_PATH
+
     try:
         game_engine = GameEngine(
-            world_json_path=WORLD_JSON_PATH,
-            npcs_json_path=NPCS_JSON_PATH,
-            player_json_path=PLAYER_JSON_PATH
+            world_json_path=world_path,
+            npcs_json_path=npcs_path,
+            player_json_path=player_path
         )
-        print(f"{Colors.OKGREEN}[INFO] GameEngine y entidades inicializados correctamente desde los archivos JSON.{Colors.ENDC}")
+        print(f"{Colors.OKGREEN}[INFO] GameEngine y entidades inicializados correctamente.{Colors.ENDC}")
     except Exception as e:
         print(f"{Colors.FAIL}[ERROR CRÍTICO AL INICIALIZAR EL JUEGO]: {e}{Colors.ENDC}")
         sys.exit(1)
