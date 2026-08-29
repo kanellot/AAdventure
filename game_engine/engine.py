@@ -12,6 +12,10 @@ class TurnOutput(BaseModel):
     msg: str
     author: str
     info_msg: Optional[str] = None
+    debug_prompt: Optional[str] = None
+    debug_raw_response: Optional[str] = None
+    debug_structured_response: Optional[str] = None
+    debug_engine_result: Optional[str] = None
 
 
 class GameEngine:
@@ -19,6 +23,7 @@ class GameEngine:
 
     def __init__(self, world_json_path: str, npcs_json_path: Optional[str] = None, player_json_path: Optional[str] = None):
         self.temp_dir = None
+        self.turn_debug_steps = []
         
         # Si es un archivo de aventura .aad, lo desempaquetamos
         if world_json_path.lower().endswith(".aad"):
@@ -90,8 +95,34 @@ class GameEngine:
     # ORQUESTACIÓN DE TURNOS POR COMPORTAMIENTO (BEHAVIOUR)
     # =====================================================================
 
+    def _create_debug_turn_output(self, msg: str, author: str, info_msg: Optional[str] = None) -> TurnOutput:
+        """Helper para empaquetar TurnOutput junto con los registros acumulados de depuración."""
+        debug_prompts = []
+        debug_raws = []
+        debug_structureds = []
+        debug_results = []
+        
+        for idx, debug in enumerate(self.turn_debug_steps, 1):
+            header = f"--- PASO {idx}: {debug['step_name']} ---\n"
+            debug_prompts.append(header + debug["prompt"])
+            debug_raws.append(header + debug["raw_response"])
+            debug_structureds.append(header + debug["structured_response"])
+            debug_results.append(header + debug["result"])
+
+        return TurnOutput(
+            msg=msg,
+            author=author,
+            info_msg=info_msg,
+            debug_prompt="\n\n".join(debug_prompts) if debug_prompts else None,
+            debug_raw_response="\n\n".join(debug_raws) if debug_raws else None,
+            debug_structured_response="\n\n".join(debug_structureds) if debug_structureds else None,
+            debug_engine_result="\n\n".join(debug_results) if debug_results else None
+        )
+
     def execute_turn(self, player_input: str, dm: DungeonMaster) -> TurnOutput:
         """Ejecuta un turno completo de juego, procesando la lógica de estado y seleccionando acciones."""
+        self.turn_debug_steps.clear()
+        
         # 1. Determinar el estado antes de procesar el turno
         was_talking = self.game_state_controller.data.state.player_state.upper() == "TALK"
         target_npc_before = self.game_state_controller.data.state.player_target
@@ -107,7 +138,7 @@ class GameEngine:
             step_1 = DialogueClassificatorAction(target_npc_before)
             res_1 = self._run_step(step_1, player_input, dm)
             if not res_1.success:
-                return TurnOutput(author="SYSTEM", msg=res_1.message)
+                return self._create_debug_turn_output(author="SYSTEM", msg=res_1.message)
 
             status = "TALK"
             if hasattr(res_1, "status"):
@@ -119,7 +150,7 @@ class GameEngine:
             step_2 = DialogueNarratorAction(target_npc_before, status=status)
             res_2 = self._run_step(step_2, player_input, dm)
             if not res_2.success:
-                return TurnOutput(author="SYSTEM", msg=res_2.message)
+                return self._create_debug_turn_output(author="SYSTEM", msg=res_2.message)
 
             # Buscar el nombre real del NPC para usarlo como autor
             npc = self.get_npc_by_name_or_id(target_npc_before)
@@ -137,11 +168,11 @@ class GameEngine:
                     step_2 = ExplainLookNarratorAction(target=res_1.data.get("target"), failed_reason=res_1.data["reason"])
                     res_2 = self._run_step(step_2, player_input, dm)
                     if not res_2.success:
-                        return TurnOutput(author="SYSTEM", msg=res_2.message)
+                        return self._create_debug_turn_output(author="SYSTEM", msg=res_2.message)
                     final_author = "Dungeon Master"
                     final_msg = res_2.message
                 else:
-                    return TurnOutput(author="SYSTEM", msg=res_1.message)
+                    return self._create_debug_turn_output(author="SYSTEM", msg=res_1.message)
             else:
                 # Si el clasificador tuvo éxito, ejecutamos la acción correspondiente
                 if res_1.data and "action" in res_1.data:
@@ -163,7 +194,7 @@ class GameEngine:
                     if step_2:
                         res_2 = self._run_step(step_2, player_input, dm)
                         if not res_2.success:
-                            return TurnOutput(author="SYSTEM", msg=res_2.message)
+                            return self._create_debug_turn_output(author="SYSTEM", msg=res_2.message)
                         final_msg = res_2.message
                     else:
                         # Si no hay step_2 pero fue exitoso
@@ -177,7 +208,7 @@ class GameEngine:
         if was_talking and not is_talking_now:
             info_msg = f"[INFO] Conversación finalizada con {target_npc_before}. Volviendo a exploración."
 
-        return TurnOutput(msg=final_msg, author=final_author, info_msg=info_msg)
+        return self._create_debug_turn_output(msg=final_msg, author=final_author, info_msg=info_msg)
 
     def _run_step(self, step: Behaviour, player_input: str, dm: DungeonMaster) -> ResultType:
         """Ejecuta las fases del Step: generar contexto -> llamar LLM -> validar -> execute."""
@@ -200,6 +231,16 @@ class GameEngine:
         # Persistir cambios del GameState al WorldState y guardar archivos
         self.save()
 
+        # Capturar información de depuración del paso actual
+        debug_info = {
+            "step_name": step.__class__.__name__,
+            "prompt": ctx.to_markdown() if hasattr(ctx, "to_markdown") else str(ctx),
+            "raw_response": str(llm_raw),
+            "structured_response": llm_response.model_dump_json(indent=2) if hasattr(llm_response, "model_dump_json") else str(llm_response),
+            "result": result.model_dump_json(indent=2) if hasattr(result, "model_dump_json") else str(result)
+        }
+        self.turn_debug_steps.append(debug_info)
+
         # Re-inicializar el controlador si volvimos/estamos en exploración normal para mantener consistencia
         if self.game_state_controller.data.state.player_state.upper() != "TALK":
             current_target = self.game_state_controller.data.state.player_target
@@ -217,6 +258,7 @@ class GameEngine:
         Para clics en botones de la UI (omite la clasificación por IA).
         Ejecuta directamente la acción (MOVE, TALK, LOOK, EXPLAIN, END_TALK) sobre el target.
         """
+        self.turn_debug_steps.clear()
         action = action.upper()
         was_talking = self.game_state_controller.data.state.player_state.upper() == "TALK"
         target_npc_before = self.game_state_controller.data.state.player_target
@@ -259,7 +301,7 @@ class GameEngine:
         if step_2:
             res_2 = self._run_step(step_2, player_input, dm)
             if not res_2.success:
-                return TurnOutput(author="SYSTEM", msg=res_2.message)
+                return self._create_debug_turn_output(author="SYSTEM", msg=res_2.message)
             final_msg = res_2.message
         else:
             final_msg = f"Acción directa '{action}' no reconocida o no soportada."
@@ -270,7 +312,7 @@ class GameEngine:
         if was_talking and not is_talking_now:
             info_msg = f"[INFO] Conversación finalizada con {target_npc_before}. Volviendo a exploración."
 
-        return TurnOutput(msg=final_msg, author=final_author, info_msg=info_msg)
+        return self._create_debug_turn_output(msg=final_msg, author=final_author, info_msg=info_msg)
 
     def get_available_actions(self) -> dict:
         """

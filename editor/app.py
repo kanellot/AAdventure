@@ -102,8 +102,17 @@ class StoryEditorApp(QMainWindow):
         # Ajustar ancho inicial del divisor (30% árbol, 70% formulario)
         splitter.setSizes([300, 700])
 
-        # Cargar proyecto vacío por defecto al arrancar
-        self.on_new_story()
+        # Cargar aventura por defecto si existe, o crear una nueva
+        default_aad = os.path.join("Resources", "adventure_data", "Adventure.aad")
+        if os.path.exists(default_aad):
+            try:
+                self.controller.load_story(default_aad)
+                self.refresh_tree()
+                self.statusBar().showMessage(f"Aventura por defecto cargada: {default_aad}")
+            except Exception:
+                self.on_new_story()
+        else:
+            self.on_new_story()
 
     def setup_menu(self):
         menubar = self.menuBar()

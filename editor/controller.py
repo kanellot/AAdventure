@@ -22,7 +22,7 @@ class EditorController:
         """
         Inicializa un proyecto de historia vacío con valores por defecto básicos.
         """
-        self.current_file_path = None
+        self.current_file_path = os.path.join("Resources", "adventure_data", "Adventure.aad")
         
         # 1. Crear Mundo inicial vacío
         self.world = World(

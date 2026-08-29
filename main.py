@@ -1,4 +1,5 @@
 import sys
+import os
 from transformer_engine import DungeonMaster, TransformerModel
 from pydantic import ValidationError
 from game_engine import GameEngine
@@ -43,6 +44,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="AAdventure - Motor Narrativo D&D con GameEngine")
     parser.add_argument("--editor", "-e", action="store_true", help="Lanza el editor gráfico de historias")
+    parser.add_argument("--play-debug", "-d", action="store_true", help="Jugar con la UI de depuración gráfica")
     parser.add_argument("aad_file", nargs="?", default=None, help="Ruta al archivo de aventura .aad")
     args = parser.parse_args()
 
@@ -65,13 +67,22 @@ def main():
     # =====================================================================
     
     # 1. Construir GameEngine
-    if args.aad_file:
-        print(f"{Colors.OKCYAN}[INFO] Inicializando GameEngine y cargando aventura desde: {args.aad_file}...{Colors.ENDC}")
-        world_path = args.aad_file
+    # 1. Construir GameEngine
+    # Si no se pasó aad_file, por defecto buscamos Adventure.aad
+    DEFAULT_AAD = os.path.join("Resources", "adventure_data", "Adventure.aad")
+    aad_to_load = args.aad_file or DEFAULT_AAD
+
+    if os.path.exists(aad_to_load) and aad_to_load.lower().endswith(".aad"):
+        print(f"{Colors.OKCYAN}[INFO] Inicializando GameEngine y cargando aventura desde: {aad_to_load}...{Colors.ENDC}")
+        world_path = aad_to_load
         npcs_path = None
         player_path = None
     else:
-        print(f"{Colors.OKCYAN}[INFO] Inicializando GameEngine y cargando datos de aventura por defecto...{Colors.ENDC}")
+        # Fallback a los JSON individuales por si acaso no existiera aún el .aad por defecto
+        if not args.aad_file:
+            print(f"{Colors.OKCYAN}[INFO] Advertencia: No se encontró {DEFAULT_AAD}. Cargando JSONs por defecto...{Colors.ENDC}")
+        else:
+            print(f"{Colors.OKCYAN}[INFO] Cargando aventura desde archivos JSON...{Colors.ENDC}")
         world_path = WORLD_JSON_PATH
         npcs_path = NPCS_JSON_PATH
         player_path = PLAYER_JSON_PATH
@@ -98,6 +109,18 @@ def main():
         print(f"No se pudo cargar el clasificador semántico: {e}")
         print("\nPor favor, instala 'llama-cpp-python' y configura el modelo local GGUF.")
         sys.exit(1)
+
+    if args.play_debug:
+        print(f"{Colors.OKCYAN}[INFO] Lanzando el Depurador Gráfico de AAdventure...{Colors.ENDC}")
+        try:
+            from game_debugger.main import start_debugger
+            start_debugger(game_engine, dm)
+            sys.exit(0)
+        except ImportError as ie:
+            print(f"{Colors.FAIL}[ERROR] No se pudo iniciar el depurador gráfico.{Colors.ENDC}")
+            print(f"Asegúrate de instalar PySide6: pip install PySide6")
+            print(f"Error detallado: {ie}")
+            sys.exit(1)
 
     # 3. Imprimir el GameState inicial del juego recién cargado si está activado el debug de estado
     if DEBUG_STATE:
