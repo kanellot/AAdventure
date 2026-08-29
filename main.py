@@ -85,7 +85,8 @@ def main():
     while True:
         try:
             player_name = game_engine.get_player_name()
-            player_input = input(f"\n{Colors.BOLD}[{player_name}] > {Colors.ENDC}").strip()
+            time_str = game_engine.get_formatted_time()
+            player_input = input(f"\n{Colors.BOLD}[{time_str}] [{player_name}] > {Colors.ENDC}").strip()
             if not player_input:
                 continue
 

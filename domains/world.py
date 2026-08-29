@@ -12,10 +12,16 @@ class PlaceInfo(BaseModel):
     id: str
     nombre: str
 
+class Connection(BaseModel):
+    """Representa una conexión física entre dos lugares con distancia y tipo de terreno."""
+    target: str
+    distance: int
+    terrain_type: str
+
 class Place(Entity):
     """Un lugar o sub-zona específica dentro de una localización."""
     visible_entities: List[str] = Field(default_factory=list)
-    connections: Dict[str, str] = Field(default_factory=dict)
+    connections: Dict[str, Connection] = Field(default_factory=dict)
 
 class Location(Entity):
     """Una localización mayor dentro del mundo (por ejemplo, un pueblo o una mazmorra)."""
@@ -24,3 +30,4 @@ class Location(Entity):
 class World(Entity):
     """Representa el mundo completo del juego, que contiene múltiples localizaciones."""
     locations: List[Location] = Field(default_factory=list)
+

@@ -1,5 +1,5 @@
 from domains.base import Entity
-from domains.world import World, Location, Place, LocationInfo, PlaceInfo
+from domains.world import World, Location, Place, LocationInfo, PlaceInfo, Connection
 from domains.player import Player
 from domains.npcs import NPC, Service, NPCMotivations, LoreBlock, NPCInfo
 from domains.conversation import ConversationRecord
@@ -36,6 +36,7 @@ __all__ = [
     "World",
     "Location",
     "Place",
+    "Connection",
     "Player",
     "NPC",
     "Service",

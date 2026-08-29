@@ -56,6 +56,8 @@ class RuntimeState(BaseModel):
     player_target: str = ""
     current_place: Optional[PlaceProjection] = None
     prev_place: Optional[PlaceProjection] = None
+    travel_speed: float = 4.5
+    elapsed_time: int = 0
 
 
 class GameState(BaseModel):
@@ -207,11 +209,16 @@ class MoveNarratorCtx(ContextType):
     origin_place: Optional[Place] = None
     destination_place: Optional[Place] = None
     player_input: Optional[str] = None
+    path_taken: List[Place] = Field(default_factory=list)
 
     def to_markdown(self) -> str:
         md = "# TRANSICIÓN DE MOVIMIENTO\n"
         if self.origin_place:
             md += f"## ORIGEN\n* **Nombre**: {self.origin_place.name}\n* **Descripción**: {self.origin_place.description}\n"
+        if self.path_taken:
+            md += "## CAMINO RECORRIDO (LUGARES INTERMEDIOS)\n"
+            for p in self.path_taken:
+                md += f"* **Nombre**: {p.name}\n* **Descripción**: {p.description}\n"
         if self.destination_place:
             md += f"## DESTINO\n* **Nombre**: {self.destination_place.name}\n* **Descripción**: {self.destination_place.description}\n"
         if self.player_input:

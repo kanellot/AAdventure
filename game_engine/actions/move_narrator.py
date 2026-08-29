@@ -35,10 +35,15 @@ class MoveNarratorAction(Behaviour[MoveNarratorCtx, MoveNarratorResponse]):
             elif self.target in game_state_controller.world_state.places_by_name:
                 destination_place = game_state_controller.world_state.places_by_name[self.target]
 
+        path_taken = []
+        if origin_place and destination_place:
+            path_taken = game_state_controller.find_shortest_path_places(origin_place.name, destination_place.name)
+
         return MoveNarratorCtx(
             origin_place=origin_place,
             destination_place=destination_place,
-            player_input=player_input
+            player_input=player_input,
+            path_taken=path_taken
         )
 
     def validate(

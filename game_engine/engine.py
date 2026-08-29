@@ -45,6 +45,15 @@ class GameEngine:
             return self.game_state_controller.data.player.name
         return "Jugador"
 
+    def get_formatted_time(self) -> str:
+        """Devuelve el tiempo transcurrido formateado en 'Día X, HH:MM'."""
+        elapsed = self.game_state_controller.data.state.elapsed_time
+        days = elapsed // 1440
+        hours = (elapsed // 60) % 24
+        minutes = elapsed % 60
+        return f"Día {days}, {hours:02d}:{minutes:02d}"
+
+
     def save(self):
         """Sincroniza y persiste los cambios del controlador de vuelta al WorldState."""
         self.game_state_controller.save()

@@ -170,6 +170,9 @@ class DialogueNarratorAction(Behaviour[DialogueNarratorCtx, DialogueNarratorResp
             # Mantener afinidad entre 0.0 y 1.0
             npc.affinity = round(max(0.0, min(1.0, npc.affinity + delta)), 4)
 
+        # Consumir 1 minuto por interacción de diálogo
+        game_state_controller.data.state.elapsed_time += 1
+
         # 3. Si el estado es END_TALK se cambia el status del juego a EXPLORATION
         if self.status == "END_TALK":
             game_state_controller.update_state("EXPLORATION")

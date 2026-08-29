@@ -9,3 +9,5 @@ class Player(Entity):
     gold: int = 10
     active_quest: Optional[str] = None
     completed_quests: List[str] = Field(default_factory=list)
+    travel_speed: float = 4.5
+    elapsed_time: int = 0

@@ -2,7 +2,7 @@ import json
 from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
-from domains import World, Player, NPC, Place, Location, GameState, RuntimeState, PlaceProjection, NPCProjection, ActionResponse, TurnSummary
+from domains import World, Player, NPC, Place, Location, GameState, RuntimeState, PlaceProjection, NPCProjection, ActionResponse, TurnSummary, Connection
 
 class WorldState:
     """Administra el estado dinámico global de todo el mundo de juego."""
@@ -82,7 +82,9 @@ class GameStateController:
             player_state=player.state,
             player_target=target,
             current_place=current_place_proj,
-            prev_place=prev_place
+            prev_place=prev_place,
+            travel_speed=player.travel_speed,
+            elapsed_time=player.elapsed_time
         )
         
         # Hacer copia profunda de player
@@ -128,6 +130,133 @@ class GameStateController:
                 return self.data.npcs[npc_full.id]
         return None
 
+    def calculate_path_travel_time(self, start_name: str, end_name: str) -> int:
+        """
+        Encuentra el camino más corto en el grafo de lugares de la localización actual y calcula
+        el tiempo total de viaje en minutos.
+        """
+        import heapq
+        
+        places = self.world_state.places_by_name
+        if start_name not in places or end_name not in places:
+            return 0
+            
+        # Dijkstra para encontrar el camino con menor distancia total
+        distances = {name: float('inf') for name in places}
+        distances[start_name] = 0
+        
+        # Elementos de la cola: (distancia_acumulada, nombre_nodo, lista_de_conexiones)
+        queue = [(0, start_name, [])]
+        shortest_path = None
+        
+        while queue:
+            dist, current, path = heapq.heappop(queue)
+            
+            if dist > distances[current]:
+                continue
+                
+            if current == end_name:
+                shortest_path = path
+                break
+                
+            current_place = places[current]
+            for direction, conn in current_place.connections.items():
+                neighbor_name = conn.target
+                neighbor_place = places.get(neighbor_name)
+                if not neighbor_place:
+                    # En caso de que target sea el ID, buscamos por ID
+                    for p_val in places.values():
+                        if p_val.id == neighbor_name:
+                            neighbor_place = p_val
+                            break
+                if not neighbor_place:
+                    continue
+                    
+                new_dist = dist + conn.distance
+                if new_dist < distances[neighbor_place.name]:
+                    distances[neighbor_place.name] = new_dist
+                    heapq.heappush(queue, (new_dist, neighbor_place.name, path + [conn]))
+                    
+        if not shortest_path:
+            return 0
+            
+        # Calcular el tiempo transcurrido en minutos
+        total_time_minutes = 0.0
+        travel_speed = self.data.state.travel_speed
+        
+        terrain_modifiers = {
+            "village": 0.0,
+            "road": 0.0,
+            "forest": -1.5,
+            "mountain": -2.5,
+            "swamp": -3.0
+        }
+        
+        for conn in shortest_path:
+            terrain_type = conn.terrain_type.lower()
+            terrain_mod = terrain_modifiers.get(terrain_type, 0.0)
+            true_travel_speed = travel_speed + terrain_mod
+            if true_travel_speed < 0.1:
+                true_travel_speed = 0.1  # Evitar división por cero
+                
+            conn_time = (conn.distance / 1000.0) / true_travel_speed * 60.0
+            total_time_minutes += conn_time
+            
+        return max(1, round(total_time_minutes))
+
+    def find_shortest_path_places(self, start_name: str, end_name: str) -> List[Place]:
+        """
+        Retorna la lista de objetos Place en el camino más corto desde start_name hasta end_name,
+        excluyendo el origen y el destino.
+        """
+        import heapq
+        places = self.world_state.places_by_name
+        if start_name not in places or end_name not in places:
+            return []
+            
+        if start_name == end_name:
+            return []
+            
+        distances = {name: float('inf') for name in places}
+        distances[start_name] = 0
+        
+        # queue elements: (distance, current_node_name, path_of_names)
+        queue = [(0, start_name, [])]
+        shortest_path_names = None
+        
+        while queue:
+            dist, current, path = heapq.heappop(queue)
+            
+            if dist > distances[current]:
+                continue
+                
+            if current == end_name:
+                shortest_path_names = path
+                break
+                
+            current_place = places[current]
+            for direction, conn in current_place.connections.items():
+                neighbor_name = conn.target
+                neighbor_place = places.get(neighbor_name)
+                if not neighbor_place:
+                    for p_val in places.values():
+                        if p_val.id == neighbor_name:
+                            neighbor_place = p_val
+                            break
+                if not neighbor_place:
+                    continue
+                    
+                new_dist = dist + conn.distance
+                if new_dist < distances[neighbor_place.name]:
+                    distances[neighbor_place.name] = new_dist
+                    heapq.heappush(queue, (new_dist, neighbor_place.name, path + [neighbor_place.name]))
+                    
+        if not shortest_path_names:
+            return []
+            
+        intermediate_names = shortest_path_names[:-1]
+        return [places[name] for name in intermediate_names]
+
     def update_location(self, new_location_name_or_id: str):
         """Actualiza la ubicación del jugador si el lugar existe por ID o nombre."""
         dest_place_full = None
@@ -137,6 +266,11 @@ class GameStateController:
             dest_place_full = self.world_state.places_by_name[new_location_name_or_id]
 
         if dest_place_full:
+            # Calcular tiempo transcurrido si nos movemos a un lugar diferente
+            if self.data.place and self.data.place.name != dest_place_full.name:
+                travel_time = self.calculate_path_travel_time(self.data.place.name, dest_place_full.name)
+                self.data.state.elapsed_time += travel_time
+
             # Actualizar prev_place con el current_place actual
             self.data.state.prev_place = self.data.state.current_place
             self.data.state.current_place = PlaceProjection(id=dest_place_full.id, name=dest_place_full.name)
@@ -161,6 +295,8 @@ class GameStateController:
             world_state.player.gold = self.data.player.gold
             world_state.player.active_quest = self.data.player.active_quest
             world_state.player.completed_quests = self.data.player.completed_quests
+            world_state.player.travel_speed = self.data.state.travel_speed
+            world_state.player.elapsed_time = self.data.state.elapsed_time
             if self.data.place:
                 world_state.player.player_location = self.data.place.name
                 
