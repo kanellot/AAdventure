@@ -2,7 +2,7 @@ import json
 from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
-from domains import World, Player, NPC, Place, Location, GameState, RuntimeState, PlaceProjection, NPCProjection, ActionResponse, TurnSummary, Connection
+from domains import World, Player, NPC, Place, Location, GameState, RuntimeState, PlaceProjection, NPCProjection, TurnSummary, Connection
 
 class WorldState:
     """Administra el estado dinámico global de todo el mundo de juego."""
@@ -78,8 +78,13 @@ class GameStateController:
         if current_place:
             current_place_proj = PlaceProjection(id=current_place.id, name=current_place.name)
             
+        # Normalizar estado inicial del jugador: estrictamente EXPLORE o TALK
+        initial_state = player.state.upper() if player.state else "EXPLORE"
+        if initial_state != "TALK":
+            initial_state = "EXPLORE"
+
         runtime_state = RuntimeState(
-            player_state=player.state,
+            player_state=initial_state,
             player_target=target,
             current_place=current_place_proj,
             prev_place=prev_place,
@@ -284,8 +289,11 @@ class GameStateController:
                     self.data.npcs[npc_full.id] = npc_full.model_copy(deep=True)
 
     def update_state(self, new_state: str):
-        """Actualiza el estado dinámico del jugador."""
-        self.data.state.player_state = new_state
+        """Actualiza el estado dinámico del jugador (EXPLORE o TALK)."""
+        state_upper = new_state.upper()
+        if state_upper in ["EXPLORATION", "NORMAL", "NONE"]:
+            state_upper = "EXPLORE"
+        self.data.state.player_state = state_upper
 
     def save(self):
         """Sincroniza y guarda los cambios de GameState de vuelta en WorldState."""

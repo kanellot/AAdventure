@@ -106,7 +106,7 @@ def main():
         print(f"{Colors.OKGREEN}[INFO] TransformerModel y DungeonMaster inicializados correctamente.{Colors.ENDC}")
     except Exception as e:
         print(f"{Colors.FAIL}[ERROR DE CONFIGURACIÓN DEL LLM]{Colors.ENDC}")
-        print(f"No se pudo cargar el clasificador semántico: {e}")
+        print(f"No se pudo inicializar el modelo o DungeonMaster: {e}")
         print("\nPor favor, instala 'llama-cpp-python' y configura el modelo local GGUF.")
         sys.exit(1)
 
@@ -146,7 +146,7 @@ def main():
                break
 
             # Ejecutar el turno completo
-            turn_output = game_engine.execute_turn(player_input, dm)
+            turn_output = game_engine.execute_turn(action=player_input, dm=dm)
 
             # Imprimir los resultados narrativos en la consola
             if turn_output.author == "SYSTEM":

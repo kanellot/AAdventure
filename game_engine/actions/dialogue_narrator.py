@@ -61,9 +61,8 @@ class DialogueNarratorAction(Behaviour[DialogueNarratorCtx, DialogueNarratorResp
 
     VALID_AFFINITIES = ["VERY_GOOD", "GOOD", "NORMAL", "BAD"]
 
-    def __init__(self, target_npc: str, status: str = "TALK"):
+    def __init__(self, target_npc: str):
         self.target_npc = target_npc
-        self.status = status  # TALK o END_TALK
 
     @property
     def rules_path(self) -> str:
@@ -172,11 +171,6 @@ class DialogueNarratorAction(Behaviour[DialogueNarratorCtx, DialogueNarratorResp
 
         # Consumir 1 minuto por interacción de diálogo
         game_state_controller.data.state.elapsed_time += 1
-
-        # 3. Si el estado es END_TALK se cambia el status del juego a EXPLORATION
-        if self.status == "END_TALK":
-            game_state_controller.update_state("EXPLORATION")
-            game_state_controller.data.state.player_target = ""
 
     def build_result(
         self,

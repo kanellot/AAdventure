@@ -27,29 +27,29 @@ class GameStateInspector(QTreeWidget):
         if state:
             # Player State
             item_state = QTreeWidgetItem(self)
-            item_state.setText(0, f"Estado del Jugador (player_state): {state.player_state}")
+            item_state.setText(0, f"player_state: {state.player_state}")
             
             # Player Target
             item_target = QTreeWidgetItem(self)
-            item_target.setText(0, f"Objetivo del Jugador (player_target): '{state.player_target or ''}'")
+            item_target.setText(0, f"player_target: '{state.player_target or ''}'")
             
             # Current Place (Proyección)
             curr_place_name = state.current_place.name if state.current_place else "Ninguno"
             item_curr = QTreeWidgetItem(self)
-            item_curr.setText(0, f"Lugar Actual (current_place): {curr_place_name}")
+            item_curr.setText(0, f"current_place: {curr_place_name}")
             
             # Prev Place (Proyección)
             prev_place_name = state.prev_place.name if state.prev_place else "Ninguno"
             item_prev = QTreeWidgetItem(self)
-            item_prev.setText(0, f"Lugar Anterior (prev_place): {prev_place_name}")
+            item_prev.setText(0, f"prev_place: {prev_place_name}")
             
             # Travel Speed
             item_speed = QTreeWidgetItem(self)
-            item_speed.setText(0, f"Velocidad de Viaje (travel_speed): {state.travel_speed} km/h")
+            item_speed.setText(0, f"travel_speed: {state.travel_speed} km/h")
             
             # Elapsed Time (Minutos y Formateado)
             item_time = QTreeWidgetItem(self)
-            item_time.setText(0, f"Tiempo Transcurrido: {formatted_time} ({state.elapsed_time} min)")
+            item_time.setText(0, f"Tiempo Transcurrido: {formatted_time} ({state.elapsed_time} )")
 
         # Separador visual
         sep = QTreeWidgetItem(self)

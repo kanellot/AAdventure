@@ -1,11 +1,13 @@
 import os
-from typing import Optional, List
+from typing import Optional, List, Union
 from pydantic import BaseModel, Field
 from game_engine.state import WorldState, GameStateController
-from domains import NPC, ResultType
+from domains import NPC, ResultType, Place, ActionCommand
 from transformer_engine import DungeonMaster
-from game_engine.actions import Behaviour, ExplorationClassifierAction, MoveNarratorAction, ExplainLookNarratorAction, DialogueClassificatorAction, DialogueNarratorAction
 from adventure_packager import AdventurePackager
+from game_engine.actions import (
+    Behaviour, MoveNarratorAction, ExplainLookNarratorAction, DialogueNarratorAction
+)
 
 class TurnOutput(BaseModel):
     """Representa la respuesta unificada de un turno de juego para la interfaz."""
@@ -63,6 +65,16 @@ class GameEngine:
             return self.world_state.npcs_by_name[target]
         return None
 
+    def get_npc_place(self, npc_id_or_name: str) -> Optional[Place]:
+        """Devuelve el objeto Place donde reside el NPC buscando en visible_entities."""
+        npc = self.get_npc_by_name_or_id(npc_id_or_name)
+        if not npc:
+            return None
+        for place in self.world_state.places_by_id.values():
+            if npc.id in place.visible_entities or npc.name in place.visible_entities:
+                return place
+        return None
+
     def change_npc_affinity(self, npc_name_or_id: str, delta: float):
         """Modifica externamente la afinidad de un NPC."""
         npc = self.get_npc_by_name_or_id(npc_name_or_id)
@@ -85,6 +97,61 @@ class GameEngine:
         hours = (elapsed // 60) % 24
         minutes = elapsed % 60
         return f"Día {days}, {hours:02d}:{minutes:02d}"
+
+    def get_all_target_names(self) -> List[str]:
+        """Devuelve una lista ordenada con los nombres de todos los lugares y NPCs del mundo."""
+        place_names = sorted(list(self.world_state.places_by_name.keys()))
+        npc_names = sorted(list(self.world_state.npcs_by_name.keys()))
+        return place_names + npc_names
+
+    def get_world_entities_hierarchy(self) -> List[dict]:
+        """
+        Devuelve una estructura jerárquica de las localizaciones, sus lugares (solo nombre)
+        y todos los NPCs presentes en cada localización (solo nombre).
+        """
+        hierarchy = []
+        if not self.world_state or not self.world_state.world:
+            return hierarchy
+
+        all_npcs_accounted = set()
+
+        for loc in self.world_state.world.locations:
+            places_list = []
+            npcs_in_loc = []
+            seen_loc_npcs = set()
+
+            for place in loc.places:
+                places_list.append(place.name)
+                for ent_id in place.visible_entities:
+                    npc = self.get_npc_by_name_or_id(ent_id)
+                    if npc and npc.name not in seen_loc_npcs:
+                        npcs_in_loc.append(npc.name)
+                        seen_loc_npcs.add(npc.name)
+                        all_npcs_accounted.add(npc.id)
+                        all_npcs_accounted.add(npc.name)
+
+            hierarchy.append({
+                "location_name": loc.name,
+                "places": sorted(places_list),
+                "npcs": sorted(npcs_in_loc)
+            })
+
+        # Comprobar si hay NPCs no asignados directamente a lugares conocidos
+        remaining_npcs = []
+        for npc_id, npc in self.world_state.npcs.items():
+            if npc_id not in all_npcs_accounted and npc.name not in all_npcs_accounted:
+                remaining_npcs.append(npc.name)
+                all_npcs_accounted.add(npc_id)
+                all_npcs_accounted.add(npc.name)
+
+        if remaining_npcs:
+            hierarchy.append({
+                "location_name": "Otras Entidades",
+                "places": [],
+                "npcs": sorted(remaining_npcs)
+            })
+
+        return hierarchy
 
 
     def save(self):
@@ -119,96 +186,90 @@ class GameEngine:
             debug_engine_result="\n\n".join(debug_results) if debug_results else None
         )
 
-    def execute_turn(self, player_input: str, dm: DungeonMaster) -> TurnOutput:
-        """Ejecuta un turno completo de juego, procesando la lógica de estado y seleccionando acciones."""
+    def execute_turn(
+        self, 
+        action: Union[ActionCommand, str], 
+        target: Optional[str] = None, 
+        player_input: str = "", 
+        dm: Optional[DungeonMaster] = None
+    ) -> TurnOutput:
+        """
+        Ejecuta un turno directo de 1 solo paso según la acción solicitada (MOVE, LOOK, TALK).
+        """
         self.turn_debug_steps.clear()
-        
-        # 1. Determinar el estado antes de procesar el turno
-        was_talking = self.game_state_controller.data.state.player_state.upper() == "TALK"
-        target_npc_before = self.game_state_controller.data.state.player_target
 
-        current_state = self.game_state_controller.data.state.player_state.upper()
+        # Permitir compatibilidad si dm fue pasado posicionalmente en target o player_input
+        if target is not None and not isinstance(target, str):
+            if dm is None and hasattr(target, "execute"):
+                dm = target
+                target = None
+        if player_input is not None and not isinstance(player_input, str):
+            if dm is None and hasattr(player_input, "execute"):
+                dm = player_input
+                player_input = ""
 
-        final_msg = ""
-        final_author = "Dungeon Master"
-
-        # 2. Seleccionar y ejecutar los pasos del turno
-        if current_state == "TALK":
-            # Si el jugador está conversando con un NPC, el primer paso es clasificar el input
-            step_1 = DialogueClassificatorAction(target_npc_before)
-            res_1 = self._run_step(step_1, player_input, dm)
-            if not res_1.success:
-                return self._create_debug_turn_output(author="SYSTEM", msg=res_1.message)
-
-            status = "TALK"
-            if hasattr(res_1, "status"):
-                status = res_1.status
-            elif res_1.data and "status" in res_1.data:
-                status = res_1.data["status"]
-
-            # Con el estado clasificado (TALK o END_TALK), ejecutamos el narrador de diálogo
-            step_2 = DialogueNarratorAction(target_npc_before, status=status)
-            res_2 = self._run_step(step_2, player_input, dm)
-            if not res_2.success:
-                return self._create_debug_turn_output(author="SYSTEM", msg=res_2.message)
-
-            # Buscar el nombre real del NPC para usarlo como autor
-            npc = self.get_npc_by_name_or_id(target_npc_before)
-            final_author = npc.name if npc else target_npc_before
-            final_msg = res_2.message
-        else:
-            # En exploración normal, el primer paso es clasificar el input del jugador
-            step_1 = ExplorationClassifierAction()
-            res_1 = self._run_step(step_1, player_input, dm)
-            
-            # Si el paso 1 falló (ej. movimiento no permitido, npc no existe)
-            if not res_1.success:
-                if res_1.data and "reason" in res_1.data:
-                    # ejecutamos el narrador para describir orgánicamente el fallo al jugador
-                    step_2 = ExplainLookNarratorAction(target=res_1.data.get("target"), failed_reason=res_1.data["reason"])
-                    res_2 = self._run_step(step_2, player_input, dm)
-                    if not res_2.success:
-                        return self._create_debug_turn_output(author="SYSTEM", msg=res_2.message)
-                    final_author = "Dungeon Master"
-                    final_msg = res_2.message
-                else:
-                    return self._create_debug_turn_output(author="SYSTEM", msg=res_1.message)
+        # Parsear comando de acción
+        if isinstance(action, ActionCommand):
+            action_type = action.action.upper()
+            target_name = action.target
+        elif isinstance(action, str):
+            clean_str = action.strip()
+            first_word = clean_str.split(maxsplit=1)[0].upper() if clean_str else ""
+            if first_word in ["MOVE", "LOOK", "TALK", "EXPLAIN", "EXPLORE"]:
+                parts = clean_str.split(maxsplit=1)
+                action_type = parts[0].upper()
+                target_name = parts[1].strip() if len(parts) > 1 else (target or "")
             else:
-                # Si el clasificador tuvo éxito, ejecutamos la acción correspondiente
-                if res_1.data and "action" in res_1.data:
-                    action = res_1.data["action"]
-                    target = res_1.data.get("target")
-
-                    step_2 = None
-                    if action == "MOVE":
-                        step_2 = MoveNarratorAction(target)
-                        final_author = "Dungeon Master"
-                    elif action == "TALK":
-                        step_2 = DialogueNarratorAction(target, status="TALK")
-                        npc = self.get_npc_by_name_or_id(target)
-                        final_author = npc.name if npc else target
-                    elif action in ["LOOK", "EXPLAIN"]:
-                        step_2 = ExplainLookNarratorAction(target)
-                        final_author = "Dungeon Master"
-
-                    if step_2:
-                        res_2 = self._run_step(step_2, player_input, dm)
-                        if not res_2.success:
-                            return self._create_debug_turn_output(author="SYSTEM", msg=res_2.message)
-                        final_msg = res_2.message
-                    else:
-                        # Si no hay step_2 pero fue exitoso
-                        final_msg = res_1.message
+                if self.game_state_controller.data.state.player_state.upper() == "TALK":
+                    action_type = "TALK"
+                    target_name = self.game_state_controller.data.state.player_target or (target or "")
+                    if not player_input:
+                        player_input = action
                 else:
-                    final_msg = res_1.message
+                    action_type = action.upper()
+                    target_name = target or ""
+        else:
+            raise ValueError(f"Acción inválida: {action}")
 
-        # 3. Determinar si la conversación finalizó durante este turno para agregar info_msg
-        info_msg = None
-        is_talking_now = self.game_state_controller.data.state.player_state.upper() == "TALK"
-        if was_talking and not is_talking_now:
-            info_msg = f"[INFO] Conversación finalizada con {target_npc_before}. Volviendo a exploración."
+        step = None
+        final_author = "Player"
 
-        return self._create_debug_turn_output(msg=final_msg, author=final_author, info_msg=info_msg)
+        if action_type in ["MOVE", "EXPLORE"]:
+            self.game_state_controller.update_state("EXPLORE")
+            self.game_state_controller.data.state.player_target = ""
+            step = MoveNarratorAction(target_name)
+            final_author = "Dungeon Master"
+
+        elif action_type in ["LOOK", "EXPLAIN"]:
+            self.game_state_controller.update_state("EXPLORE")
+            step = ExplainLookNarratorAction(target_name)
+            final_author = "Dungeon Master"
+
+        elif action_type == "TALK":
+            npc = self.get_npc_by_name_or_id(target_name)
+            if npc:
+                # Si el usuario hace talk con un NPC pero no se encuentra en el mismo place,
+                # se actualiza automáticamente el lugar del jugador al lugar donde reside el NPC.
+                npc_place = self.get_npc_place(npc.id)
+                if npc_place and (not self.game_state_controller.data.place or self.game_state_controller.data.place.id != npc_place.id):
+                    self.game_state_controller.update_location(npc_place.name)
+
+                self.game_state_controller.load_npc(npc.id)
+                self.game_state_controller.update_state("TALK")
+                self.game_state_controller.data.state.player_target = npc.name
+                final_author = npc.name
+            else:
+                final_author = target_name
+
+            step = DialogueNarratorAction(target_name)
+        else:
+            return self._create_debug_turn_output(author="SYSTEM", msg=f"Acción desconocida: '{action_type}'")
+
+        res = self._run_step(step, player_input, dm)
+        if not res.success:
+            return self._create_debug_turn_output(author="SYSTEM", msg=res.message)
+
+        return self._create_debug_turn_output(msg=res.message, author=final_author)
 
     def _run_step(self, step: Behaviour, player_input: str, dm: DungeonMaster) -> ResultType:
         """Ejecuta las fases del Step: generar contexto -> llamar LLM -> validar -> execute."""
@@ -253,67 +314,6 @@ class GameEngine:
 
         return result
 
-    def execute_direct_action(self, action: str, target: str, player_input: str, dm: DungeonMaster) -> TurnOutput:
-        """
-        Para clics en botones de la UI (omite la clasificación por IA).
-        Ejecuta directamente la acción (MOVE, TALK, LOOK, EXPLAIN, END_TALK) sobre el target.
-        """
-        self.turn_debug_steps.clear()
-        action = action.upper()
-        was_talking = self.game_state_controller.data.state.player_state.upper() == "TALK"
-        target_npc_before = self.game_state_controller.data.state.player_target
-
-        # 1. Mutar estado preliminar si es TALK y no estábamos conversando ya
-        if action == "TALK" and not was_talking:
-            npc = self.get_npc_by_name_or_id(target)
-            if npc:
-                self.game_state_controller.load_npc(npc.id)
-                self.game_state_controller.update_state("TALK")
-                self.game_state_controller.data.state.player_target = npc.name
-                
-                npc_place = None
-                for place in self.world_state.places_by_id.values():
-                    if npc.id in place.visible_entities:
-                        npc_place = place
-                        break
-                if npc_place:
-                    self.game_state_controller.update_location(npc_place.name)
-
-        # 2. Seleccionar el comportamiento correspondiente
-        step_2 = None
-        final_author = "Dungeon Master"
-
-        if action == "MOVE":
-            step_2 = MoveNarratorAction(target)
-            final_author = "Dungeon Master"
-        elif action == "TALK":
-            step_2 = DialogueNarratorAction(target, status="TALK")
-            npc = self.get_npc_by_name_or_id(target)
-            final_author = npc.name if npc else target
-        elif action == "END_TALK":
-            step_2 = DialogueNarratorAction(target, status="END_TALK")
-            npc = self.get_npc_by_name_or_id(target)
-            final_author = npc.name if npc else target
-        elif action in ["LOOK", "EXPLAIN"]:
-            step_2 = ExplainLookNarratorAction(target)
-            final_author = "Dungeon Master"
-
-        if step_2:
-            res_2 = self._run_step(step_2, player_input, dm)
-            if not res_2.success:
-                return self._create_debug_turn_output(author="SYSTEM", msg=res_2.message)
-            final_msg = res_2.message
-        else:
-            final_msg = f"Acción directa '{action}' no reconocida o no soportada."
-
-        # 3. Determinar si finalizó la conversación
-        info_msg = None
-        is_talking_now = self.game_state_controller.data.state.player_state.upper() == "TALK"
-        if was_talking and not is_talking_now:
-            info_msg = f"[INFO] Conversación finalizada con {target_npc_before}. Volviendo a exploración."
-
-        return self._create_debug_turn_output(msg=final_msg, author=final_author, info_msg=info_msg)
-
     def get_available_actions(self) -> dict:
         """
         Devuelve las acciones e interacciones válidas que la UI puede dibujar como botones.
@@ -357,7 +357,7 @@ class GameEngine:
             "gold": player.gold if player else 0,
             "current_location": place.name if place else "Desconocido",
             "formatted_time": self.get_formatted_time(),
-            "game_state": state.player_state.upper() if state else "EXPLORATION"
+            "game_state": state.player_state.upper() if state else "EXPLORE"
         }
 
 

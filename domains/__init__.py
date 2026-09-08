@@ -12,14 +12,7 @@ from domains.system.system_domains import (
     NPCProjection,
     PlaceProjection,
     TurnSummary,
-    ActionResponse,
-    ActionCtx,
-    NarrativeCtx,
-    NarrativeContext,
-    NarrativeResponse,
-    DialogueCtx,
-    DialogueContext,
-    DialogueResponse,
+    ActionCommand,
     MarkdownContext,
     MoveNarratorCtx,
     MoveNarratorResponse,
@@ -28,8 +21,6 @@ from domains.system.system_domains import (
     ExplainLookResponse,
     ExplainLookResult,
 )
-
-Action_ctx = ActionCtx
 
 __all__ = [
     "Entity",
@@ -52,15 +43,7 @@ __all__ = [
     "NPCProjection",
     "PlaceProjection",
     "TurnSummary",
-    "ActionResponse",
-    "ActionCtx",
-    "Action_ctx",
-    "NarrativeCtx",
-    "NarrativeContext",
-    "NarrativeResponse",
-    "DialogueCtx",
-    "DialogueContext",
-    "DialogueResponse",
+    "ActionCommand",
     "MarkdownContext",
     
     "LocationInfo",

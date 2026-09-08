@@ -34,6 +34,20 @@ class MoveNarratorAction(Behaviour[MoveNarratorCtx, MoveNarratorResponse]):
                 destination_place = game_state_controller.world_state.places_by_id[self.target]
             elif self.target in game_state_controller.world_state.places_by_name:
                 destination_place = game_state_controller.world_state.places_by_name[self.target]
+            else:
+                # Si el objetivo es un NPC, resolver el lugar donde se encuentra
+                for p in game_state_controller.world_state.places_by_id.values():
+                    if self.target in p.visible_entities:
+                        destination_place = p
+                        break
+                if not destination_place:
+                    for npc in game_state_controller.world_state.npcs.values():
+                        if npc.name == self.target or npc.id == self.target:
+                            for p in game_state_controller.world_state.places_by_id.values():
+                                if npc.id in p.visible_entities or npc.name in p.visible_entities:
+                                    destination_place = p
+                                    break
+                            break
 
         path_taken = []
         if origin_place and destination_place:
@@ -64,7 +78,22 @@ class MoveNarratorAction(Behaviour[MoveNarratorCtx, MoveNarratorResponse]):
         metadata: Optional[dict]
     ) -> None:
         if is_valid and self.target:
-            game_state_controller.update_location(self.target)
+            target_loc = self.target
+            # Si el target era un NPC, usar el nombre del lugar donde reside
+            if target_loc not in game_state_controller.world_state.places_by_name and target_loc not in game_state_controller.world_state.places_by_id:
+                for p in game_state_controller.world_state.places_by_id.values():
+                    if target_loc in p.visible_entities:
+                        target_loc = p.name
+                        break
+                else:
+                    for npc in game_state_controller.world_state.npcs.values():
+                        if npc.name == target_loc or npc.id == target_loc:
+                            for p in game_state_controller.world_state.places_by_id.values():
+                                if npc.id in p.visible_entities or npc.name in p.visible_entities:
+                                    target_loc = p.name
+                                    break
+                            break
+            game_state_controller.update_location(target_loc)
 
     def build_result(
         self,
@@ -80,3 +109,7 @@ class MoveNarratorAction(Behaviour[MoveNarratorCtx, MoveNarratorResponse]):
             message=llm_response.msg,
             data=metadata
         )
+
+
+# Alias semántico para el step de exploración
+ExplorationNarratorAction = MoveNarratorAction

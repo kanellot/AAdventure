@@ -6,8 +6,10 @@ from PySide6.QtCore import Qt
 
 from game_engine.engine import GameEngine
 from transformer_engine import DungeonMaster
+from domains import ActionCommand
 from game_debugger.views.chat_tab import ChatTab
 from game_debugger.views.inspector import GameStateInspector
+from game_debugger.views.entities_tab import EntitiesTreeWidget
 from game_debugger.worker import TurnWorker
 
 class GameDebuggerApp(QMainWindow):
@@ -41,6 +43,7 @@ class GameDebuggerApp(QMainWindow):
         # Pestaña 1: Juego
         self.chat_tab = ChatTab(self)
         self.chat_tab.send_input.connect(self.on_player_action)
+        self.chat_tab.send_action.connect(self.on_player_action_command)
         self.tab_widget.addTab(self.chat_tab, "Juego")
 
         # Pestaña 2: Prompt
@@ -74,10 +77,20 @@ class GameDebuggerApp(QMainWindow):
         self.tab_widget.addTab(self.result_edit, "Result")
 
         # -------------------------------------------------------------
-        # PANEL DERECHO: Inspector de estado en tiempo real
+        # PANEL DERECHO: Pestañas de Inspector (GameState y Entities)
         # -------------------------------------------------------------
+        self.right_tab_widget = QTabWidget()
+
+        # Pestaña 1: GameState
         self.inspector = GameStateInspector(self)
-        splitter.addWidget(self.inspector)
+        self.right_tab_widget.addTab(self.inspector, "GameState")
+
+        # Pestaña 2: Entities
+        self.entities_tab = EntitiesTreeWidget(self)
+        self.entities_tab.entity_selected.connect(self.on_entity_selected_from_tree)
+        self.right_tab_widget.addTab(self.entities_tab, "Entities")
+
+        splitter.addWidget(self.right_tab_widget)
 
         # Dimensionar el divisor (70% paneles de juego, 30% inspector)
         splitter.setSizes([750, 350])
@@ -89,11 +102,17 @@ class GameDebuggerApp(QMainWindow):
         """
         Carga el estado inicial del juego en la UI al arrancar.
         """
-        # Refrescar inspector con estado inicial
+        # Refrescar inspector y árbol de entidades con estado inicial
         self.refresh_inspector()
+        self.refresh_entities()
         
+        # Cargar entidades objetivo en el combo de la pestaña de chat y sincronizar estado
+        self.chat_tab.set_targets(self.engine.get_all_target_names())
+        current_state = self.engine.game_state_controller.data.state.player_state
+        self.chat_tab.set_game_state(current_state)
+
         # Mensaje de bienvenida
-        self.chat_tab.append_message("Dungeon Master", "La aventura ha sido cargada correctamente. Escribe tu primera acción para iniciar la narración.")
+        self.chat_tab.append_message("Dungeon Master", "La aventura ha sido cargada correctamente. Usa los botones MOVE o TALK para comenzar la depuración.")
         
         # Barra de estado inferior
         self.update_status_bar()
@@ -102,6 +121,17 @@ class GameDebuggerApp(QMainWindow):
         game_state = self.engine.game_state_controller.data
         formatted_time = self.engine.get_formatted_time()
         self.inspector.update_state(game_state, formatted_time)
+
+    def refresh_entities(self):
+        hierarchy = self.engine.get_world_entities_hierarchy()
+        self.entities_tab.update_entities(hierarchy)
+
+    def on_entity_selected_from_tree(self, entity_name: str):
+        """
+        Al seleccionar un place o NPC del árbol de entidades,
+        lo establece como objetivo en el dropdown de la UI.
+        """
+        self.chat_tab.target_combo.setCurrentText(entity_name)
 
     def update_status_bar(self):
         ui_state = self.engine.get_ui_state()
@@ -116,18 +146,29 @@ class GameDebuggerApp(QMainWindow):
 
     def on_player_action(self, player_input: str):
         """
-        Se ejecuta cuando el jugador envía una entrada a través del chat.
-        Inicia el hilo asíncrono para ejecutar el turno.
+        Se ejecuta cuando el jugador envía un mensaje de diálogo en estado TALK.
         """
-        # Desactivar inputs
+        target_npc = self.engine.game_state_controller.data.state.player_target or self.chat_tab.target_combo.currentText()
+        self.on_player_action_command(ActionCommand(action="TALK", target=target_npc), player_input)
+
+    def on_player_action_command(self, action_obj: ActionCommand, prompt_text: str):
+        """
+        Se ejecuta cuando el usuario pulsa un botón de acción directa (MOVE, TALK).
+        """
         self.chat_tab.set_input_enabled(False)
-        self.statusBar().showMessage("Procesando turno con el Dungeon Master (LLM)...")
+        self.statusBar().showMessage(f"Ejecutando acción {action_obj.action} sobre {action_obj.target}...")
 
-        # Log del input del jugador en el chat
-        self.chat_tab.append_message(self.engine.get_player_name(), player_input)
+        # Formatear el log del comando en el chat
+        if action_obj.action == "TALK" and prompt_text:
+            cmd_text = prompt_text
+        else:
+            cmd_text = f"[{action_obj.action} -> {action_obj.target}]"
+            if prompt_text:
+                cmd_text += f" \"{prompt_text}\""
+        self.chat_tab.append_message(self.engine.get_player_name(), cmd_text)
 
-        # Crear y arrancar QThread
-        self.worker = TurnWorker(self.engine, self.dm, player_input)
+        # Crear y arrancar QThread de 1 solo step pasando ActionCommand
+        self.worker = TurnWorker(self.engine, self.dm, action_obj, player_input=prompt_text)
         self.worker.finished_turn.connect(self.on_turn_finished)
         self.worker.start()
 
@@ -135,7 +176,11 @@ class GameDebuggerApp(QMainWindow):
         """
         Callback que recibe los resultados del QThread al finalizar la llamada al LLM.
         """
-        # Rehabilitar inputs
+        # Actualizar visibilidad y modo según el nuevo estado de juego
+        current_state = self.engine.game_state_controller.data.state.player_state
+        self.chat_tab.set_game_state(current_state)
+
+        # Rehabilitar inputs tras finalizar el turno
         self.chat_tab.set_input_enabled(True)
 
         # Agregar respuesta del Dungeon Master al chat
@@ -150,6 +195,7 @@ class GameDebuggerApp(QMainWindow):
         self.structured_response_edit.setPlainText(turn_output.debug_structured_response or "No disponible")
         self.result_edit.setPlainText(turn_output.debug_engine_result or "No disponible")
 
-        # Actualizar inspector y barra de estado
+        # Actualizar inspector, entidades y barra de estado
         self.refresh_inspector()
+        self.refresh_entities()
         self.update_status_bar()

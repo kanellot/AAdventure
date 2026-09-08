@@ -1,5 +1,7 @@
+from typing import Optional
 from PySide6.QtCore import QThread, Signal
 from game_engine.engine import GameEngine, TurnOutput
+from domains import ActionCommand
 from transformer_engine import DungeonMaster
 
 class TurnWorker(QThread):
@@ -10,16 +12,27 @@ class TurnWorker(QThread):
     """
     finished_turn = Signal(TurnOutput)
 
-    def __init__(self, game_engine: GameEngine, dm: DungeonMaster, player_input: str):
+    def __init__(
+        self, 
+        game_engine: GameEngine, 
+        dm: DungeonMaster, 
+        action_cmd: ActionCommand, 
+        player_input: str = ""
+    ):
         super().__init__()
         self.game_engine = game_engine
         self.dm = dm
+        self.action_cmd = action_cmd
         self.player_input = player_input
 
     def run(self):
         try:
-            # Ejecutar el turno usando el motor y LLM
-            turn_output = self.game_engine.execute_turn(self.player_input, self.dm)
+            # Ejecutar el turno de 1 solo paso usando el motor y LLM
+            turn_output = self.game_engine.execute_turn(
+                self.action_cmd, 
+                player_input=self.player_input, 
+                dm=self.dm
+            )
             self.finished_turn.emit(turn_output)
         except Exception as e:
             # Emitir un TurnOutput de error en caso de fallo
