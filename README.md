@@ -1,172 +1,129 @@
-# AAdventure: Plataforma de Aventuras Narrativas Interactivas
+# AAdventure: Plataforma de Aventuras Narrativas con Inteligencia Artificial
 
-AAdventure es una plataforma de juego de rol y aventuras conversacionales interactiva orientada a la ejecucion local. La arquitectura combina modelos de lenguaje (LLM/SLM), recuperacion aumentada por generacion semantica (RAG) y un motor determinista de reglas para ofrecer una experiencia narrativa inmersiva, consistente y desacoplada de la interfaz de usuario.
+AAdventure es una plataforma de juegos de rol y aventuras interactivas basada en texto. Su objetivo principal es ofrecer una experiencia similar a tener un director de juego (Dungeon Master) interactivo impulsado por Inteligencia Artificial que funciona de manera 100% local, sin necesidad de servidores externos ni suscripciones a servicios en la nube.
+
+El juego combina la libertad creativa de los modelos de lenguaje con la solidez de un motor de reglas tradicional: mientras la Inteligencia Artificial se encarga de narrar y dar vida a los personajes, el motor gestiona el mapa, las distancias, el paso del tiempo, el inventario y las relaciones entre personajes.
 
 ---
 
-## 1. Alcance del Proyecto (Scope)
+## 1. Modulos del Proyecto
 
-El ecosistema de AAdventure se estructura en cuatro modulos principales, cada uno con una responsabilidad definida:
+El proyecto se divide en cuatro areas principales pensadas para cubrir todo el ciclo de vida de una aventura:
 
-### Editor (`editor`)
-Herramienta visual de escritorio dirigida a disenadores de contenido y creadores de mundos. Su alcance comprende:
-- Diseno y estructuracion jerarquica del mundo (regiones, localizaciones y lugares).
-- Configuracion espacial de salidas, distancias y tipos de terreno.
-- Definicion de Personajes No Jugadores (NPCs), incluyendo ocupacion, estado, inventario, servicios, afinidad base y motivaciones (preferencias y aversiones).
-- Diseno de bloques de conocimiento dinamico (`LoreBlock`), directivas de comportamiento y antenas semanticas (frases gatillo para activacion contextual).
-- Empaquetado de aventuras en archivos autocontenidos (`.aad`).
+### Editor de Historias (`editor`)
+Una herramienta visual para crear mundos, historias y personajes sin necesidad de tocar codigo o archivos de datos a mano:
+- Creacion de mapas con regiones, ciudades y lugares detallados.
+- Conexion de caminos indicando distancias y dificultades del terreno.
+- Creacion de personajes no jugadores (NPCs) con personalidad, ocupacion, afinidad inicial y lo que les gusta o disgusta.
+- Definicion de eventos de historia y secretos que se activan solo bajo ciertas situaciones.
+- Empaquetado de la aventura completa en un unico archivo facil de compartir (`.aad`).
 
-### Motores (`engines`)
-El nucleo computacional del proyecto. Implementa toda la logica de negocio, ejecucion de acciones, gestion de estado, procesamiento semantico e inferencia de modelos:
-- Gestion del estado del mundo (`GameStateController` y `WorldState`).
-- Logica espacial y sistema de percepcion con niebla de guerra (`FogWar`).
-- Canalizaciones estandarizadas de acciones de juego (`MoveAction`, `LookAction`, `DialogueAction`).
-- Enrutamiento semantico reactivo y proactivo mediante embeddings vectoriales (`LoreRouter`).
-- Orquestacion y comunicacion con modelos de lenguaje (`TransformerEngine`).
-- Exposicion de una interfaz unificada mediante objetos de transferencia de datos inmutables (`domains/projections.py`).
+### Motor de Juego (`engines`)
+Es el cerebro central que controla todo lo que ocurre durante la partida:
+- Aplica las reglas del mundo: calcula el tiempo que tardas en viajar, gestiona el oro y actualiza el estado de las misiones.
+- Sistema de niebla de exploracion: el jugador solo conoce los lugares que ha explorado o que tiene a la vista, y los personajes permanecen ocultos hasta que se visita su ubicacion.
+- Memoria y activacion de secretos (RAG): analiza lo que dice o hace el jugador y, si menciona un tema relevante, recupera la informacion secreta adecuada para que el narrador la use en su respuesta.
+- Conexion con la Inteligencia Artificial: envia el contexto del turno al modelo de lenguaje local y procesa su respuesta de forma segura.
+- Arquitectura desacoplada: el motor no depende de ninguna interfaz grafica, lo que permite que sea utilizado tanto por el depurador de escritorio como por una futura aplicacion movil.
 
 ### Depurador de Juego (`game_debugger`)
-Entorno integral de pruebas e inspeccion visual para desarrolladores:
-- Permite jugar la aventura en modo conversacional con entrada de comandos directos.
-- Proporciona transparencia absoluta sobre las decisiones del motor: evaluacion de antenas RAG, descomposicion de prompts, respuestas crudas y estructuradas de los modelos, e inspeccion exhaustiva del estado en tiempo real.
-- Facilita la calibracion fina de umbrales de similitud, directivas de lore y dinamicas de afinidad.
+Una aplicacion grafica de escritorio pensada para probar, calibrar y disfrutar de las aventuras durante su desarrollo:
+- Permite jugar la partida escribiendo mensajes o usando botones de accion directa (Moverse, Mirar, Hablar).
+- Muestra en tiempo real como piensa el motor: que secretos se activaron con tu frase, que instrucciones se enviaron a la IA y como cambio el estado del mundo tras tu accion.
+- Ofrece mapas de exploracion y fichas del estado actual del jugador y los personajes.
 
-### Futuro Cliente Android para Uso Local
-Cliente movil nativo disenado especificamente para jugadores finales:
-- Ejecucion completamente local (on-device) sin conexion obligatoria a servidores externos.
-- Integracion con modelos de lenguaje pequenos cuantizados (SLM en formatos optimizados para hardware movil como NPU/GPU).
-- Inferencia vectorial local para el evaluador de antenas semanticas.
-- Interfaz conversacional optimizada para dispositivos tactiles, consumiendo de forma estricta las proyecciones DTO provistas por el motor.
-
----
-
-## 2. Filosofia y Arquitectura de `engines`
-
-La arquitectura del motor se basa en tres principios de diseno fundamentales: determinismo de estado, desacoplamiento estricto y abstraccion del modelo de lenguaje.
-
-### Desacoplamiento via Proyecciones DTO
-El motor no expone sus estructuras de datos internas directamente a las capas superiores. La comunicacion entre el motor y cualquier cliente (sea el depurador de escritorio o el futuro cliente movil) se realiza a traves de una fachada oficial (`GameEngine`) y contratos inmutables tipados con Pydantic (`domains/projections.py`):
-- `WorldHierarchyProjection`: Jerarquia espacial filtrada segun las reglas de visibilidad.
-- `GameStateProjection`: Instantanea completa para herramientas de inspeccion y persistencia.
-- `UIStateProjection`: Informacion sintetizada requerida por la barra de estado o interfaz de usuario.
-- `TurnResultProjection`: Resultado consolidado de cada turno de juego, encapsulando mensaje narrativo, mutaciones del motor y telemetria de evaluacion semantica.
-
-### Submotores Especializados
-
-```text
-               +-------------------------------------------------------+
-               |                  GameEngine (Facade)                  |
-               +-------------------------------------------------------+
-                                  |                 |
-        +-------------------------+                 +-------------------------+
-        |                                                                     |
-        v                                                                     v
-+-----------------------+                                           +--------------------+
-|  GameStateController  |                                           | TransformerEngine  |
-|  - WorldState         |                                           | - Adaptadores LLM  |
-|  - FogWar (Percepcion)|                                           | - Esquemas Pydantic|
-|  - Reglas de Accion   |                                           | - Validacion JSON  |
-+-----------------------+                                           +--------------------+
-        |                                                                     |
-        +-------------------------+                 +-------------------------+
-                                  |                 |
-                                  v                 v
-               +-------------------------------------------------------+
-               |              EmbeddingEngine / LoreRouter             |
-               |              - Evaluacion de Antenas                  |
-               |              - Similitud Coseno de Prompts            |
-               |              - Inyeccion de Directivas Dinamicas      |
-               +-------------------------------------------------------+
-```
-
-1. **`GameEngine` (Fachada Oficial)**:
-   Punto de entrada unico para clientes. Centraliza la ejecucion de turnos mediante el metodo `execute_turn(action, target, player_input, dm)` y devuelve exclusivamente objetos DTO.
-
-2. **`GameStateController` y `FogWar`**:
-   Mantiene el estado persistente y volatil. Implementa el algoritmo de niebla de guerra donde las localizaciones y lugares transicionan entre estados (`hidden`, `visible`, `visited`). Los personajes (NPCs) unicamente son perceptibles cuando el jugador ha visitado fisicamente el lugar que habitan.
-
-3. **`LoreRouter` y Evaluacion de Antenas Semanticas**:
-   Mecanismo RAG ligero que analiza la intencion del prompt del jugador comparandolo contra las antenas (frases gatillo) de cada bloque de lore candidato utilizando distancias de similitud coseno. Cuando se supera el umbral requerido y las precondiciones de estado se satisfacen, la directiva del bloque de lore se inyecta de forma precisa en el contexto de narracion correspondiente.
-
-4. **Canalizacion de Acciones (`BaseAction`)**:
-   Cada accion ejecutable (`MOVE`, `LOOK`, `TALK`) sigue un ciclo de vida estandarizado en cinco fases:
-   - `build_context`: Reune las entidades y evalua directivas de lore aplicables.
-   - `build_prompt`: Formatea el contexto y las reglas mediante el formateador de plantillas.
-   - `validate`: Comprueba la consistencia de la salida estructurada devuelta por el modelo.
-   - `mutate`: Aplica los efectos colaterales al estado del juego (desplazamiento, paso del tiempo, variacion de afinidad, activacion de efectos de lore).
-   - `build_result`: Genera el resultado final que sera entregado a la fachada.
+### Futura Aplicacion Android (Uso Local)
+El destino natural del proyecto para los jugadores finales:
+- Una aplicacion para telefonos moviles disenada para jugar sin conexion a internet.
+- Utiliza modelos de inteligencia artificial optimizados para ejecutarse directamente en el chip del dispositivo movil.
+- Interfaz conversacional adaptada a pantallas tactiles que aprovecha la independencia del motor de juego para ofrecer la misma experiencia que en el ordenador.
 
 ---
 
-## 3. Game Debugger (`game_debugger`)
+## 2. Filosofia: Como Funciona el Juego
 
-El depurador grafico es una estacion de trabajo desarrollada en PySide6 disenada para validar la coherencia narrativa y operativa de las aventuras.
+Muchos juegos basados en inteligencia artificial sufren de inconsistencias o inventan datos que rompen la historia (alucinaciones). AAdventure resuelve este problema dividiendo el trabajo de forma clara:
 
-### Panel Izquierdo (Vistas de Juego y Ejecucion)
-- **Pestana Juego**: Interfaz de chat estilizada donde transcurre la aventura. Incluye botones de comando directo (`MOVE`, `LOOK`, `TALK`), selector de entidades objetivo, caja de entrada interactiva y una insignia dinamica que refleja el nivel de afinidad (`affinity`) y porcentaje de relacion con el NPC activo durante el estado de conversacion.
-- **Pestana RAG**: Visualizador analitico del sistema semantico. Agrupa las antenas evaluadas por cada `LoreBlock`, mostrando el umbral de corte, la puntuacion coseno obtenida por cada frase candidata, el cumplimiento de condiciones y la directiva inyectada destacada. Oculta automaticamente el panel lateral para maximizar el area de lectura.
-- **Pestana Prompt**: Despliega el texto exacto y completo enviado al modelo de lenguaje en el turno en curso, incluyendo reglas del sistema y contexto formateado.
-- **Pestana Result**: Muestra el desglose del turno: narracion emitida, autor (Dungeon Master o NPC), variaciones numericas de estado (oro, tiempo, afinidad), JSON estructurado validado y respuesta cruda del modelo.
+1. **El motor manda sobre las reglas**:
+   Si intentas viajar a un lugar que esta a 5 kilometros, el motor calcula el tiempo real que tardas caminando, comprueba si el camino esta despejado y te traslada al destino. La IA no decide si puedes o no viajar; solo se encarga de narrar tu viaje de forma inmersiva con los datos que le proporciona el motor.
 
-### Panel Derecho (Inspeccion y Percepcion)
-- **Pestana Navigation**: Arbol de percepcion del jugador dictado por la niebla de guerra. Presenta los lugares visitados y colindantes, asi como los NPCs descubiertos. Al hacer clic sobre cualquier elemento, este se asigna automaticamente como objetivo en el selector de acciones.
-- **Pestana Entities**: Vista estructural completa del mundo para diagnostico (sin niebla de guerra), permitiendo revisar todas las localizaciones, lugares y entidades disponibles.
-- **Pestana Game State**: Inspector detallado en tiempo real que desglosa los parametros de runtime, ficha del jugador, lugar actual, conexiones salientes y el estado de la conversacion activa con su nivel de afinidad.
+2. **Memoria selectiva mediante antenas**:
+   Para evitar saturar a la IA con todo el texto de la historia a la vez, cada evento o secreto tiene asociadas varias frases de activacion ("antenas"). Si el jugador escribe algo parecido a esa intencion (por ejemplo, preguntar por un rumor o un objeto perdido), el sistema detecta la coincidencia semantica y le entrega a la IA exactamente la informacion que necesita para ese turno.
 
-### Capturas de Pantalla
-![Interfaz Principal del Editor de Aventuras](Docs/screenshot.17.jpg)
-![Diseno de Bloques de Lore y Antenas Semanticas](Docs/screenshot.18.jpg)
-![Prompt](Docs/screenshot.19.jpg)
+3. **Relacion viva con los personajes**:
+   Los personajes tienen un nivel de afinidad que cambia segun como los trates. Si hablas de temas que les gustan o cumples sus peticiones, su afinidad aumentara y desbloquearan nuevos servicios o informacion. Si eres hostil, su trato cambiara.
+
+4. **Separacion total entre motor y pantalla**:
+   Toda la informacion que la pantalla necesita (mapa visible, oro, tiempo, estado del personaje) se entrega en paquetes de datos cerrados y seguros. De este modo, la interfaz grafica solo se encarga de pintar bonito lo que el motor decide, facilitando crear interfaces nuevas (como la app de Android) sin tocar una sola linea de las reglas.
 
 ---
 
-## 4. Editor de Aventuras (`editor`)
+## 3. El Depurador de Juego (`game_debugger`)
 
-El editor visual permite disenar mundos completos de juego sin necesidad de editar manualmente archivos de datos JSON:
+El depurador te permite vivir la aventura y ver simultaneamente los engranajes internos del juego. Se organiza en dos columnas principales:
 
-- **Gestion Geografica y de Entornos**: Creacion de localizaciones maestras y lugares especificos con descripciones inmersivas.
-- **Topologia de Conexiones**: Configuracion de rutas cardinales o direccionales entre lugares, asociando distancias fisicas en metros y penalizaciones por tipo de terreno.
-- **Configuracion de NPCs**: Definicion de parametros de personalidad, ocupacion, dialogos iniciales, inventarios, servicios comerciables, afinidad base y listas de motivaciones (`likes` y `dislikes`).
-- **Editor de Lore y Antenas**: Diseno de bloques de narrativa reactiva y proactiva. Permite especificar las frases clave que activaran eventos semanticos durante el juego y los efectos asociados (mutacion de inventario, misiones o afinidad).
-- **Compilador `.aad`**: Herramienta de empaquetado que consolida todos los recursos (mundo, personajes, configuracion y plantillas) en un unico archivo de distribucion.
+### Panel de Juego y Control (Columna Izquierda)
+- **Pestana Juego**: Es la sala de juego principal. Contiene el historial de conversacion en estilo pergamino, botones para acciones directas (MOVE para viajar, LOOK para inspeccionar detalles y TALK para conversar), un selector de objetivos y una insignia que te muestra el nivel de afinidad actual con el personaje con el que estas hablando.
+- **Pestana RAG**: Muestra que secretos o eventos escucho el sistema tras tu mensaje, que puntuacion de coincidencia obtuvo cada frase y cual fue la instruccion inyectada al narrador.
+- **Pestana Prompt**: Te permite inspeccionar el texto exacto que se le envio a la inteligencia artificial en ese turno, incluyendo la ambientacion y las reglas de conducta.
+- **Pestana Result**: Desglosa la respuesta devuelta: la narracion en si, los cambios en el juego (si ganaste oro o si cambio la afinidad) y los datos tecnicos devueltos por el modelo.
+
+### Panel de Mapa e Inspeccion (Columna Derecha)
+- **Pestana Navigation**: Muestra el mapa desde la perspectiva del jugador con niebla de exploracion. Los lugares visitados y los personajes que ya conoces aparecen en azul, mientras que los caminos colindantes aun sin explorar se muestran accesibles para moverte a ellos. Al pulsar sobre cualquier lugar o personaje, se selecciona automaticamente como objetivo.
+- **Pestana Entities**: Muestra el mapa completo sin niebla para que el creador pueda comprobar todas las zonas del mundo.
+- **Pestana Game State**: Muestra en tiempo real la ficha completa del personaje: oro, inventario, misiones activas, lugar donde se encuentra y el estado de la conversacion activa.
 
 ---
 
-## 5. Requisitos y Puesta en Marcha
+## 4. El Editor de Historias (`editor`)
 
-### Requisitos Previos
-- Python 3.10 o superior.
-- Dependencias indicadas en `requirements.txt` (incluyendo `pydantic`, `PySide6`, `sentence-transformers` u adaptadores locales correspondientes).
+El editor permite construir mundos interactivos a traves de una interfaz grafica intuitiva:
 
-### Instalacion
-```bash
-python -m venv .venv
-# En Windows:
-.venv\Scripts\activate
-# En Linux/macOS:
-source .venv/bin/activate
+- **Ciudades y Lugares**: Define el nombre y la descripcion que recibira el jugador al llegar.
+- **Caminos y Conexiones**: Conecta lugares indicando la direccion (Norte, Sur, etc.), la distancia en metros y si se trata de un camino de tierra, bosque o sendero pedregoso.
+- **Personajes**: Dales un nombre, descripcion, ocupacion, productos o servicios y define sus motivaciones para que la IA sepa que cosas le agradan o le molestan durante la conversacion.
+- **Bloques de Lore y Secretos**: Anade eventos de historia, directivas de comportamiento y frases gatillo que la IA recordara cuando el jugador toque esos temas.
+- **Compilacion**: Guarda tu aventura en un unico paquete `.aad` listo para abrir y jugar.
 
-pip install -r requirements.txt
-```
+---
 
-### Ejecucion
+## 5. Capturas de Pantalla
 
-- **Iniciar el Depurador de Juego (Game Debugger)**:
+A continuacion se muestran algunas pantallas del entorno de desarrollo y juego:
+
+#### Editor de Aventuras: Gestion de Lugares y Mundo
+![Editor de Aventuras](Docs/screenshot.17.jpg)
+
+#### Diseno de Historia y Reglas
+![Diseno de Historia](Docs/screenshot.18.jpg)
+
+#### Vista de Prompt e Inspeccion de Inteligencia Artificial
+![Inspeccion de Prompt](Docs/screenshot.19.jpg)
+
+---
+
+## 6. Estado del Proyecto (WIP)
+
+Este proyecto se encuentra actualmente en fase activa de desarrollo (Work In Progress).
+
+Aspectos importantes a tener en cuenta:
+- Los archivos con los datos de las aventuras (mundos, personajes, mapas y misiones) no estan incluidos en el repositorio.
+- Las herramientas de autor y el motor de juego continuan evolucionando y refinandose activamente.
+- El repositorio se enfoca en el codigo del nucleo del motor, el depurador visual y el editor de contenido.
+
+### Comandos de Ejecucion (Entorno de Desarrollo)
+
+- Iniciar el depurador visual de juego:
   ```bash
   python main.py --play-debug
   ```
 
-- **Iniciar el Editor de Aventuras**:
+- Iniciar el editor de aventuras:
   ```bash
   python main.py --editor
   ```
 
-- **Ejecucion en Consola / CLI**:
+- Ejecutar en modo consola:
   ```bash
   python main.py
-  ```
-
-- **Empaquetar Aventura a formato `.aad`**:
-  ```bash
-  python adventure_packager.py
   ```
