@@ -114,15 +114,9 @@ El depurador grafico es una estacion de trabajo desarrollada en PySide6 disenada
 - **Pestana Game State**: Inspector detallado en tiempo real que desglosa los parametros de runtime, ficha del jugador, lugar actual, conexiones salientes y el estado de la conversacion activa con su nivel de afinidad.
 
 ### Capturas de Pantalla
-
-[Captura de pantalla: Vista principal de Juego y Barra de Acciones]
-<!-- Enlazar imagen aqui: docs/images/debugger_chat.png -->
-
-[Captura de pantalla: Evaluacion RAG de Antenas agrupadas por LoreBlock]
-<!-- Enlazar imagen aqui: docs/images/debugger_rag.png -->
-
-[Captura de pantalla: Inspector de Game State y Percepcion]
-<!-- Enlazar imagen aqui: docs/images/debugger_state.png -->
+![Interfaz Principal del Editor de Aventuras](Docs/screenshot.17.jpg)
+![Diseno de Bloques de Lore y Antenas Semanticas](Docs/screenshot.18.jpg)
+![Prompt](Docs/screenshot.19.jpg)
 
 ---
 
@@ -135,11 +129,6 @@ El editor visual permite disenar mundos completos de juego sin necesidad de edit
 - **Configuracion de NPCs**: Definicion de parametros de personalidad, ocupacion, dialogos iniciales, inventarios, servicios comerciables, afinidad base y listas de motivaciones (`likes` y `dislikes`).
 - **Editor de Lore y Antenas**: Diseno de bloques de narrativa reactiva y proactiva. Permite especificar las frases clave que activaran eventos semanticos durante el juego y los efectos asociados (mutacion de inventario, misiones o afinidad).
 - **Compilador `.aad`**: Herramienta de empaquetado que consolida todos los recursos (mundo, personajes, configuracion y plantillas) en un unico archivo de distribucion.
-
-### Capturas de Pantalla
-![Interfaz Principal del Editor de Aventuras](Docs/screenshot.17.jpg)
-![Diseno de Bloques de Lore y Antenas Semanticas](Docs/screenshot.18.jpg)
-![Prompt](Docs/screenshot.19.jpg)
 
 ---
 
