@@ -1,26 +1,26 @@
+"""Exportación de modelos de dominio para AAdventure."""
+
 from domains.base import Entity
-from domains.world import World, Location, Place, LocationInfo, PlaceInfo, Connection
-from domains.player import Player
-from domains.npcs import NPC, Service, NPCMotivations, LoreBlock, NPCInfo
 from domains.conversation import ConversationRecord
+from domains.lore import LoreBlock, LoreConditions, LoreEffects
+from domains.npcs import NPC, NPCInfo, NPCMotivations, Service
+from domains.player import Player
 from domains.system.system_domains import (
-    ContextType,
-    ResponseType,
-    ResultType,
-    GameState,
-    RuntimeState,
-    NPCProjection,
-    PlaceProjection,
-    TurnSummary,
     ActionCommand,
-    MarkdownContext,
-    MoveNarratorCtx,
-    MoveNarratorResponse,
-    MoveNarratorResult,
+    ContextType,
     ExplainLookNarratorCtx,
     ExplainLookResponse,
     ExplainLookResult,
+    GameState,
+    MoveNarratorCtx,
+    MoveNarratorResponse,
+    MoveNarratorResult,
+    PlaceProjection,
+    ResponseType,
+    ResultType,
+    RuntimeState,
 )
+from domains.world import Connection, Location, LocationInfo, Place, PlaceInfo, World
 
 __all__ = [
     "Entity",
@@ -33,23 +33,19 @@ __all__ = [
     "Service",
     "NPCMotivations",
     "LoreBlock",
+    "LoreConditions",
+    "LoreEffects",
     "ConversationRecord",
     "ContextType",
     "ResponseType",
     "ResultType",
     "GameState",
     "RuntimeState",
-
-    "NPCProjection",
     "PlaceProjection",
-    "TurnSummary",
     "ActionCommand",
-    "MarkdownContext",
-    
     "LocationInfo",
     "PlaceInfo",
     "NPCInfo",
-
     "MoveNarratorCtx",
     "MoveNarratorResponse",
     "MoveNarratorResult",

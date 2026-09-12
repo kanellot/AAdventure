@@ -56,6 +56,12 @@ class NPCForm(QWidget):
 
         self.tab_widget.addTab(self.tab_motivations, "Motivaciones")
 
+        # Pestaña 3: Lore Dinámico y Diálogo
+        from editor.views.lore_widget import LoreBlockTableWidget
+        self.lore_widget = LoreBlockTableWidget()
+        self.lore_widget.lore_changed.connect(self.on_lore_changed)
+        self.tab_widget.addTab(self.lore_widget, "Lore y Diálogo")
+
     def set_npc(self, npc: NPC):
         self.npc = npc
         if npc:
@@ -72,6 +78,13 @@ class NPCForm(QWidget):
             else:
                 self.likes_edit.clear()
                 self.dislikes_edit.clear()
+
+            # Lore Dinámico
+            self.lore_widget.set_lore_blocks(npc.dynamic_lore)
+
+    def on_lore_changed(self):
+        if self.npc:
+            self.npc.dynamic_lore = self.lore_widget.get_lore_blocks()
 
     def on_name_changed(self, text: str):
         if self.npc:

@@ -26,13 +26,18 @@ class ChatTab(QWidget):
         self.chat_browser.setOpenExternalLinks(True)
         layout.addWidget(self.chat_browser)
 
-        # 2. Barra de acciones directas (MOVE, TALK + Target Dropdown)
+        # 2. Barra de acciones directas (MOVE, LOOK, TALK + Target Dropdown)
         action_layout = QHBoxLayout()
         
         self.btn_move = QPushButton("MOVE")
         self.btn_move.setStyleSheet("font-weight: bold; padding: 6px 12px;")
         self.btn_move.clicked.connect(lambda: self.on_action_btn_clicked("MOVE"))
         action_layout.addWidget(self.btn_move)
+
+        self.btn_look = QPushButton("LOOK")
+        self.btn_look.setStyleSheet("font-weight: bold; padding: 6px 12px;")
+        self.btn_look.clicked.connect(lambda: self.on_action_btn_clicked("LOOK"))
+        action_layout.addWidget(self.btn_look)
 
         self.btn_talk = QPushButton("TALK")
         self.btn_talk.setStyleSheet("font-weight: bold; padding: 6px 12px;")
@@ -50,12 +55,12 @@ class ChatTab(QWidget):
         input_layout = QHBoxLayout()
         self.input_edit = QLineEdit()
         self.input_edit.setEnabled(False)
-        self.input_edit.setPlaceholderText("Selecciona objetivo y pulsa un botón de acción (MOVE, TALK)...")
+        self.input_edit.setPlaceholderText("Selecciona objetivo y pulsa un botón de acción (MOVE, LOOK, TALK)...")
         self.input_edit.returnPressed.connect(self.on_return_pressed)
         
         self.send_btn = QPushButton("Enviar")
         self.send_btn.clicked.connect(self.on_send)
-        # Oculto y deshabilitado inicialmente (solo visible en estado TALK)
+        # Oculto y deshabilitado inicialmente (solo visible en estado TALK o LOOK)
         self.send_btn.setVisible(False)
         self.send_btn.setEnabled(False)
 
@@ -76,21 +81,24 @@ class ChatTab(QWidget):
 
     def set_game_state(self, state: str):
         """
-        Actualiza la interfaz según el estado de juego (EXPLORE o TALK).
-        Habilita el textbox y botón Enviar únicamente si estamos en TALK.
+        Actualiza la interfaz según el estado de juego (EXPLORE, TALK o LOOK).
+        Habilita el textbox y botón Enviar si estamos en TALK o LOOK.
         """
         self.current_game_state = state.upper()
-        is_talk = (self.current_game_state == "TALK")
-        self.send_btn.setVisible(is_talk)
-        self.send_btn.setEnabled(is_talk)
-        self.input_edit.setEnabled(is_talk)
+        is_interactive = (self.current_game_state in ["TALK", "LOOK"])
+        self.send_btn.setVisible(is_interactive)
+        self.send_btn.setEnabled(is_interactive)
+        self.input_edit.setEnabled(is_interactive)
 
-        if is_talk:
+        if self.current_game_state == "TALK":
             self.input_edit.setPlaceholderText("Escribe tu respuesta o frase para el NPC...")
+            self.input_edit.setFocus()
+        elif self.current_game_state == "LOOK":
+            self.input_edit.setPlaceholderText("Especifica qué miras o examinas en detalle (ej: 'mirar debajo de la mesa')...")
             self.input_edit.setFocus()
         else:
             self.input_edit.clear()
-            self.input_edit.setPlaceholderText("Selecciona objetivo y pulsa un botón de acción (MOVE, TALK)...")
+            self.input_edit.setPlaceholderText("Selecciona objetivo y pulsa un botón de acción (MOVE, LOOK, TALK)...")
 
     def append_message(self, author: str, text: str):
         """
@@ -127,14 +135,14 @@ class ChatTab(QWidget):
     def on_return_pressed(self):
         """
         Maneja la pulsación de la tecla Enter en el cuadro de texto.
-        Solo envía mensaje si estamos en estado TALK.
+        Envía mensaje si estamos en estado TALK o LOOK.
         """
-        if self.current_game_state == "TALK":
+        if self.current_game_state in ["TALK", "LOOK"]:
             self.on_send()
 
     def on_send(self):
         """
-        Envía el texto del diálogo actual en estado TALK.
+        Envía el texto de la interacción en estado TALK o LOOK.
         """
         text = self.input_edit.text().strip()
         if text:
@@ -143,11 +151,12 @@ class ChatTab(QWidget):
 
     def set_input_enabled(self, enabled: bool):
         self.btn_move.setEnabled(enabled)
+        self.btn_look.setEnabled(enabled)
         self.btn_talk.setEnabled(enabled)
         self.target_combo.setEnabled(enabled)
 
-        is_talk = (self.current_game_state == "TALK")
-        self.input_edit.setEnabled(enabled and is_talk)
-        self.send_btn.setEnabled(enabled and is_talk)
-        if enabled and is_talk:
+        is_interactive = (self.current_game_state in ["TALK", "LOOK"])
+        self.input_edit.setEnabled(enabled and is_interactive)
+        self.send_btn.setEnabled(enabled and is_interactive)
+        if enabled and is_interactive:
             self.input_edit.setFocus()

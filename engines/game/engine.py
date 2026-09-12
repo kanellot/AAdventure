@@ -1,16 +1,20 @@
+"""Motor principal de juego (Fachada) que coordina acciones, estado y reglas."""
+
 import os
-from typing import Optional, List, Union
-from pydantic import BaseModel, Field
-from game_engine.state import WorldState, GameStateController
-from domains import NPC, ResultType, Place, ActionCommand
-from transformer_engine import DungeonMaster
+import shutil
+from typing import List, Optional, Union
+from pydantic import BaseModel
 from adventure_packager import AdventurePackager
-from game_engine.actions import (
-    Behaviour, MoveNarratorAction, ExplainLookNarratorAction, DialogueNarratorAction
-)
+from domains import ActionCommand, NPC, Place, ResultType
+from engines.game.actions import BaseAction, DialogueAction, LookAction, MoveAction
+from engines.game.state_controller import GameStateController, WorldState
+from engines.game.utils import TimeCalculator
+from engines.transformer import TransformerEngine
+
 
 class TurnOutput(BaseModel):
-    """Representa la respuesta unificada de un turno de juego para la interfaz."""
+    """Respuesta unificada de un turno de juego para la interfaz de usuario."""
+
     msg: str
     author: str
     info_msg: Optional[str] = None
@@ -21,13 +25,17 @@ class TurnOutput(BaseModel):
 
 
 class GameEngine:
-    """Clase orquestadora principal (Fachada) que coordina las reglas, mutaciones y contextos del juego."""
+    """Coordinador y fachada principal del motor de juego."""
 
-    def __init__(self, world_json_path: str, npcs_json_path: Optional[str] = None, player_json_path: Optional[str] = None):
-        self.temp_dir = None
-        self.turn_debug_steps = []
-        
-        # Si es un archivo de aventura .aad, lo desempaquetamos
+    def __init__(
+        self,
+        world_json_path: str,
+        npcs_json_path: Optional[str] = None,
+        player_json_path: Optional[str] = None,
+    ):
+        self.temp_dir: Optional[str] = None
+        self.turn_debug_steps: List[dict] = []
+
         if world_json_path.lower().endswith(".aad"):
             self.temp_dir = AdventurePackager.unpack_to_temp(world_json_path)
             world_path = os.path.join(self.temp_dir, "world.json")
@@ -38,20 +46,17 @@ class GameEngine:
             npcs_path = npcs_json_path
             player_path = player_json_path
 
-        # 1. Cargar el estado inicial del mundo
         self.world_state = WorldState(world_path, npcs_path, player_path)
-        
-        # 2. Inicializar la proyección del GameState
         self.game_state_controller = GameStateController.create_from_world(self.world_state)
+        self.fog_war = self.game_state_controller.fog_war
 
-    def __del__(self):
+    def __del__(self) -> None:
         self.cleanup()
 
-    def cleanup(self):
-        """Limpia el directorio temporal si se creó uno."""
+    def cleanup(self) -> None:
+        """Limpia el directorio temporal si se extrajo un paquete .aad."""
         if hasattr(self, "temp_dir") and self.temp_dir and os.path.exists(self.temp_dir):
             try:
-                import shutil
                 shutil.rmtree(self.temp_dir)
             except Exception:
                 pass
@@ -61,7 +66,7 @@ class GameEngine:
         """Busca un NPC por su ID o su nombre en el estado del mundo."""
         if target in self.world_state.npcs:
             return self.world_state.npcs[target]
-        elif target in self.world_state.npcs_by_name:
+        if target in self.world_state.npcs_by_name:
             return self.world_state.npcs_by_name[target]
         return None
 
@@ -75,8 +80,8 @@ class GameEngine:
                 return place
         return None
 
-    def change_npc_affinity(self, npc_name_or_id: str, delta: float):
-        """Modifica externamente la afinidad de un NPC."""
+    def change_npc_affinity(self, npc_name_or_id: str, delta: float) -> None:
+        """Modifica la afinidad de un NPC."""
         npc = self.get_npc_by_name_or_id(npc_name_or_id)
         if npc:
             npc.affinity = round(max(0.0, min(1.0, npc.affinity + delta)), 4)
@@ -92,23 +97,30 @@ class GameEngine:
 
     def get_formatted_time(self) -> str:
         """Devuelve el tiempo transcurrido formateado en 'Día X, HH:MM'."""
-        elapsed = self.game_state_controller.data.state.elapsed_time
-        days = elapsed // 1440
-        hours = (elapsed // 60) % 24
-        minutes = elapsed % 60
-        return f"Día {days}, {hours:02d}:{minutes:02d}"
+        return TimeCalculator.format_elapsed_time(self.game_state_controller.data.state.elapsed_time)
 
     def get_all_target_names(self) -> List[str]:
-        """Devuelve una lista ordenada con los nombres de todos los lugares y NPCs del mundo."""
+        """Devuelve una lista ordenada con los nombres de todos los lugares y NPCs."""
         place_names = sorted(list(self.world_state.places_by_name.keys()))
         npc_names = sorted(list(self.world_state.npcs_by_name.keys()))
         return place_names + npc_names
 
-    def get_world_entities_hierarchy(self) -> List[dict]:
+    def get_discovered_target_names(self) -> List[str]:
+        """Devuelve una lista ordenada con los nombres de lugares y NPCs descubiertos (según la niebla de guerra)."""
+        if hasattr(self, "fog_war") and self.fog_war:
+            places = self.fog_war.get_all_discovered_places()
+            npcs = self.fog_war.get_visible_npcs()
+            return sorted(places + npcs)
+        return self.get_all_target_names()
+
+    def get_world_entities_hierarchy(self, use_fog_of_war: bool = True) -> List[dict]:
         """
-        Devuelve una estructura jerárquica de las localizaciones, sus lugares (solo nombre)
-        y todos los NPCs presentes en cada localización (solo nombre).
+        Devuelve una estructura jerárquica de localizaciones, lugares y NPCs.
+        Si use_fog_of_war es True, delega en self.fog_war para aplicar la niebla de guerra.
         """
+        if use_fog_of_war and hasattr(self, "fog_war") and self.fog_war:
+            return self.fog_war.get_entities_hierarchy(self.world_state.world, self.world_state.npcs)
+
         hierarchy = []
         if not self.world_state or not self.world_state.world:
             return hierarchy
@@ -133,10 +145,9 @@ class GameEngine:
             hierarchy.append({
                 "location_name": loc.name,
                 "places": sorted(places_list),
-                "npcs": sorted(npcs_in_loc)
+                "npcs": sorted(npcs_in_loc),
             })
 
-        # Comprobar si hay NPCs no asignados directamente a lugares conocidos
         remaining_npcs = []
         for npc_id, npc in self.world_state.npcs.items():
             if npc_id not in all_npcs_accounted and npc.name not in all_npcs_accounted:
@@ -148,27 +159,27 @@ class GameEngine:
             hierarchy.append({
                 "location_name": "Otras Entidades",
                 "places": [],
-                "npcs": sorted(remaining_npcs)
+                "npcs": sorted(remaining_npcs),
             })
 
         return hierarchy
 
-
-    def save(self):
-        """Sincroniza y persiste los cambios del controlador de vuelta al WorldState."""
+    def save(self) -> None:
+        """Sincroniza y persiste los cambios del controlador al WorldState."""
         self.game_state_controller.save()
 
-    # =====================================================================
-    # ORQUESTACIÓN DE TURNOS POR COMPORTAMIENTO (BEHAVIOUR)
-    # =====================================================================
-
-    def _create_debug_turn_output(self, msg: str, author: str, info_msg: Optional[str] = None) -> TurnOutput:
-        """Helper para empaquetar TurnOutput junto con los registros acumulados de depuración."""
+    def _create_debug_turn_output(
+        self,
+        msg: str,
+        author: str,
+        info_msg: Optional[str] = None,
+    ) -> TurnOutput:
+        """Empaqueta TurnOutput junto con los registros de depuración."""
         debug_prompts = []
         debug_raws = []
         debug_structureds = []
         debug_results = []
-        
+
         for idx, debug in enumerate(self.turn_debug_steps, 1):
             header = f"--- PASO {idx}: {debug['step_name']} ---\n"
             debug_prompts.append(header + debug["prompt"])
@@ -183,32 +194,19 @@ class GameEngine:
             debug_prompt="\n\n".join(debug_prompts) if debug_prompts else None,
             debug_raw_response="\n\n".join(debug_raws) if debug_raws else None,
             debug_structured_response="\n\n".join(debug_structureds) if debug_structureds else None,
-            debug_engine_result="\n\n".join(debug_results) if debug_results else None
+            debug_engine_result="\n\n".join(debug_results) if debug_results else None,
         )
 
     def execute_turn(
-        self, 
-        action: Union[ActionCommand, str], 
-        target: Optional[str] = None, 
-        player_input: str = "", 
-        dm: Optional[DungeonMaster] = None
+        self,
+        action: Union[ActionCommand, str],
+        target: Optional[str] = None,
+        player_input: str = "",
+        dm: Optional[TransformerEngine] = None,
     ) -> TurnOutput:
-        """
-        Ejecuta un turno directo de 1 solo paso según la acción solicitada (MOVE, LOOK, TALK).
-        """
+        """Ejecuta un turno de juego según la acción solicitada (MOVE, LOOK, TALK)."""
         self.turn_debug_steps.clear()
 
-        # Permitir compatibilidad si dm fue pasado posicionalmente en target o player_input
-        if target is not None and not isinstance(target, str):
-            if dm is None and hasattr(target, "execute"):
-                dm = target
-                target = None
-        if player_input is not None and not isinstance(player_input, str):
-            if dm is None and hasattr(player_input, "execute"):
-                dm = player_input
-                player_input = ""
-
-        # Parsear comando de acción
         if isinstance(action, ActionCommand):
             action_type = action.action.upper()
             target_name = action.target
@@ -220,8 +218,14 @@ class GameEngine:
                 action_type = parts[0].upper()
                 target_name = parts[1].strip() if len(parts) > 1 else (target or "")
             else:
-                if self.game_state_controller.data.state.player_state.upper() == "TALK":
+                curr_state = self.game_state_controller.data.state.player_state.upper()
+                if curr_state == "TALK":
                     action_type = "TALK"
+                    target_name = self.game_state_controller.data.state.player_target or (target or "")
+                    if not player_input:
+                        player_input = action
+                elif curr_state == "LOOK":
+                    action_type = "LOOK"
                     target_name = self.game_state_controller.data.state.player_target or (target or "")
                     if not player_input:
                         player_input = action
@@ -231,27 +235,33 @@ class GameEngine:
         else:
             raise ValueError(f"Acción inválida: {action}")
 
-        step = None
-        final_author = "Player"
-
         if action_type in ["MOVE", "EXPLORE"]:
             self.game_state_controller.update_state("EXPLORE")
             self.game_state_controller.data.state.player_target = ""
-            step = MoveNarratorAction(target_name)
+            if hasattr(self.game_state_controller.data.state, "inspection_history"):
+                self.game_state_controller.data.state.inspection_history.clear()
+            step = MoveAction(target_name)
             final_author = "Dungeon Master"
 
         elif action_type in ["LOOK", "EXPLAIN"]:
-            self.game_state_controller.update_state("EXPLORE")
-            step = ExplainLookNarratorAction(target_name)
+            if self.game_state_controller.data.state.player_target != target_name:
+                if hasattr(self.game_state_controller.data.state, "inspection_history"):
+                    self.game_state_controller.data.state.inspection_history.clear()
+            self.game_state_controller.update_state("LOOK")
+            self.game_state_controller.data.state.player_target = target_name
+            step = LookAction(target_name)
             final_author = "Dungeon Master"
 
         elif action_type == "TALK":
+            if hasattr(self.game_state_controller.data.state, "inspection_history"):
+                self.game_state_controller.data.state.inspection_history.clear()
             npc = self.get_npc_by_name_or_id(target_name)
             if npc:
-                # Si el usuario hace talk con un NPC pero no se encuentra en el mismo place,
-                # se actualiza automáticamente el lugar del jugador al lugar donde reside el NPC.
                 npc_place = self.get_npc_place(npc.id)
-                if npc_place and (not self.game_state_controller.data.place or self.game_state_controller.data.place.id != npc_place.id):
+                if npc_place and (
+                    not self.game_state_controller.data.place
+                    or self.game_state_controller.data.place.id != npc_place.id
+                ):
                     self.game_state_controller.update_location(npc_place.name)
 
                 self.game_state_controller.load_npc(npc.id)
@@ -261,7 +271,7 @@ class GameEngine:
             else:
                 final_author = target_name
 
-            step = DialogueNarratorAction(target_name)
+            step = DialogueAction(target_name)
         else:
             return self._create_debug_turn_output(author="SYSTEM", msg=f"Acción desconocida: '{action_type}'")
 
@@ -271,53 +281,55 @@ class GameEngine:
 
         return self._create_debug_turn_output(msg=res.message, author=final_author)
 
-    def _run_step(self, step: Behaviour, player_input: str, dm: DungeonMaster) -> ResultType:
-        """Ejecuta las fases del Step: generar contexto -> llamar LLM -> validar -> execute."""
-        # 1. Generar contexto estructurado (MarkdownContext/ContextType)
-        ctx = step.generar_ctx(self.game_state_controller, player_input)
+    def _run_step(self, step: BaseAction, player_input: str, dm: TransformerEngine) -> ResultType:
+        """Ejecuta el ciclo de vida del step contra el transformer engine."""
+        ctx = step.build_context(self.game_state_controller, player_input)
+        prompt = step.build_prompt(ctx, player_input)
+        response_schema = step.get_response_schema()
+        schema_name = getattr(step.response_model, "__name__", "StructuredResponse")
 
-        # 2. Obtener respuesta estructurada del LLM usando DungeonMaster
         llm_raw = dm.execute(
-            rules_path=step.rules_path,
-            gamecontext=ctx,
-            player_input=player_input,
+            prompt=prompt,
+            response_schema=response_schema,
             response_model=step.response_model,
-            profile_name=step.profile_name
+            profile_name=step.profile_name,
+            schema_name=schema_name,
         )
         llm_response = step.response_model.model_validate(llm_raw)
-
-        # 3. Ejecutar lógica, validaciones y mutación del estado
         result = step.execute(self.game_state_controller, player_input, llm_response)
 
-        # Persistir cambios del GameState al WorldState y guardar archivos
         self.save()
 
-        # Capturar información de depuración del paso actual
         debug_info = {
             "step_name": step.__class__.__name__,
-            "prompt": ctx.to_markdown() if hasattr(ctx, "to_markdown") else str(ctx),
+            "prompt": prompt,
             "raw_response": str(llm_raw),
-            "structured_response": llm_response.model_dump_json(indent=2) if hasattr(llm_response, "model_dump_json") else str(llm_response),
-            "result": result.model_dump_json(indent=2) if hasattr(result, "model_dump_json") else str(result)
+            "structured_response": (
+                llm_response.model_dump_json(indent=2)
+                if hasattr(llm_response, "model_dump_json")
+                else str(llm_response)
+            ),
+            "result": (
+                result.model_dump_json(indent=2)
+                if hasattr(result, "model_dump_json")
+                else str(result)
+            ),
         }
         self.turn_debug_steps.append(debug_info)
 
-        # Re-inicializar el controlador si volvimos/estamos en exploración normal para mantener consistencia
-        if self.game_state_controller.data.state.player_state.upper() != "TALK":
+        if self.game_state_controller.data.state.player_state.upper() not in ["TALK", "LOOK"]:
             current_target = self.game_state_controller.data.state.player_target
             current_prev_place = self.game_state_controller.data.state.prev_place
             self.game_state_controller = GameStateController.create_from_world(
-                self.world_state, 
+                self.world_state,
                 target=current_target,
-                prev_place=current_prev_place
+                prev_place=current_prev_place,
             )
 
         return result
 
     def get_available_actions(self) -> dict:
-        """
-        Devuelve las acciones e interacciones válidas que la UI puede dibujar como botones.
-        """
+        """Devuelve las acciones disponibles para la interfaz de usuario."""
         current_place = self.game_state_controller.data.place
         moves = []
         if current_place and current_place.connections:
@@ -326,14 +338,14 @@ class GameEngine:
                     "direction": direction,
                     "target": conn.target,
                     "distance": conn.distance,
-                    "terrain": conn.terrain_type
+                    "terrain": conn.terrain_type,
                 })
 
         npcs = []
         for npc_info in self.game_state_controller.get_npc_list():
             npcs.append({
                 "id": npc_info["id"],
-                "name": npc_info["name"]
+                "name": npc_info["name"],
             })
 
         look_targets = [current_place.name] if current_place else []
@@ -341,13 +353,11 @@ class GameEngine:
         return {
             "moves": moves,
             "npcs": npcs,
-            "look_targets": look_targets
+            "look_targets": look_targets,
         }
 
     def get_ui_state(self) -> dict:
-        """
-        Devuelve información simplificada para actualizar la barra de estado de la UI.
-        """
+        """Devuelve un resumen del estado del juego para la barra de interfaz."""
         state = self.game_state_controller.data.state
         player = self.game_state_controller.data.player
         place = self.game_state_controller.data.place
@@ -357,7 +367,5 @@ class GameEngine:
             "gold": player.gold if player else 0,
             "current_location": place.name if place else "Desconocido",
             "formatted_time": self.get_formatted_time(),
-            "game_state": state.player_state.upper() if state else "EXPLORE"
+            "game_state": state.player_state.upper() if state else "EXPLORE",
         }
-
-

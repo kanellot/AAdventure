@@ -1,7 +1,7 @@
 import sys
 from PySide6.QtWidgets import QApplication
-from game_engine.engine import GameEngine
-from transformer_engine import DungeonMaster
+from engines.game.engine import GameEngine
+from engines.transformer import TransformerEngine
 from game_debugger.app import GameDebuggerApp
 
 # Reutilizar el mismo estilo papiro que el editor para consistencia estética
@@ -100,7 +100,7 @@ QStatusBar {
 }
 """
 
-def start_debugger(game_engine: GameEngine, dm: DungeonMaster):
+def start_debugger(game_engine: GameEngine, dm: TransformerEngine):
     """
     Punto de entrada de la aplicación del Depurador Gráfico.
     Inicializa QApplication, aplica el tema y muestra la ventana principal.

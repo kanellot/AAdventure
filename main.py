@@ -1,8 +1,8 @@
 import sys
 import os
-from transformer_engine import DungeonMaster, TransformerModel
+from engines.transformer import TransformerEngine, create_llm_adapter
 from pydantic import ValidationError
-from game_engine import GameEngine
+from engines.game import GameEngine
 
 
 # =====================================================================
@@ -98,16 +98,16 @@ def main():
         print(f"{Colors.FAIL}[ERROR CRÍTICO AL INICIALIZAR EL JUEGO]: {e}{Colors.ENDC}")
         sys.exit(1)
 
-    # 2. Inicializar el modelo LLM y DungeonMaster
+    # 2. Inicializar el modelo LLM y TransformerEngine
     print(f"{Colors.OKCYAN}[INFO] Inicializando modelo LLM...{Colors.ENDC}")
     try:
-        adapter = TransformerModel(config_path=LLM_CONFIG_PATH)
-        dm = DungeonMaster(llm_adapter=adapter)
-        print(f"{Colors.OKGREEN}[INFO] TransformerModel y DungeonMaster inicializados correctamente.{Colors.ENDC}")
+        adapter = create_llm_adapter(config_or_path=LLM_CONFIG_PATH)
+        dm = TransformerEngine(llm_adapter=adapter)
+        adapter_name = adapter.__class__.__name__
+        print(f"{Colors.OKGREEN}[INFO] Adaptador '{adapter_name}' y TransformerEngine inicializados correctamente.{Colors.ENDC}")
     except Exception as e:
         print(f"{Colors.FAIL}[ERROR DE CONFIGURACIÓN DEL LLM]{Colors.ENDC}")
-        print(f"No se pudo inicializar el modelo o DungeonMaster: {e}")
-        print("\nPor favor, instala 'llama-cpp-python' y configura el modelo local GGUF.")
+        print(f"No se pudo inicializar el modelo o TransformerEngine: {e}")
         sys.exit(1)
 
     if args.play_debug:

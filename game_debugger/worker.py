@@ -1,8 +1,8 @@
 from typing import Optional
 from PySide6.QtCore import QThread, Signal
-from game_engine.engine import GameEngine, TurnOutput
+from engines.game.engine import GameEngine, TurnOutput
 from domains import ActionCommand
-from transformer_engine import DungeonMaster
+from engines.transformer import TransformerEngine
 
 class TurnWorker(QThread):
     """
@@ -10,12 +10,12 @@ class TurnWorker(QThread):
     evitando que la interfaz gráfica principal (GUI) se congele durante
     las llamadas al modelo de lenguaje (LLM).
     """
-    finished_turn = Signal(TurnOutput)
+    finished_turn = Signal(object)
 
     def __init__(
         self, 
         game_engine: GameEngine, 
-        dm: DungeonMaster, 
+        dm: TransformerEngine, 
         action_cmd: ActionCommand, 
         player_input: str = ""
     ):

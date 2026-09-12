@@ -1,20 +1,43 @@
 {
+  "active_backend": "lm_studio",
+  "backend_constants": {
+    "LLAMA_CPP": "llama_cpp",
+    "LM_STUDIO": "lm_studio"
+  },
+  "model": "gemma-4-e2b-it-qat",
   "model_path": "C:\\Users\\kanel\\.lmstudio\\models\\google\\gemma-4-E2B-it-qat-q4_0-gguf\\gemma-4-E2B_q4_0-it.gguf",
   "n_ctx": 4096,
   "n_gpu_layers": -1,
   "n_threads": 4,
+  "base_url": "http://localhost:1234/v1",
+  "api_key": "lm-studio",
+  "max_tokens": 1536,
+  "timeout": 60,
+  "auto_reload_lm_studio": true,
   "inference_profiles": {
     "classifier": {
       "temperature": 0.0,
-      "max_tokens": 128
+      "max_tokens": 512
     },
     "narrator": {
       "temperature": 0.8,
-      "max_tokens": 512
+      "max_tokens": 1536
+    },
+    "move_narrator": {
+      "temperature": 0.8,
+      "max_tokens": 1536
+    },
+    "explain_look_narrator": {
+      "temperature": 0.8,
+      "max_tokens": 1536
     },
     "dialogue": {
-      "temperature": 0.5,
-      "max_tokens": 256
+      "temperature": 0.85,
+      "max_tokens": 1536
+    },
+    "dialogue_narrator": {
+      "temperature": 0.85,
+      "max_tokens": 1536
     }
   }
 }

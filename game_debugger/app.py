@@ -4,8 +4,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from game_engine.engine import GameEngine
-from transformer_engine import DungeonMaster
+from engines.game.engine import GameEngine
+from engines.transformer import TransformerEngine
 from domains import ActionCommand
 from game_debugger.views.chat_tab import ChatTab
 from game_debugger.views.inspector import GameStateInspector
@@ -17,7 +17,7 @@ class GameDebuggerApp(QMainWindow):
     Ventana principal del depurador gráfico de juego (DEBUG Mode).
     """
 
-    def __init__(self, game_engine: GameEngine, dm: DungeonMaster):
+    def __init__(self, game_engine: GameEngine, dm: TransformerEngine):
         super().__init__()
         self.setWindowTitle("Depurador de Juego - AAdventure")
         self.resize(1100, 750)
@@ -49,6 +49,7 @@ class GameDebuggerApp(QMainWindow):
         # Pestaña 2: Prompt
         self.prompt_edit = QTextEdit()
         self.prompt_edit.setReadOnly(True)
+        self.prompt_edit.setFontFamily("Consolas")
         self.prompt_edit.setPlaceholderText("Aquí se mostrará el prompt enviado al LLM en cada interacción...")
         self.tab_widget.addTab(self.prompt_edit, "Prompt")
 
@@ -60,20 +61,23 @@ class GameDebuggerApp(QMainWindow):
         
         self.raw_response_edit = QTextEdit()
         self.raw_response_edit.setReadOnly(True)
+        self.raw_response_edit.setFontFamily("Consolas")
         self.raw_response_edit.setPlaceholderText("Respuesta cruda (Raw) del modelo...")
         res_splitter.addWidget(self.raw_response_edit)
 
         self.structured_response_edit = QTextEdit()
         self.structured_response_edit.setReadOnly(True)
-        self.structured_response_edit.setPlaceholderText("Estructura JSON mapeada del step...")
+        self.structured_response_edit.setFontFamily("Consolas")
+        self.structured_response_edit.setPlaceholderText("Respuesta validada y estructurada (JSON)...")
         res_splitter.addWidget(self.structured_response_edit)
         
         self.tab_widget.addTab(response_tab, "Response")
 
-        # Pestaña 4: Result
+        # Pestaña 4: Engine Result
         self.result_edit = QTextEdit()
         self.result_edit.setReadOnly(True)
-        self.result_edit.setPlaceholderText("Resultado de validaciones y ejecución del motor...")
+        self.result_edit.setFontFamily("Consolas")
+        self.result_edit.setPlaceholderText("Resultado devuelto por el GameEngine...")
         self.tab_widget.addTab(self.result_edit, "Result")
 
         # -------------------------------------------------------------
@@ -112,7 +116,7 @@ class GameDebuggerApp(QMainWindow):
         self.chat_tab.set_game_state(current_state)
 
         # Mensaje de bienvenida
-        self.chat_tab.append_message("Dungeon Master", "La aventura ha sido cargada correctamente. Usa los botones MOVE o TALK para comenzar la depuración.")
+        self.chat_tab.append_message("Dungeon Master", "La aventura ha sido cargada correctamente. Usa los botones MOVE, LOOK o TALK para comenzar la depuración.")
         
         # Barra de estado inferior
         self.update_status_bar()
@@ -146,20 +150,28 @@ class GameDebuggerApp(QMainWindow):
 
     def on_player_action(self, player_input: str):
         """
-        Se ejecuta cuando el jugador envía un mensaje de diálogo en estado TALK.
+        Se ejecuta cuando el jugador envía un mensaje de texto en estado TALK o LOOK.
         """
-        target_npc = self.engine.game_state_controller.data.state.player_target or self.chat_tab.target_combo.currentText()
-        self.on_player_action_command(ActionCommand(action="TALK", target=target_npc), player_input)
+        current_state = self.engine.game_state_controller.data.state.player_state.upper()
+        target = self.engine.game_state_controller.data.state.player_target or self.chat_tab.target_combo.currentText()
+        if current_state == "LOOK":
+            self.on_player_action_command(ActionCommand(action="LOOK", target=target), player_input)
+        else:
+            self.on_player_action_command(ActionCommand(action="TALK", target=target), player_input)
 
     def on_player_action_command(self, action_obj: ActionCommand, prompt_text: str):
         """
-        Se ejecuta cuando el usuario pulsa un botón de acción directa (MOVE, TALK).
+        Se ejecuta cuando el usuario pulsa un botón de acción directa (MOVE, LOOK, TALK).
         """
         self.chat_tab.set_input_enabled(False)
-        self.statusBar().showMessage(f"Ejecutando acción {action_obj.action} sobre {action_obj.target}...")
+        self.statusBar().showMessage(f"Ejecutando acción {action_obj.action} sobre {action_obj.target}... (Llamando al LLM)")
+        self.prompt_edit.setPlainText(f"Generando interacción [{action_obj.action} -> {action_obj.target}]...\nEsperando prompt y respuesta del LLM...")
+        self.raw_response_edit.setPlainText("Esperando respuesta del LLM...")
+        self.structured_response_edit.setPlainText("Esperando validación de respuesta estructurada...")
+        self.result_edit.setPlainText("Esperando resultado del GameEngine...")
 
         # Formatear el log del comando en el chat
-        if action_obj.action == "TALK" and prompt_text:
+        if action_obj.action in ["TALK", "LOOK"] and prompt_text:
             cmd_text = prompt_text
         else:
             cmd_text = f"[{action_obj.action} -> {action_obj.target}]"

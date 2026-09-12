@@ -73,6 +73,15 @@ class PlaceForm(QWidget):
         
         main_layout.addWidget(conn_group)
 
+        # 4. Lore Dinámico y Secretos de Inspección
+        lore_group = QGroupBox("Secretos e Inspección Detallada (Lore Dinámico)")
+        lore_layout = QVBoxLayout(lore_group)
+        from editor.views.lore_widget import LoreBlockTableWidget
+        self.lore_widget = LoreBlockTableWidget()
+        self.lore_widget.lore_changed.connect(self.on_lore_changed)
+        lore_layout.addWidget(self.lore_widget)
+        main_layout.addWidget(lore_group)
+
     def set_place(self, place: Place, all_places: List[Place], all_npcs: List[NPC]):
         self.place = place
         self.all_places = all_places
@@ -88,6 +97,13 @@ class PlaceForm(QWidget):
 
             # Poblar la tabla de conexiones
             self.populate_connections()
+
+            # Poblar lore dinámico
+            self.lore_widget.set_lore_blocks(place.dynamic_lore)
+
+    def on_lore_changed(self):
+        if self.place:
+            self.place.dynamic_lore = self.lore_widget.get_lore_blocks()
 
     def populate_npcs(self):
         # Limpiar layout de checkboxes anterior
