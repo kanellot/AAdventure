@@ -1,20 +1,29 @@
-from typing import Optional, List
+"""Modelos de dominio para personajes no jugadores (NPCs) y sus servicios."""
+
+from typing import List, Optional
+from pydantic import BaseModel, Field
 from domains.base import Entity
 from domains.conversation import ConversationRecord
-from pydantic import BaseModel, Field
+from domains.lore import LoreBlock
+
 
 class NPCInfo(BaseModel):
     """Información simplificada de un NPC."""
+
     id: str
-    nombre: str
+    name: str = ""
+
 
 class NPCMotivations(BaseModel):
-    """Representa las motivaciones y preferencias de un NPC para modular la afinidad."""
+    """Motivaciones y preferencias de un NPC para modular afinidad."""
+
     likes: List[str] = Field(default_factory=list)
     dislikes: List[str] = Field(default_factory=list)
 
+
 class Service(BaseModel):
-    """Representa un servicio que un NPC puede ofrecer al jugador."""
+    """Servicio u oferta que un NPC puede ofrecer al jugador."""
+
     id: str
     type: str
     min_affinity: float = 0.0
@@ -22,16 +31,12 @@ class Service(BaseModel):
     cost: Optional[int] = None
     description: str
 
-class LoreBlock(BaseModel):
-    """Representa un fragmento de información/secreto que se desbloquea bajo ciertas condiciones."""
-    id: str
-    required_affinity: float = 0.0
-    required_quests: List[str] = Field(default_factory=list)
-    content: str
 
 class NPC(Entity):
-    """Representa un personaje no jugador (Non-Player Character) en el mundo."""
+    """Personaje no jugador (Non-Player Character) dentro del mundo."""
+
     state: str = "none"
+    occupation: Optional[str] = None
     current_location: Optional[str] = None
     conversation: Optional[ConversationRecord] = None
     services: List[Service] = Field(default_factory=list)

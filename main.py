@@ -1,7 +1,8 @@
 import sys
-from transformer_engine import DungeonMaster, TransformerModel
+import os
+from engines.transformer import TransformerEngine, create_llm_adapter
 from pydantic import ValidationError
-from game_engine import GameEngine
+from engines.game import GameEngine
 
 
 # =====================================================================
@@ -19,10 +20,10 @@ class Colors:
     BOLD = "\033[1m"
 
 # Configuración de depuración en consola (0 = Desactivado, 1 = Activado)
-DEBUG_PROMPS = 0
-DEBUG_PROMPTS = 0
-DEBUG_RESPONSE = 0
-DEBUG_STATE = 0
+DEBUG_PROMPS = 1
+DEBUG_PROMPTS = 1
+DEBUG_RESPONSE = 1
+DEBUG_STATE = 1
 
 # Rutas de los archivos JSON de datos de aventura
 WORLD_JSON_PATH = r"Resources/adventure_data/world_2.json"
@@ -40,6 +41,25 @@ def print_banner():
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="AAdventure - Motor Narrativo D&D con GameEngine")
+    parser.add_argument("--editor", "-e", action="store_true", help="Lanza el editor gráfico de historias")
+    parser.add_argument("--play-debug", "-d", action="store_true", help="Jugar con la UI de depuración gráfica")
+    parser.add_argument("aad_file", nargs="?", default=None, help="Ruta al archivo de aventura .aad")
+    args = parser.parse_args()
+
+    if args.editor:
+        print(f"{Colors.OKCYAN}[INFO] Lanzando el Editor de Historias de AAdventure...{Colors.ENDC}")
+        try:
+            from editor.main import start_editor
+            start_editor()
+            sys.exit(0)
+        except ImportError as ie:
+            print(f"{Colors.FAIL}[ERROR] No se pudo iniciar el editor gráfico.{Colors.ENDC}")
+            print(f"Asegúrate de instalar PySide6: pip install PySide6")
+            print(f"Error detallado: {ie}")
+            sys.exit(1)
+
     print_banner()
 
     # =====================================================================
@@ -47,29 +67,60 @@ def main():
     # =====================================================================
     
     # 1. Construir GameEngine
-    print(f"{Colors.OKCYAN}[INFO] Inicializando GameEngine y cargando datos de aventura...{Colors.ENDC}")
+    # 1. Construir GameEngine
+    # Si no se pasó aad_file, por defecto buscamos Adventure.aad
+    DEFAULT_AAD = os.path.join("Resources", "adventure_data", "Adventure.aad")
+    aad_to_load = args.aad_file or DEFAULT_AAD
+
+    if os.path.exists(aad_to_load) and aad_to_load.lower().endswith(".aad"):
+        print(f"{Colors.OKCYAN}[INFO] Inicializando GameEngine y cargando aventura desde: {aad_to_load}...{Colors.ENDC}")
+        world_path = aad_to_load
+        npcs_path = None
+        player_path = None
+    else:
+        # Fallback a los JSON individuales por si acaso no existiera aún el .aad por defecto
+        if not args.aad_file:
+            print(f"{Colors.OKCYAN}[INFO] Advertencia: No se encontró {DEFAULT_AAD}. Cargando JSONs por defecto...{Colors.ENDC}")
+        else:
+            print(f"{Colors.OKCYAN}[INFO] Cargando aventura desde archivos JSON...{Colors.ENDC}")
+        world_path = WORLD_JSON_PATH
+        npcs_path = NPCS_JSON_PATH
+        player_path = PLAYER_JSON_PATH
+
     try:
         game_engine = GameEngine(
-            world_json_path=WORLD_JSON_PATH,
-            npcs_json_path=NPCS_JSON_PATH,
-            player_json_path=PLAYER_JSON_PATH
+            world_json_path=world_path,
+            npcs_json_path=npcs_path,
+            player_json_path=player_path
         )
-        print(f"{Colors.OKGREEN}[INFO] GameEngine y entidades inicializados correctamente desde los archivos JSON.{Colors.ENDC}")
+        print(f"{Colors.OKGREEN}[INFO] GameEngine y entidades inicializados correctamente.{Colors.ENDC}")
     except Exception as e:
         print(f"{Colors.FAIL}[ERROR CRÍTICO AL INICIALIZAR EL JUEGO]: {e}{Colors.ENDC}")
         sys.exit(1)
 
-    # 2. Inicializar el modelo LLM y DungeonMaster
+    # 2. Inicializar el modelo LLM y TransformerEngine
     print(f"{Colors.OKCYAN}[INFO] Inicializando modelo LLM...{Colors.ENDC}")
     try:
-        adapter = TransformerModel(config_path=LLM_CONFIG_PATH)
-        dm = DungeonMaster(llm_adapter=adapter)
-        print(f"{Colors.OKGREEN}[INFO] TransformerModel y DungeonMaster inicializados correctamente.{Colors.ENDC}")
+        adapter = create_llm_adapter(config_or_path=LLM_CONFIG_PATH)
+        dm = TransformerEngine(llm_adapter=adapter)
+        adapter_name = adapter.__class__.__name__
+        print(f"{Colors.OKGREEN}[INFO] Adaptador '{adapter_name}' y TransformerEngine inicializados correctamente.{Colors.ENDC}")
     except Exception as e:
         print(f"{Colors.FAIL}[ERROR DE CONFIGURACIÓN DEL LLM]{Colors.ENDC}")
-        print(f"No se pudo cargar el clasificador semántico: {e}")
-        print("\nPor favor, instala 'llama-cpp-python' y configura el modelo local GGUF.")
+        print(f"No se pudo inicializar el modelo o TransformerEngine: {e}")
         sys.exit(1)
+
+    if args.play_debug:
+        print(f"{Colors.OKCYAN}[INFO] Lanzando el Depurador Gráfico de AAdventure...{Colors.ENDC}")
+        try:
+            from game_debugger.main import start_debugger
+            start_debugger(game_engine, dm)
+            sys.exit(0)
+        except ImportError as ie:
+            print(f"{Colors.FAIL}[ERROR] No se pudo iniciar el depurador gráfico.{Colors.ENDC}")
+            print(f"Asegúrate de instalar PySide6: pip install PySide6")
+            print(f"Error detallado: {ie}")
+            sys.exit(1)
 
     # 3. Imprimir el GameState inicial del juego recién cargado si está activado el debug de estado
     if DEBUG_STATE:
@@ -85,7 +136,8 @@ def main():
     while True:
         try:
             player_name = game_engine.get_player_name()
-            player_input = input(f"\n{Colors.BOLD}[{player_name}] > {Colors.ENDC}").strip()
+            time_str = game_engine.get_formatted_time()
+            player_input = input(f"\n{Colors.BOLD}[{time_str}] [{player_name}] > {Colors.ENDC}").strip()
             if not player_input:
                 continue
 
@@ -94,7 +146,7 @@ def main():
                break
 
             # Ejecutar el turno completo
-            turn_output = game_engine.execute_turn(player_input, dm)
+            turn_output = game_engine.execute_turn(action=player_input, dm=dm)
 
             # Imprimir los resultados narrativos en la consola
             if turn_output.author == "SYSTEM":

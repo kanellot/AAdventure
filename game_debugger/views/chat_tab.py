@@ -1,0 +1,186 @@
+from typing import List, Optional
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QTextBrowser, QLineEdit, QPushButton, QComboBox, QLabel
+)
+from PySide6.QtCore import Signal
+from domains import ActionCommand
+
+
+class ChatTab(QWidget):
+    """
+    Pestaña principal de juego que muestra el historial de chat con colores
+    estilizados de acuerdo al tema pergamino, e incluye la entrada de texto
+    y los botones de comandos directos para depuración.
+    """
+    send_input = Signal(str)
+    send_action = Signal(object, str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.current_game_state = "EXPLORE"
+
+        layout = QVBoxLayout(self)
+
+        # 1. Historial del Chat
+        self.chat_browser = QTextBrowser()
+        self.chat_browser.setOpenExternalLinks(True)
+        layout.addWidget(self.chat_browser)
+
+        # 2. Barra de acciones directas (MOVE, LOOK, TALK + Target Dropdown)
+        action_layout = QHBoxLayout()
+        
+        self.btn_move = QPushButton("MOVE")
+        self.btn_move.setStyleSheet("font-weight: bold; padding: 6px 12px;")
+        self.btn_move.clicked.connect(lambda: self.on_action_btn_clicked("MOVE"))
+        action_layout.addWidget(self.btn_move)
+
+        self.btn_look = QPushButton("LOOK")
+        self.btn_look.setStyleSheet("font-weight: bold; padding: 6px 12px;")
+        self.btn_look.clicked.connect(lambda: self.on_action_btn_clicked("LOOK"))
+        action_layout.addWidget(self.btn_look)
+
+        self.btn_talk = QPushButton("TALK")
+        self.btn_talk.setStyleSheet("font-weight: bold; padding: 6px 12px;")
+        self.btn_talk.clicked.connect(lambda: self.on_action_btn_clicked("TALK"))
+        action_layout.addWidget(self.btn_talk)
+
+        self.target_combo = QComboBox()
+        self.target_combo.setMinimumWidth(220)
+        self.target_combo.setPlaceholderText("Selecciona objetivo...")
+        action_layout.addWidget(self.target_combo)
+
+        self.lbl_affinity = QLabel("")
+        self.lbl_affinity.setStyleSheet(
+            "font-weight: bold; color: #2e7d32; padding: 4px 8px; "
+            "border: 1px solid #a5d6a7; border-radius: 4px; background-color: #e8f5e9;"
+        )
+        self.lbl_affinity.setVisible(False)
+        action_layout.addWidget(self.lbl_affinity)
+
+        layout.addLayout(action_layout)
+
+        # 3. Barra de entrada de comandos / diálogo inferior
+        input_layout = QHBoxLayout()
+        self.input_edit = QLineEdit()
+        self.input_edit.setEnabled(False)
+        self.input_edit.setPlaceholderText("Selecciona objetivo y pulsa un botón de acción (MOVE, LOOK, TALK)...")
+        self.input_edit.returnPressed.connect(self.on_return_pressed)
+        
+        self.send_btn = QPushButton("Enviar")
+        self.send_btn.clicked.connect(self.on_send)
+        # Oculto y deshabilitado inicialmente (solo visible en estado TALK o LOOK)
+        self.send_btn.setVisible(False)
+        self.send_btn.setEnabled(False)
+
+        input_layout.addWidget(self.input_edit)
+        input_layout.addWidget(self.send_btn)
+        layout.addLayout(input_layout)
+
+    def set_targets(self, targets: List[str]):
+        """
+        Puebla el menú desplegable con los nombres de las entidades disponibles (places y npcs).
+        """
+        current_selection = self.target_combo.currentText()
+        self.target_combo.clear()
+        for t in targets:
+            self.target_combo.addItem(t)
+        if current_selection and current_selection in targets:
+            self.target_combo.setCurrentText(current_selection)
+
+    def set_game_state(
+        self,
+        state: str,
+        active_affinity: Optional[float] = None,
+        target_name: Optional[str] = None,
+    ):
+        """
+        Actualiza la interfaz según el estado de juego (EXPLORE, TALK o LOOK).
+        Habilita el textbox y botón Enviar si estamos en TALK o LOOK.
+        Muestra el nivel de afinidad si estamos en TALK con un NPC.
+        """
+        self.current_game_state = state.upper()
+        is_interactive = (self.current_game_state in ["TALK", "LOOK"])
+        self.send_btn.setVisible(is_interactive)
+        self.send_btn.setEnabled(is_interactive)
+        self.input_edit.setEnabled(is_interactive)
+
+        if self.current_game_state == "TALK":
+            if active_affinity is not None:
+                pct = int(round(active_affinity * 100))
+                self.lbl_affinity.setText(f"💚 Afinidad: {active_affinity:.2f} ({pct}%)")
+                self.lbl_affinity.setVisible(True)
+                target_str = f" para {target_name}" if target_name else ""
+                self.input_edit.setPlaceholderText(f"Escribe tu respuesta{target_str} (Afinidad actual: {active_affinity:.2f})...")
+            else:
+                self.lbl_affinity.setVisible(False)
+                self.input_edit.setPlaceholderText("Escribe tu respuesta o frase para el NPC...")
+            self.input_edit.setFocus()
+        elif self.current_game_state == "LOOK":
+            self.lbl_affinity.setVisible(False)
+            self.input_edit.setPlaceholderText("Especifica qué miras o examinas en detalle (ej: 'mirar debajo de la mesa')...")
+            self.input_edit.setFocus()
+        else:
+            self.lbl_affinity.setVisible(False)
+            self.input_edit.clear()
+            self.input_edit.setPlaceholderText("Selecciona objetivo y pulsa un botón de acción (MOVE, LOOK, TALK)...")
+
+    def append_message(self, author: str, text: str):
+        """
+        Añade un mensaje formateado con colores al navegador del chat.
+        """
+        formatted_text = text.replace("\n", "<br/>")
+
+        if author == "Dungeon Master":
+            html = f"<div style='margin-bottom: 12px; line-height: 1.4;'><b>[DM] Dungeon Master:</b><br/>{formatted_text}</div>"
+        elif author == "SYSTEM":
+            html = f"<div style='margin-bottom: 12px; color: #b22222; font-family: monospace;'><b>[SISTEMA]:</b> {formatted_text}</div>"
+        elif author in ["Aventurero", "Jugador", "Player"]:
+            html = f"<div style='margin-bottom: 12px; color: #cb4b16;'><b>[Tú] {author}:</b> {formatted_text}</div>"
+        else:
+            # Diálogo de NPCs
+            html = f"<div style='margin-bottom: 12px; color: #859900;'><b>[NPC] {author}:</b><br/><i>\"{formatted_text}\"</i></div>"
+
+        self.chat_browser.append(html)
+
+    def on_action_btn_clicked(self, action: str):
+        """
+        Crea un objeto ActionCommand y emite la señal send_action.
+        """
+        target = self.target_combo.currentText().strip()
+        if not target:
+            return
+
+        text = self.input_edit.text().strip()
+        self.input_edit.clear()
+
+        action_obj = ActionCommand(action=action, target=target)
+        self.send_action.emit(action_obj, text)
+
+    def on_return_pressed(self):
+        """
+        Maneja la pulsación de la tecla Enter en el cuadro de texto.
+        Envía mensaje si estamos en estado TALK o LOOK.
+        """
+        if self.current_game_state in ["TALK", "LOOK"]:
+            self.on_send()
+
+    def on_send(self):
+        """
+        Envía el texto de la interacción en estado TALK o LOOK.
+        """
+        text = self.input_edit.text().strip()
+        if text:
+            self.input_edit.clear()
+            self.send_input.emit(text)
+
+    def set_input_enabled(self, enabled: bool):
+        self.btn_move.setEnabled(enabled)
+        self.btn_look.setEnabled(enabled)
+        self.btn_talk.setEnabled(enabled)
+        self.target_combo.setEnabled(enabled)
+
+        is_interactive = (self.current_game_state in ["TALK", "LOOK"])
+        self.input_edit.setEnabled(enabled and is_interactive)
+        self.send_btn.setEnabled(enabled and is_interactive)
+        if enabled and is_interactive:
+            self.input_edit.setFocus()

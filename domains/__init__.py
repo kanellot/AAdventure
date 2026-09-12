@@ -1,75 +1,84 @@
+"""Exportación de modelos de dominio para AAdventure."""
+
 from domains.base import Entity
-from domains.world import World, Location, Place, LocationInfo, PlaceInfo
-from domains.player import Player
-from domains.npcs import NPC, Service, NPCMotivations, LoreBlock, NPCInfo
 from domains.conversation import ConversationRecord
+from domains.lore import LoreBlock, LoreConditions, LoreEffects
+from domains.npcs import NPC, NPCInfo, NPCMotivations, Service
+from domains.player import Player
 from domains.system.system_domains import (
+    ActionCommand,
     ContextType,
-    ResponseType,
-    ResultType,
-    GameState,
-    RuntimeState,
-    NPCProjection,
-    PlaceProjection,
-    TurnSummary,
-    ActionResponse,
-    ActionCtx,
-    NarrativeCtx,
-    NarrativeContext,
-    NarrativeResponse,
-    DialogueCtx,
-    DialogueContext,
-    DialogueResponse,
-    MarkdownContext,
-    MoveNarratorCtx,
-    MoveNarratorResponse,
-    MoveNarratorResult,
     ExplainLookNarratorCtx,
     ExplainLookResponse,
     ExplainLookResult,
+    GameState,
+    MoveNarratorCtx,
+    MoveNarratorResponse,
+    MoveNarratorResult,
+    PlaceProjection,
+    ResponseType,
+    ResultType,
+    RuntimeState,
 )
-
-Action_ctx = ActionCtx
+from domains.world import Connection, Location, LocationInfo, Place, PlaceInfo, World
+from domains.projections import (
+    AvailableActionsProjection,
+    ConnectionProjection,
+    GameSnapshotProjection,
+    GameStateProjection,
+    LocationHierarchyProjection,
+    MoveOptionProjection,
+    PlaceDetailProjection,
+    PlaceProjection,
+    PlayerSummaryProjection,
+    RagAntennaScoreProjection,
+    RagEvaluationProjection,
+    TurnResultProjection,
+    UIStateProjection,
+    WorldHierarchyProjection,
+)
 
 __all__ = [
     "Entity",
     "World",
     "Location",
     "Place",
+    "Connection",
     "Player",
     "NPC",
     "Service",
     "NPCMotivations",
     "LoreBlock",
+    "LoreConditions",
+    "LoreEffects",
     "ConversationRecord",
     "ContextType",
     "ResponseType",
     "ResultType",
     "GameState",
     "RuntimeState",
-
-    "NPCProjection",
     "PlaceProjection",
-    "TurnSummary",
-    "ActionResponse",
-    "ActionCtx",
-    "Action_ctx",
-    "NarrativeCtx",
-    "NarrativeContext",
-    "NarrativeResponse",
-    "DialogueCtx",
-    "DialogueContext",
-    "DialogueResponse",
-    "MarkdownContext",
-    
+    "ActionCommand",
     "LocationInfo",
     "PlaceInfo",
     "NPCInfo",
-
     "MoveNarratorCtx",
     "MoveNarratorResponse",
     "MoveNarratorResult",
     "ExplainLookNarratorCtx",
     "ExplainLookResponse",
     "ExplainLookResult",
+    "UIStateProjection",
+    "LocationHierarchyProjection",
+    "WorldHierarchyProjection",
+    "MoveOptionProjection",
+    "AvailableActionsProjection",
+    "PlayerSummaryProjection",
+    "GameSnapshotProjection",
+    "GameStateProjection",
+    "PlaceDetailProjection",
+    "ConnectionProjection",
+    "RagAntennaScoreProjection",
+    "RagEvaluationProjection",
+    "TurnResultProjection",
 ]

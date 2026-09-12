@@ -1,26 +1,46 @@
-from typing import List, Dict
+"""Modelos de dominio del mundo: localizaciones, lugares y conexiones."""
+
+from typing import Dict, List
 from pydantic import BaseModel, Field
 from domains.base import Entity
 
+
 class LocationInfo(BaseModel):
     """Información simplificada de una localización."""
+
     id: str
-    nombre: str
+    name: str = ""
+
 
 class PlaceInfo(BaseModel):
-    """Información simplificada de un lugar (lugar/sub-zona)."""
+    """Información simplificada de un lugar o sub-zona."""
+
     id: str
-    nombre: str
+    name: str = ""
+
+
+class Connection(BaseModel):
+    """Conexión física entre dos lugares con distancia y tipo de terreno."""
+
+    target: str
+    distance: int
+    terrain_type: str
+
 
 class Place(Entity):
-    """Un lugar o sub-zona específica dentro de una localización."""
+    """Lugar o sub-zona específica dentro de una localización."""
+
     visible_entities: List[str] = Field(default_factory=list)
-    connections: Dict[str, str] = Field(default_factory=dict)
+    connections: Dict[str, Connection] = Field(default_factory=dict)
+
 
 class Location(Entity):
-    """Una localización mayor dentro del mundo (por ejemplo, un pueblo o una mazmorra)."""
+    """Localización mayor del mundo (ej. pueblo, bosque o mazmorra)."""
+
     places: List[Place] = Field(default_factory=list)
 
+
 class World(Entity):
-    """Representa el mundo completo del juego, que contiene múltiples localizaciones."""
+    """Mundo completo que agrupa todas las localizaciones."""
+
     locations: List[Location] = Field(default_factory=list)
