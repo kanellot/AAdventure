@@ -38,17 +38,3 @@ class LoreBlock(BaseModel):
     revealed: bool = False
     directive: str = ""
     effects: LoreEffects = Field(default_factory=LoreEffects)
-
-    def __init__(self, **data: Any) -> None:
-        if "agenda" in data and "directive" not in data:
-            data["directive"] = data.pop("agenda")
-        super().__init__(**data)
-
-    @property
-    def agenda(self) -> str:
-        """Alias de dominio para la directiva narrativa de LoreBlock."""
-        return self.directive
-
-    @agenda.setter
-    def agenda(self, value: str) -> None:
-        self.directive = value

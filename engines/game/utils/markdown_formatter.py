@@ -34,9 +34,9 @@ class MarkdownFormatter:
         if not npc:
             return "* **NPC**: Desconocido"
 
-        name = getattr(npc, "name", getattr(npc, "nombre", "Desconocido"))
-        ocupacion = getattr(npc, "ocupacion", getattr(npc, "occupation", "Desconocida")) or "Desconocida"
-        descripcion = getattr(npc, "description", getattr(npc, "descripcion", ""))
+        name = getattr(npc, "name", "Desconocido")
+        occupation = getattr(npc, "occupation", "Desconocida") or "Desconocida"
+        description = getattr(npc, "description", "")
 
         lines = []
         if detailed and hasattr(npc, "id"):
@@ -45,15 +45,15 @@ class MarkdownFormatter:
         else:
             lines.append(f"* **Nombre**: {name}")
 
-        lines.append(f"* **Ocupación**: {ocupacion}")
+        lines.append(f"* **Ocupación**: {occupation}")
 
         if detailed:
             lines.append(f"* **Estado actual**: {getattr(npc, 'state', 'none')}")
             lines.append(f"* **Afinidad actual**: {getattr(npc, 'affinity', 0.5)}")
 
-        lines.append(f"* **Descripción**: {descripcion}")
+        lines.append(f"* **Descripción**: {description}")
 
-        motivations = getattr(npc, "motivations", getattr(npc, "motivaciones", None))
+        motivations = getattr(npc, "motivations", None)
         if motivations:
             likes = ", ".join(motivations.likes) if motivations.likes else "(Ninguno)"
             dislikes = ", ".join(motivations.dislikes) if motivations.dislikes else "(Ninguno)"
@@ -155,98 +155,93 @@ class MarkdownFormatter:
     @classmethod
     def dialogue_tags(cls, ctx: Any) -> Dict[str, str]:
         """Genera tags runtime para la plantilla de diálogo."""
-        agenda = (
-            f"- {ctx.agenda}"
-            if ctx.agenda
+        directive_str = (
+            f"- {ctx.directive}"
+            if ctx.directive
             else "- Responde al jugador según tu personalidad y motivaciones."
         )
         return {
             "npc_info": cls.format_npc(ctx.npc, detailed=False),
-            "npc_conversation": cls.format_conversation(ctx.conversacion_actual, ctx.player_input),
-            "npc_agenda": agenda,
+            "npc_conversation": cls.format_conversation(ctx.conversation_history, ctx.player_input),
+            "npc_agenda": directive_str,
             "player_input": ctx.player_input or "",
         }
 
     @classmethod
     def move_tags(cls, ctx: Any) -> Dict[str, str]:
         """Genera tags runtime para la plantilla de movimiento."""
-        agenda = (
-            f"- {ctx.agenda}"
-            if ctx.agenda
+        directive_str = (
+            f"- {ctx.directive}"
+            if ctx.directive
             else "- Describe la transición física y la atmósfera del lugar de destino."
         )
         return {
             "origin_info": cls.format_place(ctx.origin_place),
             "path_info": cls.format_path(ctx.path_taken, ctx.estimated_travel_time),
             "destination_info": cls.format_place(ctx.destination_place),
-            "move_agenda": agenda,
+            "move_agenda": directive_str,
             "player_input": ctx.player_input or "",
         }
 
     @classmethod
     def explain_look_tags(cls, ctx: Any) -> Dict[str, str]:
         """Genera tags runtime para la plantilla de inspección."""
-        agenda_lines = []
-        active_agenda = ctx.agenda or getattr(ctx, "secret_directive", None)
-        if active_agenda:
-            agenda_lines.append(f"- {active_agenda}")
+        directive_lines = []
+        if ctx.directive:
+            directive_lines.append(f"- {ctx.directive}")
 
         if getattr(ctx, "failed_reason", None):
-            agenda_lines.append(
+            directive_lines.append(
                 f"- [FALLO/IMPEDIMENTO]: La acción solicitada no fue posible ({ctx.failed_reason}). "
                 f"Explica inmersivamente el motivo."
             )
 
-        if not agenda_lines:
-            agenda_lines.append(
+        if not directive_lines:
+            directive_lines.append(
                 "- Responde a la pregunta del jugador y profundiza con detalles concretos basándote en la información de la entidad."
             )
 
-        history = getattr(ctx, "conversacion_actual", None) or getattr(ctx, "inspection_history", [])
-
         return {
             "entity_info": cls.format_entity(ctx.entity),
-            "conversation_history": cls.format_conversation(history, ctx.player_input),
-            "dm_agenda": "\n".join(agenda_lines),
+            "conversation_history": cls.format_conversation(ctx.inspection_history, ctx.player_input),
+            "dm_agenda": "\n".join(directive_lines),
             "player_input": ctx.player_input or "",
         }
 
     @classmethod
     def dialogue_markdown(cls, ctx: Any) -> str:
         """Formatea el contexto completo de diálogo en Markdown de respaldo."""
-        agenda_block = f"## OBJETIVO / AGENDA ACTUAL\n{ctx.agenda}\n\n" if ctx.agenda else ""
+        directive_block = f"## DIRECTIVA ACTUAL\n{ctx.directive}\n\n" if ctx.directive else ""
         return (
             f"## NPC\n{cls.format_npc(ctx.npc, detailed=False)}\n\n"
-            f"{agenda_block}"
-            f"## CONVERSACIÓN\n{cls.format_conversation(ctx.conversacion_actual, ctx.player_input)}"
+            f"{directive_block}"
+            f"## CONVERSACIÓN\n{cls.format_conversation(ctx.conversation_history, ctx.player_input)}"
         )
 
     @classmethod
     def move_markdown(cls, ctx: Any) -> str:
         """Formatea el contexto completo de movimiento en Markdown de respaldo."""
-        agenda_block = f"## OBJETIVO ACTUAL\n{ctx.agenda}\n\n" if ctx.agenda else ""
+        directive_block = f"## DIRECTIVA ACTUAL\n{ctx.directive}\n\n" if ctx.directive else ""
         return (
             f"# TRANSICIÓN DE MOVIMIENTO\n\n"
             f"## ORIGEN\n{cls.format_place(ctx.origin_place)}\n\n"
             f"## CAMINO RECORRIDO\n{cls.format_path(ctx.path_taken, ctx.estimated_travel_time)}\n\n"
             f"## DESTINO\n{cls.format_place(ctx.destination_place)}\n\n"
-            f"{agenda_block}"
+            f"{directive_block}"
             f'## ACCIÓN DEL JUGADOR\n"{ctx.player_input or ""}"'
         )
 
     @classmethod
     def explain_look_markdown(cls, ctx: Any) -> str:
         """Formatea el contexto completo de inspección en Markdown de respaldo."""
-        active_agenda = ctx.agenda or getattr(ctx, "secret_directive", None)
-        agenda_block = f"## OBJETIVO ACTUAL\n{active_agenda}\n\n" if active_agenda else ""
+        directive_block = f"## DIRECTIVA ACTUAL\n{ctx.directive}\n\n" if ctx.directive else ""
         failed_block = f"## AVISO DE FALLO\n{ctx.failed_reason}\n\n" if getattr(ctx, "failed_reason", None) else ""
-        history = getattr(ctx, "conversacion_actual", None) or getattr(ctx, "inspection_history", [])
         return (
             f"# EXPLICACIÓN / INSPECCIÓN DE ENTIDAD\n\n"
             f"## ENTIDAD\n{cls.format_entity(ctx.entity)}\n\n"
-            f"{agenda_block}"
+            f"{directive_block}"
             f"{failed_block}"
-            f"## CONVERSACIÓN\n{cls.format_conversation(history, ctx.player_input)}"
+            f"## CONVERSACIÓN\n{cls.format_conversation(ctx.inspection_history, ctx.player_input)}"
         )
 
     @classmethod

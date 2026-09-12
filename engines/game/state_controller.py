@@ -132,7 +132,9 @@ class GameStateController:
         controller = cls(data, world_state)
 
         if player.state.upper() == "TALK" and target:
-            controller.load_npc(target)
+            loaded_npc = controller.load_npc(target)
+            if loaded_npc:
+                controller.data.state.active_npc_affinity = round(loaded_npc.affinity, 4)
 
         return controller
 
@@ -200,6 +202,28 @@ class GameStateController:
     def update_state(self, new_state: str) -> None:
         """Actualiza el estado dinámico del jugador (ej. EXPLORE, TALK o LOOK)."""
         self.data.state.player_state = new_state.upper()
+        if self.data.state.player_state != "TALK":
+            self.data.state.active_npc_affinity = None
+        else:
+            self.sync_active_npc_affinity()
+
+    def sync_active_npc_affinity(self) -> Optional[float]:
+        """Sincroniza el nivel de afinidad del NPC activo en RuntimeState si el estado es TALK."""
+        if self.data.state.player_state.upper() == "TALK":
+            target = self.data.state.player_target
+            if target:
+                npc = None
+                for n in self.data.npcs.values():
+                    if n.id == target or n.name == target:
+                        npc = n
+                        break
+                if not npc and hasattr(self, "world_state") and self.world_state:
+                    npc = self.load_npc(target)
+                if npc:
+                    self.data.state.active_npc_affinity = round(npc.affinity, 4)
+                    return self.data.state.active_npc_affinity
+        self.data.state.active_npc_affinity = None
+        return None
 
     def save(self) -> None:
         """Sincroniza y guarda los cambios de GameState de vuelta en WorldState."""

@@ -13,46 +13,19 @@ from engines.game.utils import MarkdownFormatter, TimeCalculator
 class DialogueNPCInfo(BaseModel):
     """Información simplificada y enfocada del NPC para la acción de diálogo."""
 
-    nombre: str
-    ocupacion: str
-    descripcion: str
-    motivaciones: NPCMotivations
-
-    def __init__(self, **data: Any) -> None:
-        if "name" in data and "nombre" not in data:
-            data["nombre"] = data.pop("name")
-        if "occupation" in data and "ocupacion" not in data:
-            data["ocupacion"] = data.pop("occupation")
-        if "description" in data and "descripcion" not in data:
-            data["descripcion"] = data.pop("description")
-        if "motivations" in data and "motivaciones" not in data:
-            data["motivaciones"] = data.pop("motivations")
-        super().__init__(**data)
-
-    @property
-    def name(self) -> str:
-        return self.nombre
-
-    @property
-    def occupation(self) -> str:
-        return self.ocupacion
-
-    @property
-    def description(self) -> str:
-        return self.descripcion
-
-    @property
-    def motivations(self) -> NPCMotivations:
-        return self.motivaciones
+    name: str
+    occupation: str
+    description: str
+    motivations: NPCMotivations
 
 
 class DialogueNarratorCtx(ContextType):
     """Contexto estructurado para la acción de diálogo con un NPC."""
 
     npc: DialogueNPCInfo
-    conversacion_actual: List[Dict[str, str]] = Field(default_factory=list)
+    conversation_history: List[Dict[str, str]] = Field(default_factory=list)
     player_input: str
-    agenda: Optional[str] = None
+    directive: Optional[str] = None
 
 
 class DialogueNarratorResponse(ResponseType):
@@ -130,34 +103,34 @@ class DialogueAction(BaseAction[DialogueNarratorCtx, DialogueNarratorResponse]):
         if not npc.conversation:
             npc.conversation = ConversationRecord(id=f"c_{npc.id}", msg=[])
 
-        ocupacion = getattr(npc, "ocupacion", None) or npc.name
+        occupation = npc.occupation or npc.name
 
         npc_info = DialogueNPCInfo(
-            nombre=npc.name,
-            ocupacion=ocupacion,
-            descripcion=npc.description,
-            motivaciones=npc.motivations,
+            name=npc.name,
+            occupation=occupation,
+            description=npc.description,
+            motivations=npc.motivations,
         )
 
         router = LoreRouter.get_instance()
         self._triggered_lore = None
-        agenda = None
+        directive = None
 
         reactive_match = router.find_reactive_lore(player_input, npc, game_state_controller, npc=npc)
         if reactive_match:
             self._triggered_lore, _ = reactive_match
-            agenda = self._triggered_lore.directive
+            directive = self._triggered_lore.directive
         else:
             proactive_block = router.find_proactive_lore(npc, game_state_controller, npc=npc)
             if proactive_block:
                 self._triggered_lore = proactive_block
-                agenda = self._triggered_lore.directive
+                directive = self._triggered_lore.directive
 
         return DialogueNarratorCtx(
             npc=npc_info,
-            conversacion_actual=npc.conversation.msg,
+            conversation_history=npc.conversation.msg,
             player_input=player_input,
-            agenda=agenda,
+            directive=directive,
         )
 
     def validate(
@@ -205,6 +178,7 @@ class DialogueAction(BaseAction[DialogueNarratorCtx, DialogueNarratorResponse]):
 
             delta = (llm_response.affinity - 0.5) * 0.35
             npc.affinity = round(max(0.0, min(1.0, npc.affinity + delta)), 4)
+            game_state_controller.data.state.active_npc_affinity = npc.affinity
 
             if self._triggered_lore:
                 router = LoreRouter.get_instance()

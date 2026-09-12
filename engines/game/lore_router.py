@@ -1,8 +1,16 @@
 """Enrutador semántico y evaluador de condiciones de Lore Dinámico."""
 
 import logging
-from typing import Optional, Tuple
-from domains import Entity, LoreBlock, LoreConditions, NPC, Player
+from typing import List, Optional, Tuple
+from domains import (
+    Entity,
+    LoreBlock,
+    LoreConditions,
+    NPC,
+    Player,
+    RagAntennaScoreProjection,
+    RagEvaluationProjection,
+)
 from engines.embedding import BaseEmbeddingBackend, EmbeddingFactory
 from engines.game.state_controller import GameStateController
 
@@ -22,6 +30,18 @@ class LoreRouter:
 
     def __init__(self, embedding_backend: Optional[BaseEmbeddingBackend] = None):
         self.embedder = embedding_backend or EmbeddingFactory.get_backend()
+        self.last_evaluation: Optional[RagEvaluationProjection] = None
+
+    def reset_evaluation(self, player_input: str = "", threshold: float = 0.65) -> None:
+        """Reinicia el registro de evaluación RAG para un nuevo turno."""
+        self.last_evaluation = RagEvaluationProjection(
+            player_input=player_input,
+            threshold=threshold,
+        )
+
+    def get_last_evaluation(self) -> Optional[RagEvaluationProjection]:
+        """Devuelve la última evaluación semántica RAG efectuada."""
+        return self.last_evaluation
 
     def check_conditions(
         self,
@@ -91,6 +111,12 @@ class LoreRouter:
         if not clean_input:
             return None
 
+        if self.last_evaluation is None or self.last_evaluation.player_input != clean_input:
+            self.last_evaluation = RagEvaluationProjection(
+                player_input=clean_input,
+                threshold=threshold,
+            )
+
         def _get_specificity(b: LoreBlock) -> int:
             c = b.conditions
             return (
@@ -103,6 +129,9 @@ class LoreRouter:
         best_block: Optional[LoreBlock] = None
         best_score: float = 0.0
         best_raw_score: float = 0.0
+        best_antenna: Optional[str] = None
+
+        query_vec = self.embedder.embed_text(clean_input)
 
         for block in entity.dynamic_lore:
             if block.trigger_mode != "reactive":
@@ -112,18 +141,50 @@ class LoreRouter:
             if not block.trigger_phrases:
                 continue
 
-            if not self.check_conditions(block.conditions, game_state, npc):
-                continue
+            cond_met = self.check_conditions(block.conditions, game_state, npc)
+            block_max_score = 0.0
+            block_best_phrase = None
 
-            score, _ = self.embedder.compute_max_similarity(clean_input, block.trigger_phrases)
-            if score >= threshold:
-                weighted_score = score + (_get_specificity(block) * 0.002)
+            for phrase in block.trigger_phrases:
+                phrase_vec = self.embedder.embed_text(phrase)
+                phrase_score = round(float(self.embedder.compute_similarity(query_vec, phrase_vec)), 4)
+
+                self.last_evaluation.antennas.append(
+                    RagAntennaScoreProjection(
+                        antenna=phrase,
+                        lore_id=block.id,
+                        lore_title=getattr(block, "title", block.id) or block.id,
+                        score=phrase_score,
+                        threshold=threshold,
+                        conditions_met=cond_met,
+                        is_matched=False,
+                        is_injected=False,
+                    )
+                )
+
+                if phrase_score > block_max_score:
+                    block_max_score = phrase_score
+                    block_best_phrase = phrase
+
+            if cond_met and block_max_score >= threshold:
+                weighted_score = block_max_score + (_get_specificity(block) * 0.002)
                 if weighted_score > best_score:
                     best_score = weighted_score
-                    best_raw_score = score
+                    best_raw_score = block_max_score
                     best_block = block
+                    best_antenna = block_best_phrase
 
         if best_block is not None:
+            self.last_evaluation.matched_lore_id = best_block.id
+            self.last_evaluation.matched_antenna = best_antenna
+            self.last_evaluation.injected_directive = best_block.directive
+
+            for ant in self.last_evaluation.antennas:
+                if ant.lore_id == best_block.id and ant.antenna == best_antenna:
+                    ant.is_matched = True
+                    ant.is_injected = True
+                    break
+
             return best_block, best_raw_score
 
         return None

@@ -5,23 +5,31 @@ import shutil
 from typing import List, Optional, Union
 from pydantic import BaseModel
 from adventure_packager import AdventurePackager
-from domains import ActionCommand, NPC, Place, ResultType
+from domains import (
+    ActionCommand,
+    AvailableActionsProjection,
+    ConnectionProjection,
+    GameStateProjection,
+    LocationHierarchyProjection,
+    MoveOptionProjection,
+    NPC,
+    Place,
+    PlaceDetailProjection,
+    PlaceProjection,
+    PlayerSummaryProjection,
+    ResultType,
+    TurnResultProjection,
+    UIStateProjection,
+    WorldHierarchyProjection,
+)
 from engines.game.actions import BaseAction, DialogueAction, LookAction, MoveAction
+from engines.game.lore_router import LoreRouter
 from engines.game.state_controller import GameStateController, WorldState
 from engines.game.utils import TimeCalculator
 from engines.transformer import TransformerEngine
 
-
-class TurnOutput(BaseModel):
-    """Respuesta unificada de un turno de juego para la interfaz de usuario."""
-
-    msg: str
-    author: str
-    info_msg: Optional[str] = None
-    debug_prompt: Optional[str] = None
-    debug_raw_response: Optional[str] = None
-    debug_structured_response: Optional[str] = None
-    debug_engine_result: Optional[str] = None
+# TurnOutput es canónicamente TurnResultProjection (mantiene compatibilidad 100%)
+TurnOutput = TurnResultProjection
 
 
 class GameEngine:
@@ -173,8 +181,8 @@ class GameEngine:
         msg: str,
         author: str,
         info_msg: Optional[str] = None,
-    ) -> TurnOutput:
-        """Empaqueta TurnOutput junto con los registros de depuración."""
+    ) -> TurnResultProjection:
+        """Empaqueta TurnResultProjection junto con los registros de depuración y RAG."""
         debug_prompts = []
         debug_raws = []
         debug_structureds = []
@@ -187,7 +195,9 @@ class GameEngine:
             debug_structureds.append(header + debug["structured_response"])
             debug_results.append(header + debug["result"])
 
-        return TurnOutput(
+        rag_eval = LoreRouter.get_instance().get_last_evaluation()
+
+        return TurnResultProjection(
             msg=msg,
             author=author,
             info_msg=info_msg,
@@ -195,6 +205,7 @@ class GameEngine:
             debug_raw_response="\n\n".join(debug_raws) if debug_raws else None,
             debug_structured_response="\n\n".join(debug_structureds) if debug_structureds else None,
             debug_engine_result="\n\n".join(debug_results) if debug_results else None,
+            rag_evaluation=rag_eval,
         )
 
     def execute_turn(
@@ -203,9 +214,10 @@ class GameEngine:
         target: Optional[str] = None,
         player_input: str = "",
         dm: Optional[TransformerEngine] = None,
-    ) -> TurnOutput:
+    ) -> TurnResultProjection:
         """Ejecuta un turno de juego según la acción solicitada (MOVE, LOOK, TALK)."""
         self.turn_debug_steps.clear()
+        LoreRouter.get_instance().reset_evaluation(player_input=player_input or "")
 
         if isinstance(action, ActionCommand):
             action_type = action.action.upper()
@@ -238,6 +250,7 @@ class GameEngine:
         if action_type in ["MOVE", "EXPLORE"]:
             self.game_state_controller.update_state("EXPLORE")
             self.game_state_controller.data.state.player_target = ""
+            self.game_state_controller.data.state.active_npc_affinity = None
             if hasattr(self.game_state_controller.data.state, "inspection_history"):
                 self.game_state_controller.data.state.inspection_history.clear()
             step = MoveAction(target_name)
@@ -249,6 +262,7 @@ class GameEngine:
                     self.game_state_controller.data.state.inspection_history.clear()
             self.game_state_controller.update_state("LOOK")
             self.game_state_controller.data.state.player_target = target_name
+            self.game_state_controller.data.state.active_npc_affinity = None
             step = LookAction(target_name)
             final_author = "Dungeon Master"
 
@@ -264,11 +278,16 @@ class GameEngine:
                 ):
                     self.game_state_controller.update_location(npc_place.name)
 
-                self.game_state_controller.load_npc(npc.id)
+                loaded_npc = self.game_state_controller.load_npc(npc.id)
                 self.game_state_controller.update_state("TALK")
                 self.game_state_controller.data.state.player_target = npc.name
+                actual_npc = loaded_npc or npc
+                self.game_state_controller.data.state.active_npc_affinity = round(actual_npc.affinity, 4)
                 final_author = npc.name
             else:
+                self.game_state_controller.update_state("TALK")
+                self.game_state_controller.data.state.player_target = target_name
+                self.game_state_controller.sync_active_npc_affinity()
                 final_author = target_name
 
             step = DialogueAction(target_name)
@@ -328,44 +347,182 @@ class GameEngine:
 
         return result
 
-    def get_available_actions(self) -> dict:
-        """Devuelve las acciones disponibles para la interfaz de usuario."""
-        current_place = self.game_state_controller.data.place
-        moves = []
-        if current_place and current_place.connections:
-            for direction, conn in current_place.connections.items():
-                moves.append({
-                    "direction": direction,
-                    "target": conn.target,
-                    "distance": conn.distance,
-                    "terrain": conn.terrain_type,
-                })
+    def _build_world_hierarchy_projection(self, raw_hierarchy: List[dict]) -> WorldHierarchyProjection:
+        """Convierte una lista jerárquica cruda a WorldHierarchyProjection."""
+        locations_proj = []
+        for loc in raw_hierarchy:
+            places_proj = []
+            visited_list = loc.get("visited_places", [])
+            for p in loc.get("places", []):
+                if isinstance(p, PlaceProjection):
+                    places_proj.append(p)
+                elif isinstance(p, dict):
+                    places_proj.append(
+                        PlaceProjection(
+                            id=p.get("id", p.get("name", "")),
+                            name=p.get("name", ""),
+                            status=p.get("status", "visible"),
+                        )
+                    )
+                else:
+                    p_name = str(p)
+                    p_status = getattr(p, "status", None)
+                    if not p_status:
+                        p_status = "visited" if p_name in visited_list else "visible"
+                    places_proj.append(
+                        PlaceProjection(
+                            id=getattr(p, "id", p_name),
+                            name=p_name,
+                            status=p_status,
+                        )
+                    )
+            locations_proj.append(
+                LocationHierarchyProjection(
+                    location_name=loc.get("location_name", "Desconocido"),
+                    places=places_proj,
+                    npcs=loc.get("npcs", []),
+                )
+            )
+        return WorldHierarchyProjection(locations=locations_proj)
 
-        npcs = []
-        for npc_info in self.game_state_controller.get_npc_list():
-            npcs.append({
-                "id": npc_info["id"],
-                "name": npc_info["name"],
-            })
+    def get_navigation_hierarchy(self) -> WorldHierarchyProjection:
+        """Devuelve la jerarquía del mundo filtrada según fog_war (percepción del jugador)."""
+        raw_list = self.get_world_entities_hierarchy(use_fog_of_war=True)
+        return self._build_world_hierarchy_projection(raw_list)
 
-        look_targets = [current_place.name] if current_place else []
+    def get_entities_hierarchy(self) -> WorldHierarchyProjection:
+        """Devuelve la jerarquía completa de todas las entidades del mundo sin niebla (para depuración)."""
+        raw_list = self.get_world_entities_hierarchy(use_fog_of_war=False)
+        return self._build_world_hierarchy_projection(raw_list)
 
-        return {
-            "moves": moves,
-            "npcs": npcs,
-            "look_targets": look_targets,
-        }
-
-    def get_ui_state(self) -> dict:
-        """Devuelve un resumen del estado del juego para la barra de interfaz."""
+    def get_game_state_projection(self) -> GameStateProjection:
+        """Devuelve una proyección exhaustiva del estado actual para el inspector visual."""
         state = self.game_state_controller.data.state
         player = self.game_state_controller.data.player
         place = self.game_state_controller.data.place
 
-        return {
-            "player_name": player.name if player else "Jugador",
-            "gold": player.gold if player else 0,
-            "current_location": place.name if place else "Desconocido",
-            "formatted_time": self.get_formatted_time(),
-            "game_state": state.player_state.upper() if state else "EXPLORE",
-        }
+        player_summary = PlayerSummaryProjection(
+            id=player.id if player else "player",
+            name=player.name if player else "Jugador",
+            description=player.description if player else "",
+            gold=player.gold if player else 0,
+            player_location=player.player_location if player else "",
+            state=player.state if player else "EXPLORE",
+            active_quest=player.active_quest if player else None,
+            completed_quests=list(player.completed_quests) if player else [],
+            inventory=list(player.inventory) if player else [],
+            visited_places=list(player.visited_places) if player else [],
+        )
+
+        place_detail = None
+        if place:
+            connections_proj = []
+            for direction, conn in (place.connections or {}).items():
+                connections_proj.append(
+                    ConnectionProjection(
+                        direction=direction,
+                        target=conn.target,
+                        distance=conn.distance,
+                        terrain_type=getattr(conn, "terrain_type", "normal") or "normal",
+                    )
+                )
+            place_detail = PlaceDetailProjection(
+                id=place.id,
+                name=place.name,
+                description=place.description,
+                visible_entities=list(place.visible_entities or []),
+                connections=connections_proj,
+            )
+
+        discovered = (
+            self.fog_war.get_all_discovered_places()
+            if hasattr(self, "fog_war") and self.fog_war
+            else []
+        )
+        visible_npcs = (
+            self.fog_war.get_visible_npcs()
+            if hasattr(self, "fog_war") and self.fog_war
+            else []
+        )
+
+        active_affinity = None
+        if state and state.player_state.upper() == "TALK":
+            active_affinity = self.game_state_controller.sync_active_npc_affinity()
+            if active_affinity is None:
+                active_affinity = getattr(state, "active_npc_affinity", None)
+
+        return GameStateProjection(
+            player=player_summary,
+            player_state=state.player_state if state else "EXPLORE",
+            player_target=state.player_target if state else "",
+            active_npc_affinity=active_affinity,
+            current_place=place.name if place else None,
+            current_place_detail=place_detail,
+            prev_place=state.prev_place.name if state and state.prev_place else None,
+            travel_speed=state.travel_speed if state else 4.5,
+            elapsed_time=state.elapsed_time if state else 0,
+            formatted_time=self.get_formatted_time(),
+            discovered_places=discovered,
+            visible_npcs=visible_npcs,
+        )
+
+    def get_ui_state_projection(self) -> UIStateProjection:
+        """Devuelve un resumen del estado del juego en formato DTO para la interfaz."""
+        state = self.game_state_controller.data.state
+        player = self.game_state_controller.data.player
+        place = self.game_state_controller.data.place
+
+        active_affinity = None
+        if state and state.player_state.upper() == "TALK":
+            active_affinity = self.game_state_controller.sync_active_npc_affinity()
+            if active_affinity is None:
+                active_affinity = getattr(state, "active_npc_affinity", None)
+
+        return UIStateProjection(
+            player_name=player.name if player else "Jugador",
+            gold=player.gold if player else 0,
+            current_location=place.name if place else "Desconocido",
+            formatted_time=self.get_formatted_time(),
+            game_state=state.player_state.upper() if state else "EXPLORE",
+            player_target=state.player_target if state else None,
+            active_npc_affinity=active_affinity,
+        )
+
+    def get_active_npc_affinity(self) -> Optional[float]:
+        """Devuelve la afinidad del NPC activo en conversación, o None si no está en TALK."""
+        return self.game_state_controller.sync_active_npc_affinity()
+
+    def get_available_actions_projection(self) -> AvailableActionsProjection:
+        """Devuelve las acciones disponibles en formato DTO para la interfaz de usuario."""
+        current_place = self.game_state_controller.data.place
+        moves = []
+        if current_place and current_place.connections:
+            for direction, conn in current_place.connections.items():
+                moves.append(
+                    MoveOptionProjection(
+                        direction=direction,
+                        target=conn.target,
+                        distance=conn.distance,
+                        terrain=conn.terrain_type or "normal",
+                    )
+                )
+
+        npcs = []
+        for npc_info in self.game_state_controller.get_npc_list():
+            npcs.append(npc_info["name"])
+
+        look_targets = [current_place.name] if current_place else []
+
+        return AvailableActionsProjection(
+            moves=moves,
+            npcs=npcs,
+            look_targets=look_targets,
+        )
+
+    def get_available_actions(self) -> dict:
+        """Devuelve las acciones disponibles para la interfaz de usuario (compatibilidad dict)."""
+        return self.get_available_actions_projection().model_dump()
+
+    def get_ui_state(self) -> dict:
+        """Devuelve un resumen del estado del juego para la barra de interfaz (compatibilidad dict)."""
+        return self.get_ui_state_projection().model_dump()

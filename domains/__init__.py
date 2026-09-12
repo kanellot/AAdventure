@@ -21,6 +21,22 @@ from domains.system.system_domains import (
     RuntimeState,
 )
 from domains.world import Connection, Location, LocationInfo, Place, PlaceInfo, World
+from domains.projections import (
+    AvailableActionsProjection,
+    ConnectionProjection,
+    GameSnapshotProjection,
+    GameStateProjection,
+    LocationHierarchyProjection,
+    MoveOptionProjection,
+    PlaceDetailProjection,
+    PlaceProjection,
+    PlayerSummaryProjection,
+    RagAntennaScoreProjection,
+    RagEvaluationProjection,
+    TurnResultProjection,
+    UIStateProjection,
+    WorldHierarchyProjection,
+)
 
 __all__ = [
     "Entity",
@@ -52,4 +68,17 @@ __all__ = [
     "ExplainLookNarratorCtx",
     "ExplainLookResponse",
     "ExplainLookResult",
+    "UIStateProjection",
+    "LocationHierarchyProjection",
+    "WorldHierarchyProjection",
+    "MoveOptionProjection",
+    "AvailableActionsProjection",
+    "PlayerSummaryProjection",
+    "GameSnapshotProjection",
+    "GameStateProjection",
+    "PlaceDetailProjection",
+    "ConnectionProjection",
+    "RagAntennaScoreProjection",
+    "RagEvaluationProjection",
+    "TurnResultProjection",
 ]

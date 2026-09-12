@@ -13,15 +13,6 @@ class NPCInfo(BaseModel):
     id: str
     name: str = ""
 
-    def __init__(self, **data):
-        if "nombre" in data and "name" not in data:
-            data["name"] = data.pop("nombre")
-        super().__init__(**data)
-
-    @property
-    def nombre(self) -> str:
-        return self.name
-
 
 class NPCMotivations(BaseModel):
     """Motivaciones y preferencias de un NPC para modular afinidad."""
@@ -45,7 +36,7 @@ class NPC(Entity):
     """Personaje no jugador (Non-Player Character) dentro del mundo."""
 
     state: str = "none"
-    ocupacion: Optional[str] = None
+    occupation: Optional[str] = None
     current_location: Optional[str] = None
     conversation: Optional[ConversationRecord] = None
     services: List[Service] = Field(default_factory=list)

@@ -91,7 +91,7 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
 
         router = LoreRouter.get_instance()
         self._triggered_lore = None
-        agenda = None
+        directive = None
 
         has_dynamic_lore = (
             (entity and getattr(entity, "dynamic_lore", None)) or
@@ -108,7 +108,7 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
 
             if match:
                 self._triggered_lore, _ = match
-                agenda = self._triggered_lore.directive
+                directive = self._triggered_lore.directive
             else:
                 proactive_block = None
                 if entity:
@@ -117,15 +117,15 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
                     proactive_block = router.find_proactive_lore(game_state_controller.data.place, game_state_controller)
                 if proactive_block:
                     self._triggered_lore = proactive_block
-                    agenda = self._triggered_lore.directive
+                    directive = self._triggered_lore.directive
 
         inspection_hist = getattr(game_state_controller.data.state, "inspection_history", [])
 
         return ExplainLookNarratorCtx(
             entity=entity,
-            conversacion_actual=list(inspection_hist),
+            inspection_history=list(inspection_hist),
             player_input=player_input,
-            agenda=agenda,
+            directive=directive,
             failed_reason=self.failed_reason,
         )
 

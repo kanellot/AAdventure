@@ -11,30 +11,12 @@ class LocationInfo(BaseModel):
     id: str
     name: str = ""
 
-    def __init__(self, **data):
-        if "nombre" in data and "name" not in data:
-            data["name"] = data.pop("nombre")
-        super().__init__(**data)
-
-    @property
-    def nombre(self) -> str:
-        return self.name
-
 
 class PlaceInfo(BaseModel):
     """Información simplificada de un lugar o sub-zona."""
 
     id: str
     name: str = ""
-
-    def __init__(self, **data):
-        if "nombre" in data and "name" not in data:
-            data["name"] = data.pop("nombre")
-        super().__init__(**data)
-
-    @property
-    def nombre(self) -> str:
-        return self.name
 
 
 class Connection(BaseModel):

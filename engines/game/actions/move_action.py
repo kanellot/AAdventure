@@ -79,7 +79,7 @@ class MoveAction(BaseAction[MoveNarratorCtx, MoveNarratorResponse]):
             )
 
         self._triggered_lore = None
-        agenda = None
+        directive = None
 
         has_dynamic_lore = (
             (destination_place and getattr(destination_place, "dynamic_lore", None)) or
@@ -101,12 +101,12 @@ class MoveAction(BaseAction[MoveNarratorCtx, MoveNarratorResponse]):
 
             if match:
                 self._triggered_lore, _ = match
-                agenda = self._triggered_lore.directive
+                directive = self._triggered_lore.directive
             else:
                 proactive_block = router.find_proactive_lore(destination_place, game_state_controller)
                 if proactive_block:
                     self._triggered_lore = proactive_block
-                    agenda = self._triggered_lore.directive
+                    directive = self._triggered_lore.directive
 
         return MoveNarratorCtx(
             origin_place=origin_place,
@@ -114,7 +114,7 @@ class MoveAction(BaseAction[MoveNarratorCtx, MoveNarratorResponse]):
             player_input=player_input,
             path_taken=path_taken,
             estimated_travel_time=travel_time,
-            agenda=agenda,
+            directive=directive,
         )
 
     def validate(

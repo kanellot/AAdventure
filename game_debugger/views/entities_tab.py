@@ -1,7 +1,9 @@
-from typing import List, Dict
+from typing import Dict, List, Union
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QColor, QBrush
+from domains.projections import PlaceProjection, WorldHierarchyProjection
+
 
 class EntitiesTreeWidget(QTreeWidget):
     """
@@ -9,20 +11,19 @@ class EntitiesTreeWidget(QTreeWidget):
     Organiza las localizaciones con sus lugares (solo nombre) y sus NPCs (solo nombre).
     Permite colapsar/expandir ramas y emite una señal al seleccionar un lugar o NPC.
     """
+
     entity_selected = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, header_title: str = "Árbol de Entidades"):
         super().__init__(parent)
-        self.setHeaderLabel("Árbol de Entidades")
+        self.setHeaderLabel(header_title)
         self.setColumnCount(1)
         self.setAlternatingRowColors(True)
         self.itemClicked.connect(self._on_item_clicked)
         self.currentItemChanged.connect(self._on_current_item_changed)
 
-    def update_entities(self, hierarchy: List[Dict]):
-        """
-        Puebla el árbol con las localizaciones, lugares y NPCs.
-        """
+    def update_entities(self, hierarchy: Union[WorldHierarchyProjection, List[Dict]]):
+        """Puebla el árbol con las localizaciones, lugares y NPCs a partir de un DTO o dict."""
         # Guardar estado de expansión si ya había elementos
         expanded_paths = set()
         for i in range(self.topLevelItemCount()):
@@ -41,31 +42,48 @@ class EntitiesTreeWidget(QTreeWidget):
         bold_font = QFont()
         bold_font.setBold(True)
 
-        for loc_data in hierarchy:
-            loc_name = loc_data.get("location_name", "Localización")
+        # Si es un DTO WorldHierarchyProjection, convertir a lista de iteración
+        if isinstance(hierarchy, WorldHierarchyProjection):
+            location_items = hierarchy.locations
+        else:
+            location_items = hierarchy
+
+        for loc_data in location_items:
+            if isinstance(loc_data, dict):
+                loc_name = loc_data.get("location_name", "Localización")
+                places = loc_data.get("places", [])
+                npcs = loc_data.get("npcs", [])
+                visited_in_loc = loc_data.get("visited_places", [])
+                visible_in_loc = loc_data.get("visible_places", [])
+            else:
+                loc_name = loc_data.location_name
+                places = loc_data.places
+                npcs = loc_data.npcs
+                visited_in_loc = []
+                visible_in_loc = []
+
             loc_item = QTreeWidgetItem(self)
             loc_item.setText(0, loc_name)
             loc_item.setFont(0, bold_font)
             loc_item.setData(0, Qt.UserRole, "location")
 
             # Rama de Places
-            places = loc_data.get("places", [])
             places_node = QTreeWidgetItem(loc_item)
             places_node.setText(0, f"Places ({len(places)})")
             places_node.setFont(0, bold_font)
             places_node.setData(0, Qt.UserRole, "category_places")
 
-            visited_in_loc = loc_data.get("visited_places", [])
-            visible_in_loc = loc_data.get("visible_places", [])
-
             for place_entry in places:
                 p_item = QTreeWidgetItem(places_node)
 
-                if isinstance(place_entry, dict):
+                if isinstance(place_entry, PlaceProjection):
+                    place_name = place_entry.name
+                    status = place_entry.status
+                elif isinstance(place_entry, dict):
                     place_name = place_entry.get("name", "")
                     status = place_entry.get("status", "visible")
                 else:
-                    place_name = str(place_entry)
+                    place_name = getattr(place_entry, "name", str(place_entry))
                     status = getattr(place_entry, "status", None)
                     if not status:
                         if place_name in visited_in_loc:
@@ -89,7 +107,6 @@ class EntitiesTreeWidget(QTreeWidget):
                     p_item.setToolTip(0, f"{place_name} (Lugar visible - no visitado)")
 
             # Rama de NPCs
-            npcs = loc_data.get("npcs", [])
             npcs_node = QTreeWidgetItem(loc_item)
             npcs_node.setText(0, f"NPCs ({len(npcs)})")
             npcs_node.setFont(0, bold_font)

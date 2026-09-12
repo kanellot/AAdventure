@@ -1,6 +1,6 @@
-from typing import List
+from typing import List, Optional
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTextBrowser, QLineEdit, QPushButton, QComboBox
+    QWidget, QVBoxLayout, QHBoxLayout, QTextBrowser, QLineEdit, QPushButton, QComboBox, QLabel
 )
 from PySide6.QtCore import Signal
 from domains import ActionCommand
@@ -49,6 +49,14 @@ class ChatTab(QWidget):
         self.target_combo.setPlaceholderText("Selecciona objetivo...")
         action_layout.addWidget(self.target_combo)
 
+        self.lbl_affinity = QLabel("")
+        self.lbl_affinity.setStyleSheet(
+            "font-weight: bold; color: #2e7d32; padding: 4px 8px; "
+            "border: 1px solid #a5d6a7; border-radius: 4px; background-color: #e8f5e9;"
+        )
+        self.lbl_affinity.setVisible(False)
+        action_layout.addWidget(self.lbl_affinity)
+
         layout.addLayout(action_layout)
 
         # 3. Barra de entrada de comandos / diálogo inferior
@@ -79,10 +87,16 @@ class ChatTab(QWidget):
         if current_selection and current_selection in targets:
             self.target_combo.setCurrentText(current_selection)
 
-    def set_game_state(self, state: str):
+    def set_game_state(
+        self,
+        state: str,
+        active_affinity: Optional[float] = None,
+        target_name: Optional[str] = None,
+    ):
         """
         Actualiza la interfaz según el estado de juego (EXPLORE, TALK o LOOK).
         Habilita el textbox y botón Enviar si estamos en TALK o LOOK.
+        Muestra el nivel de afinidad si estamos en TALK con un NPC.
         """
         self.current_game_state = state.upper()
         is_interactive = (self.current_game_state in ["TALK", "LOOK"])
@@ -91,12 +105,22 @@ class ChatTab(QWidget):
         self.input_edit.setEnabled(is_interactive)
 
         if self.current_game_state == "TALK":
-            self.input_edit.setPlaceholderText("Escribe tu respuesta o frase para el NPC...")
+            if active_affinity is not None:
+                pct = int(round(active_affinity * 100))
+                self.lbl_affinity.setText(f"💚 Afinidad: {active_affinity:.2f} ({pct}%)")
+                self.lbl_affinity.setVisible(True)
+                target_str = f" para {target_name}" if target_name else ""
+                self.input_edit.setPlaceholderText(f"Escribe tu respuesta{target_str} (Afinidad actual: {active_affinity:.2f})...")
+            else:
+                self.lbl_affinity.setVisible(False)
+                self.input_edit.setPlaceholderText("Escribe tu respuesta o frase para el NPC...")
             self.input_edit.setFocus()
         elif self.current_game_state == "LOOK":
+            self.lbl_affinity.setVisible(False)
             self.input_edit.setPlaceholderText("Especifica qué miras o examinas en detalle (ej: 'mirar debajo de la mesa')...")
             self.input_edit.setFocus()
         else:
+            self.lbl_affinity.setVisible(False)
             self.input_edit.clear()
             self.input_edit.setPlaceholderText("Selecciona objetivo y pulsa un botón de acción (MOVE, LOOK, TALK)...")
 
