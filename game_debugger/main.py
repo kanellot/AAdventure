@@ -100,10 +100,24 @@ QStatusBar {
 }
 """
 
-def start_debugger(game_engine: GameEngine, dm: TransformerEngine):
+import os
+from typing import Optional
+from adventure_selector import get_default_adventure_path, open_adventure_selector, set_default_adventure_path
+from engines.transformer import create_llm_adapter
+
+LLM_CONFIG_PATH = os.path.join("Resources", "system_data", "llm_config.json")
+
+
+def start_debugger(
+    game_engine: Optional[GameEngine] = None,
+    dm: Optional[TransformerEngine] = None,
+    aad_path: Optional[str] = None,
+):
     """
     Punto de entrada de la aplicación del Depurador Gráfico.
     Inicializa QApplication, aplica el tema y muestra la ventana principal.
+    Si no se proporciona game_engine, resuelve la aventura por defecto o solicita
+    seleccionar una mediante el selector de aventuras.
     """
     app = QApplication.instance()
     if not app:
@@ -112,6 +126,36 @@ def start_debugger(game_engine: GameEngine, dm: TransformerEngine):
     # Aplicar estilo sepia
     app.setStyleSheet(SEPIA_STYLESHEET)
 
-    window = GameDebuggerApp(game_engine, dm)
+    # 1. Si no hay motor provisto, resolver archivo .aad
+    if game_engine is None:
+        target_path = aad_path or get_default_adventure_path()
+        if not target_path or not os.path.exists(target_path):
+            target_path = open_adventure_selector()
+            if not target_path:
+                print("[INFO] Selección de aventura cancelada. Saliendo.")
+                return
+
+        try:
+            game_engine = GameEngine(world_json_path=target_path)
+            aad_path = target_path
+            set_default_adventure_path(target_path)
+        except Exception as e:
+            print(f"[ERROR] Error al inicializar GameEngine con {target_path}: {e}")
+            return
+
+    # 2. Si no hay TransformerEngine provisto, inicializarlo
+    if dm is None:
+        try:
+            adapter = create_llm_adapter(config_or_path=LLM_CONFIG_PATH)
+            dm = TransformerEngine(llm_adapter=adapter)
+        except Exception as e:
+            print(f"[WARN] No se pudo inicializar TransformerEngine: {e}")
+
+    window = GameDebuggerApp(game_engine, dm, aad_path=aad_path)
     window.show()
     sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    start_debugger()
+

@@ -60,15 +60,6 @@ class MarkdownFormatter:
             lines.append("* **Motivaciones**:")
             lines.append(f"  * Likes: {likes}")
             lines.append(f"  * Dislikes: {dislikes}")
-
-        services = getattr(npc, "services", [])
-        if detailed and services:
-            lines.append("* **Servicios ofrecidos**:")
-            for svc in services:
-                cost_str = f"{svc.cost} monedas" if getattr(svc, "cost", None) is not None else "Gratuito"
-                min_aff = getattr(svc, "min_affinity", 0.0)
-                lines.append(f"  * {svc.type} ({cost_str}): {svc.description} [Afinidad mín: {min_aff}]")
-
         return "\n".join(lines)
 
     @staticmethod

@@ -2,8 +2,10 @@
 
 from domains.base import Entity
 from domains.conversation import ConversationRecord
-from domains.lore import LoreBlock, LoreConditions, LoreEffects
-from domains.npcs import NPC, NPCInfo, NPCMotivations, Service
+from domains.items import Item, GameObject
+from domains.story_config import StoryConfig
+from domains.lore import EntityCondition, LoreBlock, LoreBlockState, LoreConditions, LoreEffects
+from domains.npcs import NPC, NPCInfo, NPCMotivations
 from domains.player import Player
 from domains.system.system_domains import (
     ActionCommand,
@@ -40,15 +42,19 @@ from domains.projections import (
 
 __all__ = [
     "Entity",
+    "Item",
+    "GameObject",
+    "StoryConfig",
     "World",
     "Location",
     "Place",
     "Connection",
     "Player",
     "NPC",
-    "Service",
     "NPCMotivations",
     "LoreBlock",
+    "LoreBlockState",
+    "EntityCondition",
     "LoreConditions",
     "LoreEffects",
     "ConversationRecord",

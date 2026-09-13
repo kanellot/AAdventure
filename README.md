@@ -51,7 +51,7 @@ Muchos juegos basados en inteligencia artificial sufren de inconsistencias o inv
    Para evitar saturar a la IA con todo el texto de la historia a la vez, cada evento o secreto tiene asociadas varias frases de activacion ("antenas"). Si el jugador escribe algo parecido a esa intencion (por ejemplo, preguntar por un rumor o un objeto perdido), el sistema detecta la coincidencia semantica y le entrega a la IA exactamente la informacion que necesita para ese turno.
 
 3. **Relacion viva con los personajes**:
-   Los personajes tienen un nivel de afinidad que cambia segun como los trates. Si hablas de temas que les gustan o cumples sus peticiones, su afinidad aumentara y desbloquearan nuevos servicios o informacion. Si eres hostil, su trato cambiara.
+   Los personajes tienen un nivel de afinidad que cambia segun como los trates. Si hablas de temas que les gustan o cumples sus peticiones, su afinidad aumentara y desbloquearan nuevos secretos o informacion. Si eres hostil, su trato cambiara.
 
 4. **Separacion total entre motor y pantalla**:
    Toda la informacion que la pantalla necesita (mapa visible, oro, tiempo, estado del personaje) se entrega en paquetes de datos cerrados y seguros. De este modo, la interfaz grafica solo se encarga de pintar bonito lo que el motor decide, facilitando crear interfaces nuevas (como la app de Android) sin tocar una sola linea de las reglas.
@@ -81,7 +81,7 @@ El editor permite construir mundos interactivos a traves de una interfaz grafica
 
 - **Ciudades y Lugares**: Define el nombre y la descripcion que recibira el jugador al llegar.
 - **Caminos y Conexiones**: Conecta lugares indicando la direccion (Norte, Sur, etc.), la distancia en metros y si se trata de un camino de tierra, bosque o sendero pedregoso.
-- **Personajes**: Dales un nombre, descripcion, ocupacion, productos o servicios y define sus motivaciones para que la IA sepa que cosas le agradan o le molestan durante la conversacion.
+- **Personajes**: Dales un nombre, descripcion, ocupacion y define sus motivaciones para que la IA sepa que cosas le agradan o le molestan durante la conversacion.
 - **Bloques de Lore y Secretos**: Anade eventos de historia, directivas de comportamiento y frases gatillo que la IA recordara cuando el jugador toque esos temas.
 - **Compilacion**: Guarda tu aventura en un unico paquete `.aad` listo para abrir y jugar.
 

@@ -9,6 +9,7 @@ from domains import (
     ActionCommand,
     AvailableActionsProjection,
     ConnectionProjection,
+    GameState,
     GameStateProjection,
     LocationHierarchyProjection,
     MoveOptionProjection,
@@ -40,6 +41,9 @@ class GameEngine:
         world_json_path: str,
         npcs_json_path: Optional[str] = None,
         player_json_path: Optional[str] = None,
+        objects_json_path: Optional[str] = None,
+        lore_json_path: Optional[str] = None,
+        config_json_path: Optional[str] = None,
     ):
         self.temp_dir: Optional[str] = None
         self.turn_debug_steps: List[dict] = []
@@ -49,14 +53,88 @@ class GameEngine:
             world_path = os.path.join(self.temp_dir, "world.json")
             npcs_path = os.path.join(self.temp_dir, "npcs.json")
             player_path = os.path.join(self.temp_dir, "player.json")
+            objects_path = os.path.join(self.temp_dir, "objects.json")
+            lore_path = os.path.join(self.temp_dir, "loreblocks.json")
+            config_path = os.path.join(self.temp_dir, "story_config.json")
         else:
+            base_dir = os.path.dirname(world_json_path)
             world_path = world_json_path
-            npcs_path = npcs_json_path
-            player_path = player_json_path
+            npcs_path = npcs_json_path or os.path.join(base_dir, "npcs.json")
+            player_path = player_json_path or os.path.join(base_dir, "player.json")
+            objects_path = objects_json_path or os.path.join(base_dir, "objects.json")
+            lore_path = lore_json_path or os.path.join(base_dir, "loreblocks.json")
+            config_path = config_json_path or os.path.join(base_dir, "story_config.json")
 
-        self.world_state = WorldState(world_path, npcs_path, player_path)
+        self.world_state = WorldState(
+            world_path,
+            npcs_path,
+            player_path,
+            objects_path,
+            lore_path,
+            config_path,
+        )
         self.game_state_controller = GameStateController.create_from_world(self.world_state)
         self.fog_war = self.game_state_controller.fog_war
+
+    @property
+    def game_state(self) -> GameState:
+        return self.game_state_controller.game_state
+
+    @property
+    def gold(self) -> int:
+        return self.game_state.gold
+
+    @property
+    def inventory(self) -> List[str]:
+        return self.game_state.inventory
+
+    @property
+    def current_location(self) -> str:
+        return self.game_state.current_location
+
+    @property
+    def visited_places(self) -> List[str]:
+        return self.game_state.visited_places
+
+    @property
+    def known_places(self) -> List[str]:
+        return self.game_state.known_places
+
+    @property
+    def known_npcs(self) -> List[str]:
+        return self.game_state.known_npcs
+
+    @property
+    def known_objs(self) -> List[str]:
+        return self.game_state.known_objs
+
+    @property
+    def visible_npcs(self) -> List[str]:
+        return self.game_state.visible_npcs
+
+    @property
+    def visible_objs(self) -> List[str]:
+        return self.game_state.visible_objs
+
+    @property
+    def active_lore_blocks(self) -> List[str]:
+        return self.game_state.active_lore_blocks
+
+    @property
+    def done_lore_blocks(self) -> List[str]:
+        return self.game_state.done_lore_blocks
+
+    def move_to(self, target: str) -> None:
+        self.game_state_controller.update_location(target)
+
+    def spawn_npc(self, npc_id: str, place_id: Optional[str] = None) -> None:
+        self.game_state_controller.spawn_npc(npc_id, place_id)
+
+    def spawn_object(self, object_id: str, place_id: Optional[str] = None) -> None:
+        self.game_state_controller.spawn_object(object_id, place_id)
+
+    def give_item_to_player(self, object_id: str) -> None:
+        self.game_state_controller.give_item_to_player(object_id)
 
     def __del__(self) -> None:
         self.cleanup()
@@ -79,10 +157,16 @@ class GameEngine:
         return None
 
     def get_npc_place(self, npc_id_or_name: str) -> Optional[Place]:
-        """Devuelve el objeto Place donde reside el NPC buscando en visible_entities."""
+        """Devuelve el objeto Place donde reside el NPC buscando en ubicación dinámica o visible_entities."""
         npc = self.get_npc_by_name_or_id(npc_id_or_name)
         if not npc:
             return None
+        if hasattr(self, "game_state_controller") and self.game_state_controller:
+            pid = self.game_state_controller.npc_locations.get(npc.id)
+            if pid:
+                p = self.world_state.places_by_id.get(pid) or self.world_state.places_by_name.get(pid)
+                if p:
+                    return p
         for place in self.world_state.places_by_id.values():
             if npc.id in place.visible_entities or npc.name in place.visible_entities:
                 return place
@@ -318,6 +402,23 @@ class GameEngine:
         result = step.execute(self.game_state_controller, player_input, llm_response)
 
         self.save()
+
+        triggered = getattr(step, "_triggered_lore", None)
+        if triggered and getattr(triggered, "effects", None):
+            eff = triggered.effects
+            if eff.trigger_action_type and eff.trigger_action_target:
+                act_type = eff.trigger_action_type.upper()
+                act_tgt = eff.trigger_action_target
+                if act_type in ["MOVE", "EXPLORE"]:
+                    self.game_state_controller.update_location(act_tgt)
+                    self.game_state_controller.update_state("EXPLORE")
+                    self.game_state_controller.data.state.player_target = ""
+                elif act_type == "TALK":
+                    self.game_state_controller.update_state("TALK")
+                    self.game_state_controller.data.state.player_target = act_tgt
+                    self.game_state_controller.load_npc(act_tgt)
+                    self.game_state_controller.sync_active_npc_affinity()
+                self.save()
 
         debug_info = {
             "step_name": step.__class__.__name__,

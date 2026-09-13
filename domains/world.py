@@ -3,6 +3,7 @@
 from typing import Dict, List
 from pydantic import BaseModel, Field
 from domains.base import Entity
+from domains.items import Item
 
 
 class LocationInfo(BaseModel):
@@ -31,6 +32,7 @@ class Place(Entity):
     """Lugar o sub-zona específica dentro de una localización."""
 
     visible_entities: List[str] = Field(default_factory=list)
+    items: List[Item] = Field(default_factory=list)
     connections: Dict[str, Connection] = Field(default_factory=dict)
 
 

@@ -66,6 +66,13 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
                         entity = n
                         break
 
+            # Buscar en Objetos (Items)
+            if not entity and hasattr(game_state_controller.world_state, "objects"):
+                entity = (
+                    game_state_controller.world_state.objects.get(target)
+                    or game_state_controller.world_state.objects_by_name.get(target)
+                )
+
             if not entity:
                 current_place = game_state_controller.data.place
                 if current_place and (current_place.id == target or current_place.name == target):
@@ -94,8 +101,8 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
         directive = None
 
         has_dynamic_lore = (
-            (entity and getattr(entity, "dynamic_lore", None)) or
-            (game_state_controller.data.place and getattr(game_state_controller.data.place, "dynamic_lore", None))
+            (entity and (getattr(entity, "dynamic_lore", None) or router.get_blocks_for_entity(entity, game_state_controller))) or
+            (game_state_controller.data.place and (getattr(game_state_controller.data.place, "dynamic_lore", None) or router.get_blocks_for_entity(game_state_controller.data.place, game_state_controller)))
         )
 
         if has_dynamic_lore:
@@ -119,11 +126,9 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
                     self._triggered_lore = proactive_block
                     directive = self._triggered_lore.directive
 
-        inspection_hist = getattr(game_state_controller.data.state, "inspection_history", [])
-
         return ExplainLookNarratorCtx(
             entity=entity,
-            inspection_history=list(inspection_hist),
+            inspection_history=[],
             player_input=player_input,
             directive=directive,
             failed_reason=self.failed_reason,
@@ -151,13 +156,6 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
         if self._triggered_lore:
             router = LoreRouter.get_instance()
             router.apply_effects(self._triggered_lore, game_state_controller)
-
-        if hasattr(game_state_controller.data.state, "inspection_history"):
-            entry_input = player_input if player_input else f"Mirar {self.target or 'entorno'}"
-            game_state_controller.data.state.inspection_history.append({
-                "Player": entry_input,
-                "Dungeon Master": llm_response.msg,
-            })
 
         if not self.target:
             return
@@ -195,6 +193,17 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
                 game_state_controller.world_state.places_by_id[place.id].description = (
                     f"{game_state_controller.world_state.places_by_id[place.id].description}\n{new_desc}"
                 )
+            return
+
+        # Objeto (Item)
+        if hasattr(game_state_controller.world_state, "objects"):
+            obj = (
+                game_state_controller.world_state.objects.get(target)
+                or game_state_controller.world_state.objects_by_name.get(target)
+            )
+            if obj:
+                obj.description = f"{obj.description}\n{new_desc}"
+                return
 
     def build_result(
         self,

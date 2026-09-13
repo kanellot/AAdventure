@@ -42,9 +42,16 @@ def print_banner():
 
 def main():
     import argparse
+    from adventure_selector import (
+        get_default_adventure_path,
+        set_default_adventure_path,
+        open_adventure_selector,
+    )
+
     parser = argparse.ArgumentParser(description="AAdventure - Motor Narrativo D&D con GameEngine")
     parser.add_argument("--editor", "-e", action="store_true", help="Lanza el editor gráfico de historias")
     parser.add_argument("--play-debug", "-d", action="store_true", help="Jugar con la UI de depuración gráfica")
+    parser.add_argument("--select-adventure", "-s", action="store_true", help="Abre el selector gráfico de aventuras")
     parser.add_argument("aad_file", nargs="?", default=None, help="Ruta al archivo de aventura .aad")
     args = parser.parse_args()
 
@@ -60,6 +67,14 @@ def main():
             print(f"Error detallado: {ie}")
             sys.exit(1)
 
+    # Si se solicita el selector explícito
+    if args.select_adventure:
+        chosen = open_adventure_selector()
+        if not chosen:
+            print(f"{Colors.OKCYAN}[INFO] Operación cancelada.{Colors.ENDC}")
+            sys.exit(0)
+        args.aad_file = chosen
+
     print_banner()
 
     # =====================================================================
@@ -67,10 +82,15 @@ def main():
     # =====================================================================
     
     # 1. Construir GameEngine
-    # 1. Construir GameEngine
-    # Si no se pasó aad_file, por defecto buscamos Adventure.aad
+    # Si se especificó un aad_file, usarlo y guardarlo como el nuevo por defecto.
+    # Si no, consultar la aventura guardada por defecto.
     DEFAULT_AAD = os.path.join("Resources", "adventure_data", "Adventure.aad")
-    aad_to_load = args.aad_file or DEFAULT_AAD
+    if args.aad_file:
+        aad_to_load = args.aad_file
+        if os.path.exists(aad_to_load) and aad_to_load.lower().endswith(".aad"):
+            set_default_adventure_path(aad_to_load)
+    else:
+        aad_to_load = get_default_adventure_path() or DEFAULT_AAD
 
     if os.path.exists(aad_to_load) and aad_to_load.lower().endswith(".aad"):
         print(f"{Colors.OKCYAN}[INFO] Inicializando GameEngine y cargando aventura desde: {aad_to_load}...{Colors.ENDC}")
@@ -114,7 +134,7 @@ def main():
         print(f"{Colors.OKCYAN}[INFO] Lanzando el Depurador Gráfico de AAdventure...{Colors.ENDC}")
         try:
             from game_debugger.main import start_debugger
-            start_debugger(game_engine, dm)
+            start_debugger(game_engine, dm, aad_path=aad_to_load)
             sys.exit(0)
         except ImportError as ie:
             print(f"{Colors.FAIL}[ERROR] No se pudo iniciar el depurador gráfico.{Colors.ENDC}")

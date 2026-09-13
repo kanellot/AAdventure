@@ -1,7 +1,7 @@
 """Modelos del sistema, contextos de ejecución y proyecciones de estado."""
 
 from typing import Any, Dict, List, Optional, Union
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, model_validator
 from domains.base import Entity
 from domains.conversation import ConversationRecord
 from domains.npcs import NPC
@@ -46,26 +46,83 @@ class RuntimeState(BaseModel):
 
 
 class GameState(BaseModel):
-    """Proyección completa del estado accesible y percepción actual del jugador."""
+    """Estado activo simplificado del jugador y de la partida."""
 
-    state: RuntimeState
-    player: Player
-    npcs: Dict[str, NPC] = Field(default_factory=dict)
+    # Recursos e inventario
+    gold: int = 0
+    inventory: List[str] = Field(default_factory=list)
+
+    # Percepción y lugares
+    current_location: str = ""
+    visited_places: List[str] = Field(default_factory=list)
+    known_places: List[str] = Field(default_factory=list)
+
+    # Entidades conocidas (nombradas o descubiertas)
+    known_npcs: List[str] = Field(default_factory=list)
+    known_objs: List[str] = Field(default_factory=list)
+
+    # Entidades en el lugar actual (en tiempo real)
+    visible_npcs: List[str] = Field(default_factory=list)
+    visible_objs: List[str] = Field(default_factory=list)
+
+    # Máquina de estados jerárquica de Lore
+    active_lore_blocks: List[str] = Field(default_factory=list)
+    done_lore_blocks: List[str] = Field(default_factory=list)
+
+    # Runtime de interacción y simulación
+    player_state: str = "EXPLORE"
+    player_target: str = ""
+    active_npc_affinity: Optional[float] = None
+    elapsed_time: int = 0
+    travel_speed: float = 4.5
+
+    # Campos opcionales para retrocompatibilidad total
+    player: Optional[Player] = None
     place: Optional[Place] = None
+    prev_place: Optional[Any] = None
+    current_place: Optional[Any] = None
+    npcs: Dict[str, NPC] = Field(default_factory=dict)
 
-    @computed_field
+    @model_validator(mode="before")
+    @classmethod
+    def _sync_legacy_init(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            p = data.get("player")
+            if p:
+                if isinstance(p, dict):
+                    data.setdefault("gold", p.get("gold", 0))
+                    data.setdefault("inventory", p.get("inventory", []))
+                    data.setdefault("current_location", p.get("initial_place") or p.get("player_location", ""))
+                    data.setdefault("visited_places", p.get("visited_places", []))
+                    data.setdefault("known_places", p.get("unlocked_places", []))
+                    data.setdefault("known_npcs", p.get("known_npcs", []))
+                    data.setdefault("known_objs", p.get("known_items", []))
+                elif hasattr(p, "gold"):
+                    data.setdefault("gold", getattr(p, "gold", 0))
+                    data.setdefault("inventory", list(getattr(p, "inventory", [])))
+                    data.setdefault("current_location", getattr(p, "initial_place", None) or getattr(p, "player_location", ""))
+                    data.setdefault("visited_places", list(getattr(p, "visited_places", [])))
+                    data.setdefault("known_places", list(getattr(p, "unlocked_places", [])))
+                    data.setdefault("known_npcs", list(getattr(p, "known_npcs", [])))
+                    data.setdefault("known_objs", list(getattr(p, "known_items", [])))
+            plc = data.get("place")
+            if plc:
+                p_name = plc.get("name") if isinstance(plc, dict) else getattr(plc, "name", "")
+                p_id = plc.get("id") if isinstance(plc, dict) else getattr(plc, "id", "")
+                if not data.get("current_location"):
+                    data["current_location"] = p_id or p_name
+            if not data.get("current_location"):
+                data["current_location"] = ""
+        return data
+
+    # Shims de compatibilidad para evitar roturas durante la transición
     @property
-    def active_npc_affinity(self) -> Optional[float]:
-        """Afinidad del NPC con el que se está conversando si player_state es TALK."""
-        if self.state.player_state.upper() == "TALK":
-            if self.state.active_npc_affinity is not None:
-                return self.state.active_npc_affinity
-            target = self.state.player_target
-            if target:
-                for npc in self.npcs.values():
-                    if npc.id == target or npc.name == target:
-                        return npc.affinity
-        return None
+    def data(self) -> "GameState":
+        return self
+
+    @property
+    def state(self) -> "GameState":
+        return self
 
 
 class ActionCommand(BaseModel):

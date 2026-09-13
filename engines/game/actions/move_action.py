@@ -81,32 +81,35 @@ class MoveAction(BaseAction[MoveNarratorCtx, MoveNarratorResponse]):
         self._triggered_lore = None
         directive = None
 
-        has_dynamic_lore = (
-            (destination_place and getattr(destination_place, "dynamic_lore", None)) or
-            any(getattr(p, "dynamic_lore", None) for p in path_taken)
-        )
-
-        if has_dynamic_lore and destination_place:
+        if destination_place:
             router = LoreRouter.get_instance()
             clean_input = (player_input or "").strip()
-
-            match = None
-            if clean_input:
-                match = router.find_reactive_lore(clean_input, destination_place, game_state_controller)
-                if not match and path_taken:
-                    for intermediate_place in path_taken:
-                        match = router.find_reactive_lore(clean_input, intermediate_place, game_state_controller)
-                        if match:
-                            break
-
-            if match:
-                self._triggered_lore, _ = match
-                directive = self._triggered_lore.directive
+            matched_lore = router.route_move_lore(
+                destination_place=destination_place,
+                game_state=game_state_controller,
+                player_input=clean_input,
+                path_taken=path_taken,
+            )
+            if matched_lore:
+                self._triggered_lore = matched_lore
+                directive = matched_lore.directive
             else:
-                proactive_block = router.find_proactive_lore(destination_place, game_state_controller)
-                if proactive_block:
-                    self._triggered_lore = proactive_block
+                match = None
+                if clean_input:
+                    match = router.find_reactive_lore(clean_input, destination_place, game_state_controller)
+                    if not match and path_taken:
+                        for intermediate_place in path_taken:
+                            match = router.find_reactive_lore(clean_input, intermediate_place, game_state_controller)
+                            if match:
+                                break
+                if match:
+                    self._triggered_lore, _ = match
                     directive = self._triggered_lore.directive
+                else:
+                    proactive_block = router.find_proactive_lore(destination_place, game_state_controller)
+                    if proactive_block:
+                        self._triggered_lore = proactive_block
+                        directive = self._triggered_lore.directive
 
         return MoveNarratorCtx(
             origin_place=origin_place,

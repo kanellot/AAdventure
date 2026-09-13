@@ -1,9 +1,10 @@
-"""Ventana principal del depurador gráfico de juego (DEBUG Mode)."""
-
+import os
+from typing import Optional
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QMainWindow,
+    QMessageBox,
     QSplitter,
     QTabWidget,
     QTextEdit,
@@ -29,14 +30,17 @@ class GameDebuggerApp(QMainWindow):
     Interactúa exclusivamente con la fachada GameEngine recibiendo y enviando DTOs.
     """
 
-    def __init__(self, game_engine: GameEngine, dm: TransformerEngine):
+    def __init__(self, game_engine: GameEngine, dm: TransformerEngine, aad_path: Optional[str] = None):
         super().__init__()
         self.setWindowTitle("Depurador de Juego - AAdventure")
         self.resize(1150, 780)
 
         self.engine = game_engine
         self.dm = dm
+        self.aad_path = aad_path
         self.worker = None
+
+        self._setup_menu()
 
         # Widget central divisor
         central_widget = QWidget()
@@ -103,8 +107,83 @@ class GameDebuggerApp(QMainWindow):
         # Dimensionar divisor (68% izquierda, 32% derecha)
         splitter.setSizes([760, 360])
 
-        # Inicializar UI
+        # Inicializar UI y título
         self.init_game_ui()
+        self.update_window_title()
+
+    def _setup_menu(self):
+        """Configura la barra de menú superior de la aplicación."""
+        menubar = self.menuBar()
+        archivo_menu = menubar.addMenu("Archivo")
+
+        change_act = archivo_menu.addAction("Cambiar Aventura... (Selector)")
+        change_act.setShortcut("Ctrl+O")
+        change_act.triggered.connect(self.on_change_adventure_triggered)
+
+        reload_act = archivo_menu.addAction("Reiniciar Aventura Actual")
+        reload_act.setShortcut("Ctrl+R")
+        reload_act.triggered.connect(self.on_reload_adventure_triggered)
+
+        archivo_menu.addSeparator()
+
+        exit_act = archivo_menu.addAction("Salir")
+        exit_act.setShortcut("Ctrl+Q")
+        exit_act.triggered.connect(self.close)
+
+    def update_window_title(self):
+        """Actualiza el título de la ventana con el archivo y mundo cargados."""
+        title = "Depurador de Juego - AAdventure"
+        if self.aad_path:
+            file_name = os.path.basename(self.aad_path)
+            world_name = "Aventura"
+            if hasattr(self.engine, "world_state") and hasattr(self.engine.world_state, "world"):
+                world_name = getattr(self.engine.world_state.world, "name", "") or world_name
+            title = f"{title} [{file_name} - {world_name}]"
+        self.setWindowTitle(title)
+
+    def on_change_adventure_triggered(self):
+        """Abre el diálogo selector de aventura para cargar otra aventura."""
+        from adventure_selector import open_adventure_selector
+        new_path = open_adventure_selector(parent=self, preselected_path=self.aad_path)
+        if new_path:
+            self.load_adventure(new_path)
+
+    def on_reload_adventure_triggered(self):
+        """Reinicia la aventura actual desde el archivo .aad."""
+        target_path = self.aad_path
+        if not target_path:
+            from adventure_selector import get_default_adventure_path
+            target_path = get_default_adventure_path()
+
+        if target_path:
+            self.load_adventure(target_path)
+        else:
+            QMessageBox.information(self, "Aviso", "No hay ninguna ruta de aventura registrada para reiniciar.")
+
+    def load_adventure(self, aad_path: str):
+        """Carga una nueva aventura .aad en caliente en el depurador."""
+        if not os.path.exists(aad_path):
+            QMessageBox.critical(self, "Error", f"No se encontró el archivo de aventura:\n{aad_path}")
+            return
+
+        try:
+            self.statusBar().showMessage(f"Cargando aventura {os.path.basename(aad_path)}...")
+            new_engine = GameEngine(world_json_path=aad_path)
+            self.engine = new_engine
+            self.aad_path = aad_path
+
+            # Limpiar contenido anterior de las pestañas
+            self.chat_tab.chat_browser.clear()
+            self.prompt_edit.clear()
+            self.rag_tab.update_rag_evaluation(None)
+            self.result_tab.update_result(None)
+
+            # Inicializar UI con el nuevo estado del motor
+            self.init_game_ui()
+            self.update_window_title()
+            self.statusBar().showMessage(f"Aventura '{os.path.basename(aad_path)}' cargada correctamente.", 4000)
+        except Exception as e:
+            QMessageBox.critical(self, "Error al Cargar", f"No se pudo cargar la aventura:\n{e}")
 
     def on_main_tab_changed(self, index: int):
         """Oculta la columna derecha en la pestaña RAG para ofrecer máximo ancho y legibilidad."""
