@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -48,8 +48,8 @@ class StoryEditorApp(QMainWindow):
 
         self.controller = EditorController()
 
-        # Historial de navegación (Atrás / Adelante)
-        self.history: List[QTreeWidgetItem] = []
+        # Historial de navegación (Atrás / Adelante) basado en tuplas (item_type, entity_id)
+        self.history: List[Tuple[str, str]] = []
         self.history_index: int = -1
         self.navigating_history: bool = False
 
@@ -243,37 +243,60 @@ class StoryEditorApp(QMainWindow):
 
     # --- NAVEGACIÓN DE HISTORIAL ---
 
+    def _get_item_key(self, item: Optional[QTreeWidgetItem]) -> Optional[Tuple[str, str]]:
+        if not item:
+            return None
+        try:
+            data = item.data(0, Qt.UserRole)
+            if not data:
+                return None
+            item_type, obj = data
+            if obj is None:
+                return (item_type, item_type)
+            obj_id = getattr(obj, "id", None) or getattr(obj, "name", None) or item_type
+            return (item_type, str(obj_id))
+        except Exception:
+            return None
+
     def push_history(self, item: QTreeWidgetItem):
         if not item or self.navigating_history:
             return
 
-        if self.history_index >= 0 and self.history_index < len(self.history):
-            if self.history[self.history_index] == item:
+        key = self._get_item_key(item)
+        if not key:
+            return
+
+        if 0 <= self.history_index < len(self.history):
+            if self.history[self.history_index] == key:
                 return
 
         # Truncar historial si estábamos en medio
         self.history = self.history[:self.history_index + 1]
-        self.history.append(item)
+        self.history.append(key)
         self.history_index = len(self.history) - 1
         self.update_history_buttons()
 
     def navigate_back(self):
-        if self.history_index > 0:
+        while self.history_index > 0:
             self.history_index -= 1
-            item = self.history[self.history_index]
+            item_type, obj_id = self.history[self.history_index]
             self.navigating_history = True
-            self.tree.setCurrentItem(item)
+            found = self.select_entity_by_id(item_type, obj_id)
             self.navigating_history = False
             self.update_history_buttons()
+            if found:
+                break
 
     def navigate_forward(self):
-        if self.history_index < len(self.history) - 1:
+        while self.history_index < len(self.history) - 1:
             self.history_index += 1
-            item = self.history[self.history_index]
+            item_type, obj_id = self.history[self.history_index]
             self.navigating_history = True
-            self.tree.setCurrentItem(item)
+            found = self.select_entity_by_id(item_type, obj_id)
             self.navigating_history = False
             self.update_history_buttons()
+            if found:
+                break
 
     def update_history_buttons(self):
         self.btn_back.setEnabled(self.history_index > 0)
@@ -301,7 +324,7 @@ class StoryEditorApp(QMainWindow):
     # --- RECONSTRUCCIÓN DEL ÁRBOL LATERAL ---
 
     def refresh_tree(self):
-        current_data = self.tree.currentItem().data(0, Qt.UserRole) if self.tree.currentItem() else None
+        current_key = self._get_item_key(self.tree.currentItem()) if self.tree.currentItem() else None
         self.tree.clear()
         if not self.controller.world:
             return
@@ -394,18 +417,30 @@ class StoryEditorApp(QMainWindow):
         self.tree.expandAll()
 
         # Restaurar selección si es posible
-        if current_data:
-            c_type, c_obj = current_data
-            target_id = getattr(c_obj, "id", None)
-            if target_id:
-                self.select_entity_by_id(c_type, target_id)
+        if current_key:
+            c_type, c_id = current_key
+            self.select_entity_by_id(c_type, c_id)
 
-    def select_entity_by_id(self, entity_type: str, entity_id: str):
-        def find_and_select(parent_node):
+    def select_entity_by_id(self, entity_type: str, entity_id: str) -> bool:
+        def item_matches(item: QTreeWidgetItem) -> bool:
+            try:
+                data = item.data(0, Qt.UserRole)
+                if not data:
+                    return False
+                d_type, d_obj = data
+                if d_type != entity_type:
+                    return False
+                if d_obj is None:
+                    return str(entity_id) == str(entity_type)
+                obj_id = getattr(d_obj, "id", None) or getattr(d_obj, "name", None) or d_type
+                return str(obj_id) == str(entity_id)
+            except Exception:
+                return False
+
+        def find_and_select(parent_node: QTreeWidgetItem) -> bool:
             for i in range(parent_node.childCount()):
                 child = parent_node.child(i)
-                data = child.data(0, Qt.UserRole)
-                if data and data[0] == entity_type and getattr(data[1], "id", None) == entity_id:
+                if item_matches(child):
                     self.tree.setCurrentItem(child)
                     return True
                 if find_and_select(child):
@@ -414,12 +449,12 @@ class StoryEditorApp(QMainWindow):
 
         for i in range(self.tree.topLevelItemCount()):
             top = self.tree.topLevelItem(i)
-            data = top.data(0, Qt.UserRole)
-            if data and data[0] == entity_type and getattr(data[1], "id", None) == entity_id:
+            if item_matches(top):
                 self.tree.setCurrentItem(top)
-                return
+                return True
             if find_and_select(top):
-                return
+                return True
+        return False
 
     def update_selected_tree_item_text(self, text: str):
         item = self.tree.currentItem()
@@ -453,6 +488,15 @@ class StoryEditorApp(QMainWindow):
     def on_tree_item_selected(self):
         item = self.tree.currentItem()
         if not item:
+            if self.controller.world:
+                self.welcome_label.setText(
+                    "Selecciona una entidad en el árbol de aventura para ver y editar sus propiedades."
+                )
+            else:
+                self.welcome_label.setText(
+                    "Bienvenido al Editor de Historias de AAdventure\n\n"
+                    "Crea una nueva aventura o abre un archivo (.aad) para empezar."
+                )
             self.stacked_widget.setCurrentIndex(8)
             return
 
@@ -491,6 +535,12 @@ class StoryEditorApp(QMainWindow):
         elif item_type == "config":
             self.story_config_form.set_config(self.controller.story_config)
             self.stacked_widget.setCurrentWidget(self.story_config_form)
+        elif item_type in ["npcs_group", "objects_group", "lore_group"]:
+            if item.childCount() > 0:
+                self.tree.setCurrentItem(item.child(0))
+            else:
+                self.welcome_label.setText(f"No hay elementos en esta categoría ({item.text(0)}).")
+                self.stacked_widget.setCurrentIndex(8)
 
     def navigate_to_lore_block(self, lb_id: str):
         """Salta directamente a la edición del LoreBlock seleccionado por ID."""
@@ -732,10 +782,14 @@ class StoryEditorApp(QMainWindow):
         if confirm == QMessageBox.Yes:
             self.controller.remove_location(loc.id)
             self.refresh_tree()
-            self.stacked_widget.setCurrentIndex(8)
+            if self.controller.world:
+                self.select_entity_by_id("world", getattr(self.controller.world, "id", None) or self.controller.world.name)
+            else:
+                self.stacked_widget.setCurrentIndex(8)
             self.statusBar().showMessage(f"Localización '{loc.name}' eliminada.")
 
     def delete_place(self, place):
+        parent_loc = self.controller.get_location_by_place_id(place.id)
         confirm = QMessageBox.question(
             self,
             "Confirmar Eliminación",
@@ -746,7 +800,17 @@ class StoryEditorApp(QMainWindow):
         if confirm == QMessageBox.Yes:
             self.controller.remove_place(place.id)
             self.refresh_tree()
-            self.stacked_widget.setCurrentIndex(8)
+            selected = False
+            if parent_loc:
+                selected = self.select_entity_by_id("location", parent_loc.id)
+            if not selected:
+                all_places = self.controller.get_all_places()
+                if all_places:
+                    selected = self.select_entity_by_id("place", all_places[0].id)
+                elif self.controller.world:
+                    selected = self.select_entity_by_id("world", getattr(self.controller.world, "id", None) or self.controller.world.name)
+            if not selected:
+                self.stacked_widget.setCurrentIndex(8)
             self.statusBar().showMessage(f"Lugar '{place.name}' eliminado.")
 
     def delete_npc(self, npc):
@@ -760,7 +824,14 @@ class StoryEditorApp(QMainWindow):
         if confirm == QMessageBox.Yes:
             self.controller.remove_npc(npc.id)
             self.refresh_tree()
-            self.stacked_widget.setCurrentIndex(8)
+            npcs = self.controller.get_npcs()
+            selected = False
+            if npcs:
+                selected = self.select_entity_by_id("npc", npcs[0].id)
+            elif self.controller.world:
+                selected = self.select_entity_by_id("world", getattr(self.controller.world, "id", None) or self.controller.world.name)
+            if not selected:
+                self.stacked_widget.setCurrentIndex(8)
             self.statusBar().showMessage(f"Personaje '{npc.name}' eliminado.")
 
     def delete_object(self, obj):
@@ -774,11 +845,19 @@ class StoryEditorApp(QMainWindow):
         if confirm == QMessageBox.Yes:
             self.controller.remove_object(obj.id)
             self.refresh_tree()
-            self.stacked_widget.setCurrentIndex(8)
+            objects = self.controller.get_objects()
+            selected = False
+            if objects:
+                selected = self.select_entity_by_id("object", objects[0].id)
+            elif self.controller.world:
+                selected = self.select_entity_by_id("world", getattr(self.controller.world, "id", None) or self.controller.world.name)
+            if not selected:
+                self.stacked_widget.setCurrentIndex(8)
             self.statusBar().showMessage(f"Objeto '{obj.name}' eliminado.")
 
     def delete_lore_block(self, lb):
         title = lb.title or lb.name or lb.id
+        parent_id = getattr(lb, "parent_id", None)
         children = [b for b in self.controller.lore_blocks if getattr(b, "parent_id", None) == lb.id]
 
         if children:
@@ -821,5 +900,15 @@ class StoryEditorApp(QMainWindow):
             self.controller.remove_lore_block(lb.id)
 
         self.refresh_tree()
-        self.stacked_widget.setCurrentIndex(8)
+        selected = False
+        if parent_id and self.controller.get_lore_block_by_id(parent_id):
+            selected = self.select_entity_by_id("loreblock", parent_id)
+        if not selected:
+            lore_blocks = self.controller.get_lore_blocks()
+            if lore_blocks:
+                selected = self.select_entity_by_id("loreblock", lore_blocks[0].id)
+            elif self.controller.world:
+                selected = self.select_entity_by_id("world", getattr(self.controller.world, "id", None) or self.controller.world.name)
+        if not selected:
+            self.stacked_widget.setCurrentIndex(8)
         self.statusBar().showMessage(f"LoreBlock '{title}' eliminado.")

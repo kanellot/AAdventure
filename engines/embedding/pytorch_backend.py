@@ -13,6 +13,20 @@ class PyTorchEmbeddingBackend(BaseEmbeddingBackend):
         device: Optional[str] = None,
     ):
         try:
+            import sys
+            # Optimización para PySide6/Shiboken: evitar que tokenize todos los submódulos de ML en disco
+            if "shibokensupport.feature" in sys.modules:
+                sf = sys.modules["shibokensupport.feature"]
+                orig_uses = getattr(sf, "_mod_uses_pyside", None)
+                if orig_uses and not getattr(sf, "_mod_uses_pyside_fast", False):
+                    def _fast_uses(m):
+                        n = getattr(m, "__name__", "")
+                        if n.startswith(("torch", "transformers", "sentence_transformers", "scipy", "sklearn", "numpy", "huggingface_hub", "timm", "tokenizers", "safetensors", "accelerate")):
+                            return False
+                        return orig_uses(m)
+                    sf._mod_uses_pyside = _fast_uses
+                    sf._mod_uses_pyside_fast = True
+
             import torch
             from sentence_transformers import SentenceTransformer, util
             self.torch = torch
@@ -27,6 +41,7 @@ class PyTorchEmbeddingBackend(BaseEmbeddingBackend):
         try:
             self.model = SentenceTransformer(model_name, device=self.device, local_files_only=True)
         except Exception:
+            print(f"[INFO] Cargando modelo de embeddings semánticos '{model_name}' en [{self.device}]...")
             self.model = SentenceTransformer(model_name, device=self.device)
 
     def embed_text(self, text: str) -> Any:

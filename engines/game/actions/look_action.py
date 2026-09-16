@@ -115,16 +115,35 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
 
             if match:
                 self._triggered_lore, _ = match
-                directive = self._triggered_lore.directive
+                if router.last_evaluation and router.last_evaluation.injected_directive:
+                    directive = router.last_evaluation.injected_directive
+                else:
+                    ent_id = getattr(entity, "id", None) or getattr(entity, "name", None)
+                    directive = self._triggered_lore.get_directive_for_entity(ent_id) if hasattr(self._triggered_lore, "get_directive_for_entity") else self._triggered_lore.directive
             else:
                 proactive_block = None
+                matched_entity = entity
                 if entity:
                     proactive_block = router.find_proactive_lore(entity, game_state_controller)
+                if not proactive_block and entity and hasattr(entity, "visible_entities"):
+                    for e_id in getattr(entity, "visible_entities", []):
+                        npc_obj = (
+                            game_state_controller.world_state.npcs.get(e_id)
+                            or getattr(game_state_controller.world_state, "npcs_by_name", {}).get(e_id)
+                        )
+                        if npc_obj:
+                            proactive_block = router.find_proactive_lore(npc_obj, game_state_controller, npc=npc_obj)
+                            if proactive_block:
+                                matched_entity = npc_obj
+                                break
                 if not proactive_block and game_state_controller.data.place and game_state_controller.data.place != entity:
                     proactive_block = router.find_proactive_lore(game_state_controller.data.place, game_state_controller)
+                    if proactive_block:
+                        matched_entity = game_state_controller.data.place
                 if proactive_block:
                     self._triggered_lore = proactive_block
-                    directive = self._triggered_lore.directive
+                    ent_id = getattr(matched_entity, "id", None) or getattr(matched_entity, "name", None)
+                    directive = self._triggered_lore.get_directive_for_entity(ent_id) if hasattr(self._triggered_lore, "get_directive_for_entity") else self._triggered_lore.directive
 
         return ExplainLookNarratorCtx(
             entity=entity,

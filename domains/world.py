@@ -26,6 +26,8 @@ class Connection(BaseModel):
     target: str
     distance: int
     terrain_type: str
+    passable: bool = True
+
 
 
 class Place(Entity):

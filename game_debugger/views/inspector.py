@@ -146,7 +146,18 @@ class GameStateInspector(QTreeWidget):
 
         npcs_child = QTreeWidgetItem(item_fog)
         npcs_text = ", ".join(state.visible_npcs) if state.visible_npcs else "(Ninguno)"
-        npcs_child.setText(0, f"NPCs Visibles: {len(state.visible_npcs)} [{npcs_text}]")
+        # 5. SECCIÓN: BLOQUES DE LORE (HSM)
+        if getattr(state, "active_lore_blocks", None) or getattr(state, "done_lore_blocks", None):
+            item_lore = QTreeWidgetItem(self)
+            item_lore.setText(0, "Estado de Lore (HSM)")
+
+            act_child = QTreeWidgetItem(item_lore)
+            act_text = ", ".join(state.active_lore_blocks) if state.active_lore_blocks else "(Ninguno)"
+            act_child.setText(0, f"Activos ({len(state.active_lore_blocks)}): {act_text}")
+
+            done_child = QTreeWidgetItem(item_lore)
+            done_text = ", ".join(state.done_lore_blocks) if state.done_lore_blocks else "(Ninguno)"
+            done_child.setText(0, f"Completados ({len(state.done_lore_blocks)}): {done_text}")
 
         self.expandAll()
 
@@ -204,5 +215,15 @@ class GameStateInspector(QTreeWidget):
             pid_child.setText(0, f"ID: {place.id}")
             pdesc_child = QTreeWidgetItem(item_place)
             pdesc_child.setText(0, f"Descripción: {place.description}")
+
+        active_lbs = getattr(game_state, "active_lore_blocks", [])
+        done_lbs = getattr(game_state, "done_lore_blocks", [])
+        if active_lbs or done_lbs:
+            item_lore = QTreeWidgetItem(self)
+            item_lore.setText(0, "Estado de Lore (HSM)")
+            act_child = QTreeWidgetItem(item_lore)
+            act_child.setText(0, f"Activos ({len(active_lbs)}): {', '.join(active_lbs) or '(Ninguno)'}")
+            done_child = QTreeWidgetItem(item_lore)
+            done_child.setText(0, f"Completados ({len(done_lbs)}): {', '.join(done_lbs) or '(Ninguno)'}")
 
         self.expandAll()

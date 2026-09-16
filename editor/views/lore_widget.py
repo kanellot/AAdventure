@@ -219,19 +219,11 @@ class LoreBlockDialog(QDialog):
         row_parent_layout.addWidget(self.parent_combo)
         gen_layout.addLayout(row_parent_layout)
 
-        # Fila 2: Estado HSM y Modo
+        # Fila 2: Modo
         row2_layout = QHBoxLayout()
-        self.state_combo = QComboBox()
-        self.state_combo.addItem("Unknown (No descubierto)", "unknown")
-        self.state_combo.addItem("Active (Activo / En curso)", "active")
-        self.state_combo.addItem("Done (Completado / Resuelto)", "done")
-
         self.mode_combo = QComboBox()
         self.mode_combo.addItem("Reactivo (Se activa por intención/frase del jugador)", "reactive")
         self.mode_combo.addItem("Proactivo (Iniciativa al cumplir condiciones)", "proactive")
-
-        row2_layout.addWidget(QLabel("Estado:"))
-        row2_layout.addWidget(self.state_combo)
         row2_layout.addWidget(QLabel("Modo:"))
         row2_layout.addWidget(self.mode_combo)
         gen_layout.addLayout(row2_layout)
@@ -316,15 +308,9 @@ class LoreBlockDialog(QDialog):
         tab_effects = QWidget()
         eff_layout = QVBoxLayout(tab_effects)
 
-        # Repetición y salida
-        loop_group = QGroupBox("Ciclo de Repetición (Permanecer en Active)")
+        # Salida
+        loop_group = QGroupBox("Condiciones de Salida para transicionar a Done")
         loop_vbox = QVBoxLayout(loop_group)
-        self.repeatable_check = QCheckBox("Repetir LoreBlock (no pasar a Done automáticamente)")
-        self.repeatable_check.toggled.connect(self.on_repeatable_toggled)
-        loop_vbox.addWidget(self.repeatable_check)
-
-        self.exit_label = QLabel("Condiciones de salida para transicionar a Done:")
-        loop_vbox.addWidget(self.exit_label)
 
         self.exit_table = QTableWidget(0, 5)
         self.exit_table.setHorizontalHeaderLabels(["Negado", "Tipo", "Entidad", "Condición", "Valor"])
@@ -403,8 +389,6 @@ class LoreBlockDialog(QDialog):
             idx_p = self.parent_combo.findData(initial_parent_id)
             if idx_p >= 0:
                 self.parent_combo.setCurrentIndex(idx_p)
-
-        self.on_repeatable_toggled(False)
 
         if lore_block:
             self.set_data(lore_block)
@@ -497,13 +481,6 @@ class LoreBlockDialog(QDialog):
 
     def on_rag_toggled(self, checked: bool):
         self.phrases_edit.setEnabled(checked)
-
-    def on_repeatable_toggled(self, checked: bool):
-        self.exit_label.setEnabled(checked)
-        self.exit_table.setEnabled(checked)
-        self.add_exit_btn.setEnabled(checked)
-        self.edit_exit_btn.setEnabled(checked)
-        self.del_exit_btn.setEnabled(checked)
 
     # --- TABLA DE CONDICIONES DE ACTIVACIÓN ---
 
@@ -599,9 +576,7 @@ class LoreBlockDialog(QDialog):
         else:
             self.parent_combo.setCurrentIndex(0)
 
-        idx_st = self.state_combo.findData(block.state)
-        if idx_st >= 0:
-            self.state_combo.setCurrentIndex(idx_st)
+        self._current_state = block.state
 
         idx_m = self.mode_combo.findData(block.trigger_mode)
         if idx_m >= 0:
@@ -628,8 +603,7 @@ class LoreBlockDialog(QDialog):
         self.conditions = list(block.conditions)
         self.populate_conditions_table()
 
-        # Repetición y Salida
-        self.repeatable_check.setChecked(block.repeatable)
+        # Salida
         self.exit_conditions = list(block.exit_conditions)
         self.populate_exit_table()
 
@@ -688,14 +662,13 @@ class LoreBlockDialog(QDialog):
             id=self.id_edit.text().strip(),
             title=self.title_edit.text().strip() or None,
             parent_id=parent_id,
-            state=self.state_combo.currentData(),
+            state=getattr(self, "_current_state", "unknown"),
             rag_enabled=self.rag_check.isChecked(),
             trigger_mode=self.mode_combo.currentData(),
             trigger_phrases=phrases,
             target_entities=selected_targets,
             directive=self.directive_edit.toPlainText().strip(),
             conditions=self.conditions,
-            repeatable=self.repeatable_check.isChecked(),
             exit_conditions=self.exit_conditions,
             effect_timing=self.timing_combo.currentData(),
             effects=effects,

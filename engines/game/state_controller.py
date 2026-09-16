@@ -297,7 +297,7 @@ class GameStateController:
             visible_objs=[],
             active_lore_blocks=active_lbs,
             done_lore_blocks=list(getattr(player, "completed_quests", []) or []),
-            player_state=player.state.upper() if player.state else "EXPLORE",
+            player_state=player.state.upper() if (player.state and player.state.upper() not in ["NONE", ""]) else "EXPLORE",
             player_target=target,
             elapsed_time=player.elapsed_time,
             travel_speed=player.travel_speed,
@@ -457,6 +457,12 @@ class GameStateController:
 
     def load_npc(self, npc_id_or_name: str) -> Optional[NPC]:
         """Retorna el NPC buscado por ID o nombre."""
+        if hasattr(self, "game_state") and hasattr(self.game_state, "npcs") and self.game_state.npcs:
+            if npc_id_or_name in self.game_state.npcs:
+                return self.game_state.npcs[npc_id_or_name]
+            for n in self.game_state.npcs.values():
+                if n.name == npc_id_or_name:
+                    return n
         if npc_id_or_name in self.world_state.npcs:
             return self.world_state.npcs[npc_id_or_name]
         return self.world_state.npcs_by_name.get(npc_id_or_name)

@@ -119,12 +119,15 @@ class DialogueAction(BaseAction[DialogueNarratorCtx, DialogueNarratorResponse]):
         reactive_match = router.find_reactive_lore(player_input, npc, game_state_controller, npc=npc)
         if reactive_match:
             self._triggered_lore, _ = reactive_match
-            directive = self._triggered_lore.directive
+            if router.last_evaluation and router.last_evaluation.injected_directive:
+                directive = router.last_evaluation.injected_directive
+            else:
+                directive = self._triggered_lore.get_directive_for_entity(npc.id) if hasattr(self._triggered_lore, "get_directive_for_entity") else self._triggered_lore.directive
         else:
             proactive_block = router.find_proactive_lore(npc, game_state_controller, npc=npc)
             if proactive_block:
                 self._triggered_lore = proactive_block
-                directive = self._triggered_lore.directive
+                directive = self._triggered_lore.get_directive_for_entity(npc.id) if hasattr(self._triggered_lore, "get_directive_for_entity") else self._triggered_lore.directive
 
         return DialogueNarratorCtx(
             npc=npc_info,

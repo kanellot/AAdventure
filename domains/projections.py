@@ -1,6 +1,6 @@
 """Modelos de proyección (DTOs) para la comunicación con la interfaz de usuario y clientes externos."""
 
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -118,6 +118,8 @@ class GameStateProjection(BaseModel):
     formatted_time: str = ""
     discovered_places: List[str] = Field(default_factory=list)
     visible_npcs: List[str] = Field(default_factory=list)
+    active_lore_blocks: List[str] = Field(default_factory=list)
+    done_lore_blocks: List[str] = Field(default_factory=list)
 
 
 class RagAntennaScoreProjection(BaseModel):
@@ -155,4 +157,49 @@ class TurnResultProjection(BaseModel):
     debug_structured_response: Optional[str] = None
     debug_engine_result: Optional[str] = None
     rag_evaluation: Optional[RagEvaluationProjection] = None
+
+
+class LoreConditionDetailProjection(BaseModel):
+    """Detalle proyectado de una condición de activación o salida de LoreBlock."""
+
+    entity_type: str
+    entity_id: str
+    sub_condition: str
+    value: Optional[Any] = None
+    is_negated: bool = False
+    is_met: bool = False
+    display_text: str = ""
+
+
+class LoreBlockDetailProjection(BaseModel):
+    """Proyección detallada de un LoreBlock para el inspector y visor gráfico de depuración."""
+
+    id: str
+    name: str
+    title: str
+    state: str = "unknown"  # "active", "done", "unknown"
+    is_accessible: bool = True
+    parent_id: Optional[str] = None
+    trigger_mode: str = "proactive"
+    rag_enabled: bool = False
+    trigger_phrases: List[str] = Field(default_factory=list)
+    conditions: List[LoreConditionDetailProjection] = Field(default_factory=list)
+    exit_conditions: List[LoreConditionDetailProjection] = Field(default_factory=list)
+    exit_rag_enabled: bool = False
+    exit_trigger_phrases: List[str] = Field(default_factory=list)
+    directive: str = ""
+    force_action: bool = False
+    on_active_summary: str = ""
+    on_done_summary: str = ""
+
+
+class LoreGraphProjection(BaseModel):
+    """Proyección global de todos los LoreBlocks del juego para el visor gráfico HSM."""
+
+    blocks: List[LoreBlockDetailProjection] = Field(default_factory=list)
+    total_count: int = 0
+    active_count: int = 0
+    done_count: int = 0
+    unknown_count: int = 0
+
 

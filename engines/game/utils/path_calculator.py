@@ -38,6 +38,7 @@ class PathCalculator:
         places: Dict[str, Place],
         start_name_or_id: str,
         end_name_or_id: str,
+        only_passable: bool = True,
     ) -> Tuple[List[Connection], List[Place]]:
         """Encuentra la ruta con menor distancia acumulada entre dos lugares usando Dijkstra."""
         by_name, by_id = cls._build_place_lookups(places)
@@ -73,6 +74,9 @@ class PathCalculator:
 
             current_place = by_id[current_id]
             for _, conn in current_place.connections.items():
+                if only_passable and not getattr(conn, "passable", True):
+                    continue
+
                 neighbor_place = by_name.get(conn.target) or by_id.get(conn.target)
                 if not neighbor_place:
                     continue
@@ -96,14 +100,63 @@ class PathCalculator:
         return shortest_conns, shortest_places
 
     @classmethod
+    def calculate_navigation_route(
+        cls,
+        places: Dict[str, Place],
+        start_name_or_id: str,
+        end_name_or_id: str,
+    ) -> Tuple[str, List[Connection], List[Place], Optional[Place], Optional[Connection]]:
+        """
+        Calcula la ruta de navegación entre origen y destino teniendo en cuenta bloqueos de paso.
+        Retorna:
+            status: 'complete' (llega al destino),
+                    'blocked' (se detiene antes de una conexión cerrada),
+                    'unreachable' (destino inalcanzable en el grafo).
+            conns: Lista de conexiones transitadas hasta el destino o lugar de detención.
+            places_path: Lista de lugares transitados (incluyendo origen y destino/detención).
+            stopping_place: Lugar donde el jugador se detiene si está bloqueado.
+            blocked_conn: Conexión que impidió continuar el avance.
+        """
+        # 1. Intentar ruta completamente abierta
+        open_conns, open_places = cls.find_shortest_path(
+            places, start_name_or_id, end_name_or_id, only_passable=True
+        )
+        if open_places:
+            return "complete", open_conns, open_places, None, None
+
+        # 2. Si no hay ruta abierta, buscar el camino ideal ignorando bloqueos
+        all_conns, all_places = cls.find_shortest_path(
+            places, start_name_or_id, end_name_or_id, only_passable=False
+        )
+        if not all_places:
+            return "unreachable", [], [], None, None
+
+        # 3. Recorrer la ruta desde el origen hasta hallar la primera conexión bloqueada
+        traversed_conns: List[Connection] = []
+        traversed_places: List[Place] = [all_places[0]]
+
+        for idx, conn in enumerate(all_conns):
+            if not getattr(conn, "passable", True):
+                stopping_place = all_places[idx]
+                blocked_conn = conn
+                return "blocked", traversed_conns, traversed_places, stopping_place, blocked_conn
+            traversed_conns.append(conn)
+            traversed_places.append(all_places[idx + 1])
+
+        return "complete", traversed_conns, traversed_places, None, None
+
+    @classmethod
     def find_intermediate_places(
         cls,
         places: Dict[str, Place],
         start_name_or_id: str,
         end_name_or_id: str,
+        only_passable: bool = True,
     ) -> List[Place]:
         """Retorna los lugares intermedios entre origen y destino."""
-        _, full_places = cls.find_shortest_path(places, start_name_or_id, end_name_or_id)
+        _, full_places = cls.find_shortest_path(
+            places, start_name_or_id, end_name_or_id, only_passable=only_passable
+        )
         if len(full_places) <= 2:
             return []
         return full_places[1:-1]
@@ -114,8 +167,12 @@ class PathCalculator:
         places: Dict[str, Place],
         start_name_or_id: str,
         end_name_or_id: str,
+        only_passable: bool = True,
     ) -> List[Place]:
         """Retorna la lista completa de lugares desde el origen hasta el destino."""
-        _, full_places = cls.find_shortest_path(places, start_name_or_id, end_name_or_id)
+        _, full_places = cls.find_shortest_path(
+            places, start_name_or_id, end_name_or_id, only_passable=only_passable
+        )
         return full_places
+
 

@@ -2,7 +2,7 @@
 
 import os
 import shutil
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel
 from adventure_packager import AdventurePackager
 from domains import (
@@ -12,6 +12,9 @@ from domains import (
     GameState,
     GameStateProjection,
     LocationHierarchyProjection,
+    LoreBlockDetailProjection,
+    LoreConditionDetailProjection,
+    LoreGraphProjection,
     MoveOptionProjection,
     NPC,
     Place,
@@ -58,12 +61,15 @@ class GameEngine:
             config_path = os.path.join(self.temp_dir, "story_config.json")
         else:
             base_dir = os.path.dirname(world_json_path)
+            base_name = os.path.basename(world_json_path)
+            suffix = ("_" + base_name.split("_", 1)[1]) if ("_" in base_name and not base_name.startswith("world.")) else ""
+
             world_path = world_json_path
-            npcs_path = npcs_json_path or os.path.join(base_dir, "npcs.json")
-            player_path = player_json_path or os.path.join(base_dir, "player.json")
-            objects_path = objects_json_path or os.path.join(base_dir, "objects.json")
-            lore_path = lore_json_path or os.path.join(base_dir, "loreblocks.json")
-            config_path = config_json_path or os.path.join(base_dir, "story_config.json")
+            npcs_path = npcs_json_path or (os.path.join(base_dir, f"npcs{suffix}") if os.path.exists(os.path.join(base_dir, f"npcs{suffix}")) else os.path.join(base_dir, "npcs.json"))
+            player_path = player_json_path or (os.path.join(base_dir, f"player{suffix}") if os.path.exists(os.path.join(base_dir, f"player{suffix}")) else os.path.join(base_dir, "player.json"))
+            objects_path = objects_json_path or (os.path.join(base_dir, f"objects{suffix}") if os.path.exists(os.path.join(base_dir, f"objects{suffix}")) else os.path.join(base_dir, "objects.json"))
+            lore_path = lore_json_path or (os.path.join(base_dir, f"loreblocks{suffix}") if os.path.exists(os.path.join(base_dir, f"loreblocks{suffix}")) else os.path.join(base_dir, "loreblocks.json"))
+            config_path = config_json_path or (os.path.join(base_dir, f"story_config{suffix}") if os.path.exists(os.path.join(base_dir, f"story_config{suffix}")) else os.path.join(base_dir, "story_config.json"))
 
         self.world_state = WorldState(
             world_path,
@@ -75,6 +81,7 @@ class GameEngine:
         )
         self.game_state_controller = GameStateController.create_from_world(self.world_state)
         self.fog_war = self.game_state_controller.fog_war
+        LoreRouter.get_instance().update_lore_state_machine(self.game_state_controller)
 
     @property
     def game_state(self) -> GameState:
@@ -302,6 +309,7 @@ class GameEngine:
         """Ejecuta un turno de juego según la acción solicitada (MOVE, LOOK, TALK)."""
         self.turn_debug_steps.clear()
         LoreRouter.get_instance().reset_evaluation(player_input=player_input or "")
+        LoreRouter.get_instance().update_lore_state_machine(self.game_state_controller)
 
         if isinstance(action, ActionCommand):
             action_type = action.action.upper()
@@ -382,7 +390,91 @@ class GameEngine:
         if not res.success:
             return self._create_debug_turn_output(author="SYSTEM", msg=res.message)
 
-        return self._create_debug_turn_output(msg=res.message, author=final_author)
+        final_msg = res.message
+        triggered = getattr(step, "_triggered_lore", None)
+
+        # Si una acción MOVE atravesó un lugar intermedio que disparó un LoreBlock:
+        intermediate_place = getattr(step, "_triggered_intermediate_place", None)
+        is_blocked = getattr(step, "_is_blocked", False)
+        if not is_blocked and intermediate_place and triggered and dm:
+            explain_step = LookAction(intermediate_place.name)
+            explain_prompt = getattr(triggered, "directive", "") or f"(Durante el trayecto se observa detalladamente {intermediate_place.name})."
+            self.game_state_controller._is_executing_forced_action = True
+            try:
+                explain_res = self._run_step(explain_step, explain_prompt, dm)
+            finally:
+                self.game_state_controller._is_executing_forced_action = False
+            if explain_res and explain_res.message:
+                final_msg = f"{final_msg}\n\n[En el trayecto por {intermediate_place.name}]: {explain_res.message}"
+
+        if triggered and not is_blocked:
+            eff = getattr(triggered, "effects", None)
+            force_action = getattr(triggered, "force_action", False)
+            act_type = getattr(eff, "trigger_action_type", None) if eff else None
+
+            act_tgt = getattr(eff, "trigger_action_target", None) if eff else None
+
+            # Si force_action está activo pero no se especificó act_type/act_tgt, deducir de target_entities
+            if force_action and (not act_type or not act_tgt):
+                targets = getattr(triggered, "target_entities", [])
+                if targets:
+                    first_t = targets[0]
+                    if self.get_npc_by_name_or_id(first_t):
+                        act_type = act_type or "TALK"
+                        act_tgt = act_tgt or first_t
+                    else:
+                        act_type = act_type or "EXPLAIN"
+                        act_tgt = act_tgt or first_t
+
+            if act_type:
+                act_type = act_type.upper()
+
+            if act_type and act_tgt:
+                if act_type in ["MOVE", "EXPLORE"]:
+                    self.game_state_controller.update_location(act_tgt)
+                    self.game_state_controller.update_state("EXPLORE")
+                    self.game_state_controller.data.state.player_target = ""
+                    self.save()
+                elif act_type == "TALK":
+                    self.game_state_controller.update_state("TALK")
+                    self.game_state_controller.data.state.player_target = act_tgt
+                    self.game_state_controller.load_npc(act_tgt)
+                    self.game_state_controller.sync_active_npc_affinity()
+                    self.save()
+
+                    # Ejecución automatizada de TALK con el LLM
+                    if force_action and dm and (not isinstance(step, DialogueAction) or step.target_npc != act_tgt):
+                        auto_prompt = getattr(triggered, "directive", "") or f"(El personaje {act_tgt} inicia la conversación)."
+                        auto_step = DialogueAction(act_tgt)
+                        self.game_state_controller._is_executing_forced_action = True
+                        try:
+                            auto_res = self._run_step(auto_step, auto_prompt, dm)
+                        finally:
+                            self.game_state_controller._is_executing_forced_action = False
+                        if auto_res and auto_res.message:
+                            final_msg = f"{final_msg}\n\n[{act_tgt}]: {auto_res.message}"
+                            final_author = act_tgt
+
+                elif act_type in ["LOOK", "EXPLAIN"]:
+                    self.game_state_controller.update_state("LOOK")
+                    self.game_state_controller.data.state.player_target = act_tgt
+                    self.save()
+
+                    # Ejecución automatizada de EXPLAIN/LOOK con el LLM
+                    if force_action and dm and (not isinstance(step, LookAction) or step.target != act_tgt):
+                        auto_step = LookAction(act_tgt)
+                        auto_prompt = getattr(triggered, "directive", "") or f"(Se describe detalladamente {act_tgt})."
+                        self.game_state_controller._is_executing_forced_action = True
+                        try:
+                            auto_res = self._run_step(auto_step, auto_prompt, dm)
+                        finally:
+                            self.game_state_controller._is_executing_forced_action = False
+                        if auto_res and auto_res.message:
+                            final_msg = f"{final_msg}\n\n{auto_res.message}"
+                            final_author = "Dungeon Master"
+
+        LoreRouter.get_instance().update_lore_state_machine(self.game_state_controller)
+        return self._create_debug_turn_output(msg=final_msg, author=final_author)
 
     def _run_step(self, step: BaseAction, player_input: str, dm: TransformerEngine) -> ResultType:
         """Ejecuta el ciclo de vida del step contra el transformer engine."""
@@ -402,23 +494,6 @@ class GameEngine:
         result = step.execute(self.game_state_controller, player_input, llm_response)
 
         self.save()
-
-        triggered = getattr(step, "_triggered_lore", None)
-        if triggered and getattr(triggered, "effects", None):
-            eff = triggered.effects
-            if eff.trigger_action_type and eff.trigger_action_target:
-                act_type = eff.trigger_action_type.upper()
-                act_tgt = eff.trigger_action_target
-                if act_type in ["MOVE", "EXPLORE"]:
-                    self.game_state_controller.update_location(act_tgt)
-                    self.game_state_controller.update_state("EXPLORE")
-                    self.game_state_controller.data.state.player_target = ""
-                elif act_type == "TALK":
-                    self.game_state_controller.update_state("TALK")
-                    self.game_state_controller.data.state.player_target = act_tgt
-                    self.game_state_controller.load_npc(act_tgt)
-                    self.game_state_controller.sync_active_npc_affinity()
-                self.save()
 
         debug_info = {
             "step_name": step.__class__.__name__,
@@ -565,6 +640,8 @@ class GameEngine:
             formatted_time=self.get_formatted_time(),
             discovered_places=discovered,
             visible_npcs=visible_npcs,
+            active_lore_blocks=list(getattr(self.game_state_controller, "active_lore_blocks", [])),
+            done_lore_blocks=list(getattr(self.game_state_controller, "done_lore_blocks", [])),
         )
 
     def get_ui_state_projection(self) -> UIStateProjection:
@@ -627,3 +704,211 @@ class GameEngine:
     def get_ui_state(self) -> dict:
         """Devuelve un resumen del estado del juego para la barra de interfaz (compatibilidad dict)."""
         return self.get_ui_state_projection().model_dump()
+
+    def get_lore_graph_projection(self) -> LoreGraphProjection:
+        """Genera una proyección exhaustiva de todos los LoreBlocks y sus condiciones evaluadas en tiempo real."""
+        router = LoreRouter.get_instance()
+        all_blocks = router._get_all_blocks(self.game_state_controller)
+
+        active_blocks = set(getattr(self.game_state_controller, "active_lore_blocks", []))
+        done_blocks = set(getattr(self.game_state_controller, "done_lore_blocks", []))
+
+        block_projections: List[LoreBlockDetailProjection] = []
+        active_cnt = 0
+        done_cnt = 0
+        unknown_cnt = 0
+
+        for b in all_blocks:
+            # 1. Determinar estado canónico
+            if b.id in done_blocks or b.state == "done":
+                st = "done"
+                done_cnt += 1
+            elif b.id in active_blocks or b.state == "active":
+                st = "active"
+                active_cnt += 1
+            else:
+                st = "unknown"
+                unknown_cnt += 1
+
+            is_acc = router.is_block_accessible(b, self.game_state_controller)
+
+            # 2. Proyectar condiciones de activación (conditions)
+            cond_projections: List[LoreConditionDetailProjection] = []
+            for cond in getattr(b, "conditions", []) or []:
+                is_met = router.evaluate_single_condition(cond, self.game_state_controller, evaluating_block=b)
+                disp = self._format_condition_display(cond, is_met)
+                cond_projections.append(
+                    LoreConditionDetailProjection(
+                        entity_type=cond.entity_type,
+                        entity_id=cond.entity_id or "",
+                        sub_condition=cond.sub_condition,
+                        value=cond.value,
+                        is_negated=cond.is_negated,
+                        is_met=is_met,
+                        display_text=disp,
+                    )
+                )
+
+            # 3. Proyectar condiciones de salida (exit_conditions)
+            exit_cond_projections: List[LoreConditionDetailProjection] = []
+            for cond in getattr(b, "exit_conditions", []) or []:
+                is_met = router.evaluate_single_condition(cond, self.game_state_controller, evaluating_block=b)
+                disp = self._format_condition_display(cond, is_met)
+                exit_cond_projections.append(
+                    LoreConditionDetailProjection(
+                        entity_type=cond.entity_type,
+                        entity_id=cond.entity_id or "",
+                        sub_condition=cond.sub_condition,
+                        value=cond.value,
+                        is_negated=cond.is_negated,
+                        is_met=is_met,
+                        display_text=disp,
+                    )
+                )
+
+            # 4. Resúmenes de efectos
+            act_effects = b.get_effects_for_timing("active") if hasattr(b, "get_effects_for_timing") else [getattr(b, "on_active", None)]
+            don_effects = b.get_effects_for_timing("done") if hasattr(b, "get_effects_for_timing") else [getattr(b, "on_done", None)]
+            act_sum = self._format_effects_summary(act_effects)
+            don_sum = self._format_effects_summary(don_effects)
+
+            block_projections.append(
+                LoreBlockDetailProjection(
+                    id=b.id,
+                    name=b.name or b.title or b.id,
+                    title=b.title or b.name or b.id,
+                    state=st,
+                    is_accessible=is_acc,
+                    parent_id=b.parent_id,
+                    trigger_mode=getattr(b, "trigger_mode", "proactive"),
+                    rag_enabled=getattr(b, "rag_enabled", False),
+                    trigger_phrases=list(getattr(b, "trigger_phrases", []) or []),
+                    conditions=cond_projections,
+                    exit_conditions=exit_cond_projections,
+                    exit_rag_enabled=getattr(b, "exit_rag_enabled", False),
+                    exit_trigger_phrases=list(getattr(b, "exit_trigger_phrases", []) or []),
+                    directive=getattr(b, "directive", "") or (b.on_active.directive if getattr(b, "on_active", None) else "") or "",
+                    force_action=bool(getattr(b, "force_action", False) or (b.on_active.force_action if getattr(b, "on_active", None) else False)),
+                    on_active_summary=act_sum,
+                    on_done_summary=don_sum,
+                )
+            )
+
+        return LoreGraphProjection(
+            blocks=block_projections,
+            total_count=len(block_projections),
+            active_count=active_cnt,
+            done_count=done_cnt,
+            unknown_count=unknown_cnt,
+        )
+
+    def _format_condition_display(self, cond: Any, is_met: bool) -> str:
+        """Formatea una condición en texto descriptivo para el depurador."""
+        etype = getattr(cond, "entity_type", "")
+        eid = getattr(cond, "entity_id", "")
+        sub = getattr(cond, "sub_condition", "")
+        val = getattr(cond, "value", None)
+        neg = getattr(cond, "is_negated", False)
+
+        neg_prefix = "NO " if neg else ""
+
+        if etype == "place":
+            curr_loc = getattr(self.game_state_controller, "current_location", "")
+            name_info = eid
+            if hasattr(self, "world_state") and self.world_state:
+                p = self.world_state.places_by_id.get(eid) or self.world_state.places_by_name.get(eid)
+                if p:
+                    name_info = f"'{p.name}'"
+            if sub == "current_location":
+                if is_met:
+                    return f"{neg_prefix}Llegar a {name_info} (Actual: {curr_loc})"
+                return f"{neg_prefix}Estar en {name_info} (Actual: {curr_loc or 'desconocido'})"
+            elif sub == "visited":
+                return f"{neg_prefix}Haber visitado el lugar {name_info}"
+            elif sub == "unlocked":
+                return f"{neg_prefix}Lugar {name_info} desbloqueado"
+
+        elif etype == "npc":
+            npc = self.get_npc_by_name_or_id(eid) if eid else None
+            npc_name = npc.name if npc else (eid or "NPC")
+            if sub == "talk":
+                curr_state = getattr(self.game_state_controller.data.state, "player_state", "EXPLORE")
+                curr_tgt = getattr(self.game_state_controller.data.state, "player_target", "")
+                if is_met:
+                    return f"{neg_prefix}Hablar con {npc_name} (En diálogo actualmente)"
+                return f"{neg_prefix}Iniciar diálogo con {npc_name} (Actual: {curr_state} -> '{curr_tgt}')"
+            elif sub == "affinity":
+                aff_val = float(val or 0.5)
+                curr_aff = npc.affinity if npc else 0.5
+                return f"{neg_prefix}Afinidad con {npc_name} >= {aff_val:.2f} (Actual: {curr_aff:.2f})"
+            elif sub == "known":
+                return f"{neg_prefix}Conocer a {npc_name}"
+
+        elif etype == "item":
+            if sub == "have":
+                qty = int(val or 1)
+                curr_inv = getattr(self.game_state_controller.data.player, "inventory", []) if self.game_state_controller.data.player else []
+                has_item = eid in curr_inv
+                return f"{neg_prefix}Tener en inventario '{eid}' (Req: {qty}, Posee: {'Sí' if has_item else 'No'})"
+
+        elif etype == "loreblock":
+            if sub == "child_done":
+                return f"{neg_prefix}Algún sub-bloque hijo completado (done)"
+            elif sub == "active":
+                return f"{neg_prefix}LoreBlock '{eid}' en estado ACTIVE"
+            elif sub == "done":
+                return f"{neg_prefix}LoreBlock '{eid}' completado (DONE)"
+
+        elif etype == "gold":
+            req_gold = int(val or 0)
+            curr_gold = getattr(self.game_state_controller, "gold", 0)
+            return f"{neg_prefix}Oro >= {req_gold} (Actual: {curr_gold})"
+
+        return f"{neg_prefix}{etype}:{eid} ({sub}={val})"
+
+    def _format_effects_summary(self, effects: Any) -> str:
+        """Resume los efectos de un LoreEffects o lista de LoreEffects en una cadena amigable."""
+        if not effects:
+            return "(Sin efectos)"
+        if isinstance(effects, list):
+            items_str = []
+            for eff in effects:
+                s = self._format_single_effect_summary(eff)
+                if s and s != "(Sin mutaciones de estado)":
+                    tgt_prefix = f"[{eff.target}]: " if getattr(eff, "target", None) else ""
+                    items_str.append(f"{tgt_prefix}{s}")
+                elif getattr(eff, "directive", ""):
+                    tgt_prefix = f"[{eff.target}]: " if getattr(eff, "target", None) else ""
+                    dir_snip = eff.directive[:25] + "..." if len(eff.directive) > 25 else eff.directive
+                    items_str.append(f"{tgt_prefix}\"{dir_snip}\"")
+            return " | ".join(items_str) if items_str else "(Sin efectos)"
+        return self._format_single_effect_summary(effects)
+
+    def _format_single_effect_summary(self, effects: Any) -> str:
+        if not effects:
+            return "(Sin efectos)"
+        parts = []
+        if getattr(effects, "give_gold", 0) > 0:
+            parts.append(f"+{effects.give_gold} oro")
+        if getattr(effects, "gold_delta", 0) != 0:
+            parts.append(f"{effects.gold_delta:+d} oro")
+        if getattr(effects, "affinity_delta", 0.0) != 0:
+            parts.append(f"Afinidad {effects.affinity_delta:+.2f}")
+        for it in getattr(effects, "give_items", []):
+            parts.append(f"+Ítem: {it}")
+        for it in getattr(effects, "take_items", []):
+            parts.append(f"-Ítem: {it}")
+        for q in getattr(effects, "unlock_quests", []):
+            parts.append(f"Misión: {q}")
+        for p in getattr(effects, "unlock_places", []):
+            parts.append(f"Lugar: {p}")
+        if getattr(effects, "force_action", False):
+            act_t = getattr(effects, "trigger_action_type", "") or "Auto"
+            act_tg = getattr(effects, "trigger_action_target", "") or getattr(effects, "target", "")
+            parts.append(f"⚡ Forzar {act_t} -> {act_tg}")
+        for blk in getattr(effects, "block_connections", []):
+            parts.append(f"🚫 Bloquear: {blk}")
+        for alw in getattr(effects, "allow_connections", []):
+            parts.append(f"🟢 Abrir: {alw}")
+        return ", ".join(parts) if parts else "(Sin mutaciones de estado)"
+

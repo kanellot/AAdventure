@@ -371,14 +371,33 @@ class EditorController:
 
     # --- CONEXIONES ENTRE LUGARES ---
 
-    def add_connection(self, place_a_name: str, place_b_name: str, dir_ab: str, dir_ba: str, distance: int, terrain: str):
+    def add_connection(self, place_a_name: str, place_b_name: str, dir_ab: str, dir_ba: str, distance: int, terrain: str, passable: bool = True):
         place_a = self.get_place_by_name(place_a_name) or self.get_place_by_id(place_a_name)
         place_b = self.get_place_by_name(place_b_name) or self.get_place_by_id(place_b_name)
         if not place_a or not place_b:
             raise ValueError("Lugar origen o destino no encontrado.")
 
-        place_a.connections[dir_ab] = Connection(target=place_b.name, distance=distance, terrain_type=terrain)
-        place_b.connections[dir_ba] = Connection(target=place_a.name, distance=distance, terrain_type=terrain)
+        place_a.connections[dir_ab] = Connection(target=place_b.name, distance=distance, terrain_type=terrain, passable=passable)
+        place_b.connections[dir_ba] = Connection(target=place_a.name, distance=distance, terrain_type=terrain, passable=passable)
+
+    def toggle_connection_passable(self, place_name: str, direction: str) -> bool:
+        """Alterna el estado passable de una conexión y su recíproca. Retorna el nuevo estado."""
+        place = self.get_place_by_name(place_name) or self.get_place_by_id(place_name)
+        if not place or direction not in place.connections:
+            return True
+
+        conn = place.connections[direction]
+        new_state = not getattr(conn, "passable", True)
+        conn.passable = new_state
+
+        target_place = self.get_place_by_name(conn.target) or self.get_place_by_id(conn.target)
+        if target_place:
+            for dir_key, c in target_place.connections.items():
+                if c.target in [place.name, place.id]:
+                    c.passable = new_state
+                    break
+        return new_state
+
 
     def remove_connection(self, place_name: str, direction: str):
         place = self.get_place_by_name(place_name) or self.get_place_by_id(place_name)

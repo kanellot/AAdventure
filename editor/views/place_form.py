@@ -213,10 +213,12 @@ class PlaceForm(QWidget):
             return
 
         for direction, conn in self.place.connections.items():
-            card = self._create_connection_card(direction, conn.target, conn.distance, conn.terrain_type)
+            card = self._create_connection_card(
+                direction, conn.target, conn.distance, conn.terrain_type, getattr(conn, "passable", True)
+            )
             self.conn_container_layout.addWidget(card)
 
-    def _create_connection_card(self, direction: str, target: str, distance: int, terrain: str) -> QFrame:
+    def _create_connection_card(self, direction: str, target: str, distance: int, terrain: str, passable: bool = True) -> QFrame:
         card = QFrame()
         card.setStyleSheet("""
             QFrame {
@@ -244,6 +246,26 @@ class PlaceForm(QWidget):
         info_lbl = QLabel(f"<span style='color: #666;'>📏 {distance} m</span> | <span style='color: #444;'>🏞️ {terrain}</span>")
         layout.addWidget(info_lbl)
 
+        # Botón / Badge de estado de paso
+        passable_btn = QPushButton("🟢 Abierta" if passable else "🔴 Bloqueada")
+        passable_btn.setToolTip("Alternar paso (abrir o bloquear conexión)")
+        passable_btn.setStyleSheet(f"""
+            QPushButton {{
+                font-size: 11px;
+                font-weight: bold;
+                padding: 2px 6px;
+                border-radius: 3px;
+                border: 1px solid {'#90ee90' if passable else '#ff9999'};
+                background: {'#f0fff0' if passable else '#fff0f0'};
+                color: {'#006600' if passable else '#990000'};
+            }}
+            QPushButton:hover {{
+                background: {'#e0ffe0' if passable else '#ffe6e6'};
+            }}
+        """)
+        passable_btn.clicked.connect(lambda _, d=direction: self.on_toggle_passable(d))
+        layout.addWidget(passable_btn)
+
         layout.addStretch()
 
         del_btn = QPushButton("✕")
@@ -254,23 +276,30 @@ class PlaceForm(QWidget):
 
         return card
 
+    def on_toggle_passable(self, direction: str):
+        if not self.place:
+            return
+        self.controller.toggle_connection_passable(self.place.name, direction)
+        self.refresh_connections()
+
     def on_add_connection(self):
         if not self.place:
             return
 
         dialog = ConnectionDialog(self.place, self.all_places, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            dest_name, dir_ab, dir_ba, distance, terrain = dialog.get_data()
+            dest_name, dir_ab, dir_ba, distance, terrain, passable = dialog.get_data()
             if not dest_name:
                 QMessageBox.warning(self, "Error", "Debe seleccionar un lugar destino.")
                 return
 
             try:
-                self.controller.add_connection(self.place.name, dest_name, dir_ab, dir_ba, distance, terrain)
+                self.controller.add_connection(self.place.name, dest_name, dir_ab, dir_ba, distance, terrain, passable)
                 self.refresh_connections()
                 QMessageBox.information(self, "Conexión Creada", f"Conexión bidireccional creada con '{dest_name}'.")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"No se pudo crear la conexión: {e}")
+
 
     def on_delete_connection(self, direction: str, target: str):
         if not self.place:

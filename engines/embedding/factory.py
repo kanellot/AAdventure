@@ -52,6 +52,12 @@ class EmbeddingFactory:
                     "Usando MockEmbeddingBackend como respaldo automático."
                 )
                 backend = MockEmbeddingBackend()
+            except Exception as e:
+                logger.warning(
+                    f"Error al inicializar el backend PyTorch ({e}). "
+                    "Usando MockEmbeddingBackend como respaldo automático."
+                )
+                backend = MockEmbeddingBackend()
         elif selected_backend == "mock":
             backend = MockEmbeddingBackend()
         else:

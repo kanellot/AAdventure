@@ -91,6 +91,7 @@ class EntityPickerDialog(QDialog):
         # 3. Lista de entidades seleccionables
         self.entity_list = QListWidget()
         self.entity_list.itemSelectionChanged.connect(self.on_entity_selected)
+        self.entity_list.itemDoubleClicked.connect(lambda _: self.on_accept())
         main_layout.addWidget(self.entity_list)
 
         # 4. Formulario de subcondición (solo en modo condition)
@@ -206,6 +207,7 @@ class EntityPickerDialog(QDialog):
             self.sub_combo.addItem("known (A la vista / Descubierto)", "known")
             self.sub_combo.addItem("current_location (Ubicación actual del jugador)", "current_location")
         elif etype == "npc":
+            self.sub_combo.addItem("talk (Hablar con el NPC / Diálogo)", "talk")
             self.sub_combo.addItem("known (Conocido por el jugador)", "known")
             self.sub_combo.addItem("affinity (Nivel mínimo de afinidad)", "affinity")
         elif etype == "item":
@@ -308,8 +310,29 @@ class EntityPickerDialog(QDialog):
         self.negated_check.setChecked(cond.is_negated)
 
     def set_from_entity_id(self, ent_id: str):
+        if not ent_id:
+            return
+
+        # Detectar tipo de entidad si hay selector de tipo y controller disponible
+        if self.type_combo and self.controller:
+            detected_type = None
+            if hasattr(self.controller, "get_place_by_id") and (self.controller.get_place_by_id(ent_id) or getattr(self.controller, "get_place_by_name", lambda _: None)(ent_id)):
+                detected_type = "place"
+            elif hasattr(self.controller, "get_npc_by_id") and self.controller.get_npc_by_id(ent_id):
+                detected_type = "npc"
+            elif ent_id == "gold" or (hasattr(self.controller, "get_object_by_id") and self.controller.get_object_by_id(ent_id)):
+                detected_type = "item"
+            elif hasattr(self.controller, "get_lore_block_by_id") and self.controller.get_lore_block_by_id(ent_id):
+                detected_type = "loreblock"
+
+            if detected_type:
+                idx = self.type_combo.findData(detected_type)
+                if idx >= 0 and idx != self.type_combo.currentIndex():
+                    self.type_combo.setCurrentIndex(idx)
+
         for i in range(self.entity_list.count()):
             it = self.entity_list.item(i)
             if it.data(Qt.UserRole) == ent_id:
                 self.entity_list.setCurrentItem(it)
+                self.entity_list.scrollToItem(it)
                 break

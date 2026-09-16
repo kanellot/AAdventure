@@ -1,4 +1,13 @@
-from PySide6.QtWidgets import QDialog, QFormLayout, QComboBox, QSpinBox, QDialogButtonBox, QLabel, QMessageBox
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QLabel,
+    QMessageBox,
+    QSpinBox,
+)
 from typing import List, Optional
 from domains import Place
 
@@ -7,7 +16,7 @@ class ConnectionDialog(QDialog):
     Diálogo para crear una nueva conexión bidireccional entre lugares.
     Sugerirá automáticamente la dirección opuesta correspondiente.
     """
-    
+
     OPPOSITES = {
         "North": "South",
         "South": "North",
@@ -55,7 +64,12 @@ class ConnectionDialog(QDialog):
         self.terrain_combo.addItems(["village", "road", "forest", "mountain", "swamp"])
         layout.addRow("Tipo de Terreno:", self.terrain_combo)
 
-        # 7. Botones Aceptar / Cancelar
+        # 7. Permitir Paso / Conexión abierta
+        self.passable_check = QCheckBox("Permitir paso (Conexión abierta)")
+        self.passable_check.setChecked(True)
+        layout.addRow("Estado del Paso:", self.passable_check)
+
+        # 8. Botones Aceptar / Cancelar
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
@@ -72,7 +86,7 @@ class ConnectionDialog(QDialog):
     def get_data(self):
         """
         Retorna la tupla con los datos de conexión:
-        (lugar_destino_name, dir_ab, dir_ba, distancia, terreno)
+        (lugar_destino_name, dir_ab, dir_ba, distancia, terreno, passable)
         """
         dest_name = self.dest_combo.currentData()
         return (
@@ -80,5 +94,7 @@ class ConnectionDialog(QDialog):
             self.dir_combo.currentText(),
             self.opp_dir_combo.currentText(),
             self.distance_spin.value(),
-            self.terrain_combo.currentText()
+            self.terrain_combo.currentText(),
+            self.passable_check.isChecked()
         )
+

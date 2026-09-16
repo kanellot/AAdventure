@@ -19,6 +19,7 @@ from engines.transformer import TransformerEngine
 from game_debugger.views.chat_tab import ChatTab
 from game_debugger.views.entities_tab import EntitiesTreeWidget
 from game_debugger.views.inspector import GameStateInspector
+from game_debugger.views.lore_graph_tab import LoreGraphTab
 from game_debugger.views.rag_tab import RagTab
 from game_debugger.views.result_tab import ResultTab
 from game_debugger.worker import TurnWorker
@@ -66,24 +67,27 @@ class GameDebuggerApp(QMainWindow):
         self.rag_tab = RagTab(self)
         self.tab_widget.addTab(self.rag_tab, "RAG")
 
-        # 3. Pestaña: Prompt (Prompt completo enviado al LLM)
+        # 3. Pestaña: LoreBlocks (Visor gráfico HSM y condiciones en tiempo real)
+        self.lore_tab = LoreGraphTab(self)
+        self.tab_widget.addTab(self.lore_tab, "LoreBlocks")
+
+        # 4. Pestaña: Prompt (Prompt completo enviado al LLM)
         self.prompt_edit = QTextEdit()
         self.prompt_edit.setReadOnly(True)
         self.prompt_edit.setFontFamily("Consolas")
         self.prompt_edit.setPlaceholderText("Aquí se mostrará el prompt completo enviado al LLM en cada interacción...")
         self.tab_widget.addTab(self.prompt_edit, "Prompt")
 
-        # 4. Pestaña: Result (Respuesta narrativa y resultado del motor de juego)
+        # 5. Pestaña: Result (Respuesta narrativa y resultado del motor de juego)
         self.result_tab = ResultTab(self)
         self.tab_widget.addTab(self.result_tab, "Result")
-
-        # Conectar cambio de pestaña principal para ocultar la columna derecha en RAG
-        self.tab_widget.currentChanged.connect(self.on_main_tab_changed)
 
         # -------------------------------------------------------------
         # PANEL DERECHO: Pestañas de Navegación e Inspector
         # -------------------------------------------------------------
         self.right_tab_widget = QTabWidget()
+        self.right_tab_widget.setUsesScrollButtons(False)
+        self.right_tab_widget.setMinimumWidth(320)
 
         # Pestaña 1: Navigation (Árbol según fog_war, activa por defecto)
         self.navigation_tab = EntitiesTreeWidget(self, header_title="Navegación (Fog of War)")
@@ -104,7 +108,11 @@ class GameDebuggerApp(QMainWindow):
 
         splitter.addWidget(self.right_tab_widget)
 
-        # Dimensionar divisor (68% izquierda, 32% derecha)
+        # Dimensionar divisor (68% izquierda, 32% derecha) y fijar proporciones estables
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 0)
         splitter.setSizes([760, 360])
 
         # Inicializar UI y título
@@ -186,14 +194,14 @@ class GameDebuggerApp(QMainWindow):
             QMessageBox.critical(self, "Error al Cargar", f"No se pudo cargar la aventura:\n{e}")
 
     def on_main_tab_changed(self, index: int):
-        """Oculta la columna derecha en la pestaña RAG para ofrecer máximo ancho y legibilidad."""
-        is_rag = (self.tab_widget.tabText(index) == "RAG")
-        self.right_tab_widget.setVisible(not is_rag)
+        """Mantiene la columna derecha siempre visible con ancho estable."""
+        pass
 
     def init_game_ui(self):
         """Carga el estado inicial del juego en la UI al arrancar."""
         self.refresh_inspector()
         self.refresh_entities()
+        self.refresh_lore_graph()
 
         # Cargar entidades objetivo en el selector del chat
         self.chat_tab.set_targets(self.engine.get_all_target_names())
@@ -224,6 +232,11 @@ class GameDebuggerApp(QMainWindow):
 
         debug_hierarchy = self.engine.get_entities_hierarchy()
         self.entities_tab.update_entities(debug_hierarchy)
+
+    def refresh_lore_graph(self):
+        """Actualiza el visor gráfico de LoreBlocks consumiendo el DTO LoreGraphProjection."""
+        lore_dto = self.engine.get_lore_graph_projection()
+        self.lore_tab.update_lore_graph(lore_dto)
 
     def on_entity_selected_from_tree(self, entity_name: str):
         """Al seleccionar un lugar o NPC de cualquier árbol, lo establece como objetivo en el selector."""
@@ -307,7 +320,8 @@ class GameDebuggerApp(QMainWindow):
         self.prompt_edit.setPlainText(turn_output.debug_prompt or "No disponible")
         self.result_tab.update_result(turn_output)
 
-        # Actualizar inspector, árboles de entidades y barra de estado
+        # Actualizar inspector, árboles de entidades, lore graph y barra de estado
         self.refresh_inspector()
         self.refresh_entities()
+        self.refresh_lore_graph()
         self.update_status_bar()
