@@ -53,6 +53,9 @@ class UIStateProjection(BaseModel):
     game_state: str = "EXPLORE"
     player_target: Optional[str] = None
     active_npc_affinity: Optional[float] = None
+    can_send_message: bool = False
+    allowed_actions: List[str] = Field(default_factory=list)
+
 
 
 class PlayerSummaryProjection(BaseModel):

@@ -3,7 +3,7 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QGroupBox
 from typing import List
 from domains.lore import LoreBlock
-from editor.views.lore_widget import LoreBlockTableWidget
+from editor.views.lore_widget import LoreBlockTreeWidget
 
 
 class LoreCatalogForm(QWidget):
@@ -25,18 +25,18 @@ class LoreCatalogForm(QWidget):
         desc.setWordWrap(True)
         group_layout.addWidget(desc)
 
-        self.table_widget = LoreBlockTableWidget(controller=controller)
-        self.table_widget.lore_changed.connect(self.on_lore_changed)
-        group_layout.addWidget(self.table_widget)
+        self.tree_widget = LoreBlockTreeWidget(controller=controller)
+        self.tree_widget.lore_changed.connect(self.on_lore_changed)
+        group_layout.addWidget(self.tree_widget)
 
         layout.addWidget(group)
 
     def set_lore_blocks(self, blocks: List[LoreBlock]):
-        self.table_widget.set_lore_blocks(blocks)
+        self.tree_widget.set_lore_blocks(blocks)
 
     def get_lore_blocks(self) -> List[LoreBlock]:
-        return self.table_widget.get_lore_blocks()
+        return self.tree_widget.get_lore_blocks()
 
     def on_lore_changed(self):
         if self.controller:
-            self.controller.lore_blocks = self.table_widget.get_lore_blocks()
+            self.controller.lore_blocks = self.tree_widget.get_lore_blocks()

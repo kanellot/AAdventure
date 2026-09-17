@@ -6,7 +6,6 @@ from domains import (
     Entity,
     EntityCondition,
     LoreBlock,
-    LoreConditions,
     NPC,
     Place,
     Player,
@@ -70,42 +69,6 @@ class LoreRouter:
             if lore_id in game_state.world_state.lore_blocks:
                 return getattr(game_state.world_state.lore_blocks[lore_id], "state", "unknown")
 
-        # 3. En lugares y sus objetos (compatibilidad retroactiva)
-        if hasattr(game_state, "world_state") and game_state.world_state and game_state.world_state.world:
-            for loc in game_state.world_state.world.locations:
-                for place in loc.places:
-                    for b in getattr(place, "dynamic_lore", []):
-                        if b.id == lore_id:
-                            return getattr(b, "state", "unknown")
-                    for item in getattr(place, "items", []):
-                        for b in getattr(item, "dynamic_lore", []):
-                            if b.id == lore_id:
-                                return getattr(b, "state", "unknown")
-
-        # 4. En NPCs del mundo
-        if hasattr(game_state, "world_state") and game_state.world_state:
-            for n in game_state.world_state.npcs.values():
-                for b in getattr(n, "dynamic_lore", []):
-                    if b.id == lore_id:
-                        return getattr(b, "state", "unknown")
-
-        # 5. En NPCs locales de sesión
-        for n in getattr(game_state.data, "npcs", {}).values():
-            for b in getattr(n, "dynamic_lore", []):
-                if b.id == lore_id:
-                    return getattr(b, "state", "unknown")
-
-        # 6. En lugar actual de sesión
-        curr_p = getattr(game_state, "place", None) or getattr(game_state.data, "place", None)
-        if curr_p:
-            for b in getattr(curr_p, "dynamic_lore", []):
-                if b.id == lore_id:
-                    return getattr(b, "state", "unknown")
-            for item in getattr(curr_p, "items", []):
-                for b in getattr(item, "dynamic_lore", []):
-                    if b.id == lore_id:
-                        return getattr(b, "state", "unknown")
-
         return None
 
     def _get_all_blocks(self, game_state: Optional[GameStateController] = None) -> List[LoreBlock]:
@@ -129,26 +92,6 @@ class LoreRouter:
                         blocks.append(b)
                         seen_ids.add(b.id)
 
-            # 3. game_state.data (session)
-            if hasattr(game_state, "data") and game_state.data:
-                # NPCs
-                for n in getattr(game_state.data, "npcs", {}).values():
-                    for b in getattr(n, "dynamic_lore", []):
-                        if getattr(b, "id", None) and b.id not in seen_ids:
-                            blocks.append(b)
-                            seen_ids.add(b.id)
-                # Current place
-                curr_p = getattr(game_state.data, "place", None)
-                if curr_p:
-                    for b in getattr(curr_p, "dynamic_lore", []):
-                        if getattr(b, "id", None) and b.id not in seen_ids:
-                            blocks.append(b)
-                            seen_ids.add(b.id)
-                    for item in getattr(curr_p, "items", []):
-                        for b in getattr(item, "dynamic_lore", []):
-                            if getattr(b, "id", None) and b.id not in seen_ids:
-                                blocks.append(b)
-                                seen_ids.add(b.id)
         return blocks
 
     def has_child_blocks(self, block: LoreBlock, game_state: Optional[GameStateController] = None) -> bool:
@@ -205,7 +148,11 @@ class LoreRouter:
         evaluating_block: Optional[LoreBlock] = None,
     ) -> bool:
         """Evalúa una condición individual sobre una entidad (Place, NPC, Item, LoreBlock)."""
-        player = getattr(game_state.data, "player", None)
+        player = (
+            getattr(game_state, "player", None)
+            or (game_state.world_state.player if hasattr(game_state, "world_state") and game_state.world_state else None)
+            or getattr(getattr(game_state, "data", None), "player", None)
+        )
         result = False
 
         if isinstance(cond, dict):
@@ -246,8 +193,9 @@ class LoreRouter:
         elif cond.entity_type == "npc":
             target_npc = npc
             if cond.entity_id:
-                if cond.entity_id in getattr(game_state.data, "npcs", {}):
-                    target_npc = game_state.data.npcs[cond.entity_id]
+                ctrl_npcs = getattr(game_state, "npcs", None)
+                if isinstance(ctrl_npcs, dict) and cond.entity_id in ctrl_npcs:
+                    target_npc = ctrl_npcs[cond.entity_id]
                 elif hasattr(game_state, "world_state") and game_state.world_state:
                     if cond.entity_id in game_state.world_state.npcs:
                         target_npc = game_state.world_state.npcs[cond.entity_id]
@@ -349,35 +297,12 @@ class LoreRouter:
 
     def check_conditions(
         self,
-        conditions: Union[LoreConditions, List[EntityCondition]],
+        conditions: List[EntityCondition],
         game_state: GameStateController,
         npc: Optional[NPC] = None,
         evaluating_block: Optional[LoreBlock] = None,
     ) -> bool:
         """Verifica si se cumplen las condiciones lógicas (1 a N) del bloque."""
-        if isinstance(conditions, LoreConditions):
-            player: Player = game_state.data.player
-            if npc is not None:
-                if not (conditions.min_affinity <= npc.affinity <= conditions.max_affinity):
-                    return False
-            if conditions.required_gold > 0:
-                if not player or player.gold < conditions.required_gold:
-                    return False
-            if conditions.required_quests:
-                if not player:
-                    return False
-                for q in conditions.required_quests:
-                    if q not in player.completed_quests:
-                        return False
-            if conditions.required_items:
-                if not player:
-                    return False
-                player_inv = getattr(player, "inventory", [])
-                for item in conditions.required_items:
-                    if item not in player_inv:
-                        return False
-            return True
-
         if not conditions:
             return True
 
@@ -422,31 +347,14 @@ class LoreRouter:
             if b.id in seen_ids:
                 continue
 
-            # 1. Comprobar target en todos los efectos de la lista y retrocompatibles
-            eff_targets = []
-            for eff in getattr(b, "effects", []):
-                if getattr(eff, "target", None):
-                    eff_targets.append(str(eff.target).strip().lower())
-            t_act = getattr(b.on_active, "target", None)
-            t_don = getattr(b.on_done, "target", None)
-            if t_act and str(t_act).strip().lower() not in eff_targets:
-                eff_targets.append(str(t_act).strip().lower())
-            if t_don and str(t_don).strip().lower() not in eff_targets:
-                eff_targets.append(str(t_don).strip().lower())
-
+            # 1. Comprobar target en los efectos del bloque
+            eff_targets = [str(eff.target).strip().lower() for eff in getattr(b, "effects", []) if getattr(eff, "target", None)]
             if any(t in entity_identifiers for t in eff_targets):
                 matched_blocks.append(b)
                 seen_ids.add(b.id)
                 continue
 
-            # 2. Comprobar target_entities (propiedad retrocompatible)
-            targets = [str(t).strip().lower() for t in (getattr(b, "target_entities", []) or [])]
-            if any(t in entity_identifiers for t in targets):
-                matched_blocks.append(b)
-                seen_ids.add(b.id)
-                continue
-
-            # 3. Comprobar condiciones que hagan referencia a esta entidad
+            # 2. Comprobar condiciones que hagan referencia a esta entidad
             has_matching_cond = False
             for cond in (getattr(b, "conditions", []) or []):
                 cid = (cond.entity_id or "").strip().lower()
@@ -457,13 +365,6 @@ class LoreRouter:
                 matched_blocks.append(b)
                 seen_ids.add(b.id)
                 continue
-
-        # 4. Bloques embebidos en entity.dynamic_lore si existieran
-        if hasattr(entity, "dynamic_lore") and entity.dynamic_lore:
-            for b in entity.dynamic_lore:
-                if b.id not in seen_ids:
-                    matched_blocks.append(b)
-                    seen_ids.add(b.id)
 
         return matched_blocks
 
@@ -700,7 +601,7 @@ class LoreRouter:
             return {}
 
         mutations = {}
-        player = getattr(game_state.data, "player", None) if hasattr(game_state, "data") else None
+        player = getattr(game_state, "player", None) or (game_state.world_state.player if hasattr(game_state, "world_state") and game_state.world_state else None)
 
         # 1. Oro
         gold_delta = getattr(effects, "gold_delta", 0)
@@ -710,13 +611,13 @@ class LoreRouter:
         if gold_delta != 0:
             if hasattr(game_state, "gold"):
                 game_state.gold = max(0, game_state.gold + gold_delta)
-            if player and hasattr(player, "gold"):
+            elif player and hasattr(player, "gold"):
                 player.gold = max(0, player.gold + gold_delta)
             mutations["gold_delta"] = gold_delta
         elif give_gold > 0:
             if hasattr(game_state, "gold"):
                 game_state.gold += give_gold
-            if player and hasattr(player, "gold"):
+            elif player and hasattr(player, "gold"):
                 player.gold += give_gold
             mutations["gold_gained"] = give_gold
 
@@ -725,7 +626,7 @@ class LoreRouter:
             taken = min(curr_gold, take_gold)
             if hasattr(game_state, "gold"):
                 game_state.gold -= taken
-            if player and hasattr(player, "gold"):
+            elif player and hasattr(player, "gold"):
                 player.gold -= taken
             mutations["gold_spent"] = taken
 
@@ -876,14 +777,7 @@ class LoreRouter:
                 # 1. De effects.target (Place o NPC)
                 origin_place_obj = _resolve_place_from_entity_id(getattr(effects, "target", None))
 
-                # 2. De block.target_entities
-                if not origin_place_obj and block:
-                    for t in getattr(block, "target_entities", []) or []:
-                        origin_place_obj = _resolve_place_from_entity_id(t)
-                        if origin_place_obj:
-                            break
-
-                # 3. De condiciones del bloque
+                # 2. De condiciones del bloque
                 if not origin_place_obj and block:
                     for cond in getattr(block, "conditions", []) or []:
                         origin_place_obj = _resolve_place_from_entity_id(getattr(cond, "entity_id", None))
@@ -1132,7 +1026,7 @@ class LoreRouter:
 
     def check_conditions_for_move(
         self,
-        conditions: Union[LoreConditions, List[EntityCondition]],
+        conditions: List[EntityCondition],
         game_state: GameStateController,
         hypothetical_place: Place,
     ) -> bool:

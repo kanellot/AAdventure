@@ -53,18 +53,9 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
         target = self.target
 
         if not target:
-            entity = game_state_controller.data.place
+            entity = game_state_controller.place
         else:
-            for n in game_state_controller.data.npcs.values():
-                if n.id == target or n.name == target:
-                    entity = n
-                    break
-
-            if not entity and hasattr(game_state_controller.world_state, "npcs"):
-                for n in game_state_controller.world_state.npcs.values():
-                    if n.id == target or n.name == target:
-                        entity = n
-                        break
+            entity = game_state_controller.load_npc(target)
 
             # Buscar en Objetos (Items)
             if not entity and hasattr(game_state_controller.world_state, "objects"):
@@ -74,7 +65,7 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
                 )
 
             if not entity:
-                current_place = game_state_controller.data.place
+                current_place = game_state_controller.place
                 if current_place and (current_place.id == target or current_place.name == target):
                     entity = current_place
                 else:
@@ -83,18 +74,18 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
                     elif target in game_state_controller.world_state.places_by_name:
                         entity = game_state_controller.world_state.places_by_name[target]
 
-            if not entity and game_state_controller.data.place:
-                for vent in game_state_controller.data.place.visible_entities:
+            if not entity and game_state_controller.place:
+                for vent in game_state_controller.place.visible_entities:
                     if vent.lower() == target.lower() or vent.lower().endswith(target.lower()):
                         entity = Entity(
                             id=vent,
                             name=vent,
-                            description=f"Elemento u objeto situado en {game_state_controller.data.place.name}.",
+                            description=f"Elemento u objeto situado en {game_state_controller.place.name}.",
                         )
                         break
 
             if not entity:
-                entity = game_state_controller.data.place
+                entity = game_state_controller.place
 
         router = LoreRouter.get_instance()
         self._triggered_lore = None
@@ -102,7 +93,7 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
 
         has_dynamic_lore = (
             (entity and (getattr(entity, "dynamic_lore", None) or router.get_blocks_for_entity(entity, game_state_controller))) or
-            (game_state_controller.data.place and (getattr(game_state_controller.data.place, "dynamic_lore", None) or router.get_blocks_for_entity(game_state_controller.data.place, game_state_controller)))
+            (game_state_controller.place and (getattr(game_state_controller.place, "dynamic_lore", None) or router.get_blocks_for_entity(game_state_controller.place, game_state_controller)))
         )
 
         if has_dynamic_lore:
@@ -110,8 +101,8 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
             match = None
             if clean_input and entity:
                 match = router.find_reactive_lore(clean_input, entity, game_state_controller)
-                if not match and game_state_controller.data.place and game_state_controller.data.place != entity:
-                    match = router.find_reactive_lore(clean_input, game_state_controller.data.place, game_state_controller)
+                if not match and game_state_controller.place and game_state_controller.place != entity:
+                    match = router.find_reactive_lore(clean_input, game_state_controller.place, game_state_controller)
 
             if match:
                 self._triggered_lore, _ = match
@@ -136,10 +127,10 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
                             if proactive_block:
                                 matched_entity = npc_obj
                                 break
-                if not proactive_block and game_state_controller.data.place and game_state_controller.data.place != entity:
-                    proactive_block = router.find_proactive_lore(game_state_controller.data.place, game_state_controller)
+                if not proactive_block and game_state_controller.place and game_state_controller.place != entity:
+                    proactive_block = router.find_proactive_lore(game_state_controller.place, game_state_controller)
                     if proactive_block:
-                        matched_entity = game_state_controller.data.place
+                        matched_entity = game_state_controller.place
                 if proactive_block:
                     self._triggered_lore = proactive_block
                     ent_id = getattr(matched_entity, "id", None) or getattr(matched_entity, "name", None)
@@ -182,11 +173,7 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
         new_desc = llm_response.msg
         target = self.target
 
-        npc = None
-        for n in game_state_controller.data.npcs.values():
-            if n.id == target or n.name == target:
-                npc = n
-                break
+        npc = game_state_controller.load_npc(target)
 
         if npc:
             npc.description = f"{npc.description}\n{new_desc}"
@@ -195,7 +182,7 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
             return
 
         place = None
-        current_place = game_state_controller.data.place
+        current_place = game_state_controller.place
         if current_place and (current_place.id == target or current_place.name == target):
             place = current_place
 

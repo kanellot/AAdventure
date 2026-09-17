@@ -193,6 +193,8 @@ class GameStateController:
     @gold.setter
     def gold(self, val: int) -> None:
         self.game_state.gold = max(0, val)
+        if self.world_state.player:
+            self.world_state.player.gold = self.game_state.gold
 
     @property
     def inventory(self) -> List[str]:
@@ -253,6 +255,20 @@ class GameStateController:
     def player(self) -> Player:
         return self.world_state.player
 
+    @property
+    def travel_speed(self) -> float:
+        return self.game_state.travel_speed
+
+    @property
+    def elapsed_time(self) -> int:
+        return self.game_state.elapsed_time
+
+    def add_time(self, minutes: int) -> None:
+        """Avanza el tiempo transcurrido en minutos y sincroniza con el jugador."""
+        self.game_state.elapsed_time += max(0, minutes)
+        if self.world_state.player:
+            self.world_state.player.elapsed_time = self.game_state.elapsed_time
+
     @classmethod
     def create_from_world(
         cls,
@@ -301,8 +317,6 @@ class GameStateController:
             player_target=target,
             elapsed_time=player.elapsed_time,
             travel_speed=player.travel_speed,
-            player=player,
-            place=place_obj,
         )
 
         controller = cls(game_state, world_state)
@@ -342,7 +356,6 @@ class GameStateController:
                 if npc_obj and npc_obj.name not in self.game_state.known_npcs:
                     self.game_state.known_npcs.append(npc_obj.name)
         self.game_state.visible_npcs = vis_npcs
-        self.game_state.npcs = {nid: self.world_state.npcs[nid] for nid in vis_npcs if nid in self.world_state.npcs}
 
         # 3. Objetos visibles y conocidos
         vis_objs = []
@@ -388,11 +401,8 @@ class GameStateController:
 
         if self.world_state.player:
             self.world_state.player.visited_places = list(self.game_state.visited_places)
-        if self.game_state.player:
-            self.game_state.player.visited_places = list(self.game_state.visited_places)
-            self.game_state.player.player_location = dest_place.name
-            self.game_state.player.initial_place = dest_place.id
-        self.game_state.place = dest_place
+            self.world_state.player.player_location = dest_place.name
+            self.world_state.player.initial_place = dest_place.id
 
         self.refresh_perception()
 
@@ -434,8 +444,6 @@ class GameStateController:
             self.game_state.inventory.append(object_id)
         if self.world_state.player and object_id not in self.world_state.player.inventory:
             self.world_state.player.inventory.append(object_id)
-        if self.game_state.player and object_id not in self.game_state.player.inventory:
-            self.game_state.player.inventory.append(object_id)
         if object_id not in self.game_state.known_objs:
             self.game_state.known_objs.append(object_id)
         obj_item = self.world_state.objects.get(object_id)
@@ -450,8 +458,6 @@ class GameStateController:
             self.game_state.inventory.remove(object_id)
         if self.world_state.player and object_id in self.world_state.player.inventory:
             self.world_state.player.inventory.remove(object_id)
-        if self.game_state.player and object_id in self.game_state.player.inventory:
-            self.game_state.player.inventory.remove(object_id)
 
         self.refresh_perception()
 

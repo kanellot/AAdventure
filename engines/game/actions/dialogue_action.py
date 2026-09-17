@@ -92,13 +92,9 @@ class DialogueAction(BaseAction[DialogueNarratorCtx, DialogueNarratorResponse]):
         player_input: str,
     ) -> DialogueNarratorCtx:
         """Construye el contexto del diálogo evaluando lore dinámico de NPC."""
-        npc = None
-        for n in game_state_controller.data.npcs.values():
-            if n.id == self.target_npc or n.name == self.target_npc:
-                npc = n
-                break
+        npc = game_state_controller.load_npc(self.target_npc)
         if not npc:
-            npc = game_state_controller.load_npc(self.target_npc)
+            raise ValueError(f"NPC '{self.target_npc}' no encontrado.")
 
         if not npc.conversation:
             npc.conversation = ConversationRecord(id=f"c_{npc.id}", msg=[])
@@ -165,13 +161,7 @@ class DialogueAction(BaseAction[DialogueNarratorCtx, DialogueNarratorResponse]):
         if not is_valid:
             return
 
-        npc = None
-        for n in game_state_controller.data.npcs.values():
-            if n.id == self.target_npc or n.name == self.target_npc:
-                npc = n
-                break
-        if not npc:
-            npc = game_state_controller.load_npc(self.target_npc)
+        npc = game_state_controller.load_npc(self.target_npc)
 
         if npc:
             if not npc.conversation:
@@ -181,7 +171,7 @@ class DialogueAction(BaseAction[DialogueNarratorCtx, DialogueNarratorResponse]):
 
             delta = (llm_response.affinity - 0.5) * 0.35
             npc.affinity = round(max(0.0, min(1.0, npc.affinity + delta)), 4)
-            game_state_controller.data.state.active_npc_affinity = npc.affinity
+            game_state_controller.game_state.active_npc_affinity = npc.affinity
 
             if self._triggered_lore:
                 router = LoreRouter.get_instance()

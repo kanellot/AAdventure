@@ -46,7 +46,7 @@ class MoveAction(BaseAction[MoveNarratorCtx, MoveNarratorResponse]):
         player_input: str,
     ) -> MoveNarratorCtx:
         """Construye el contexto de navegación entre lugares evaluando lore dinámico."""
-        origin_place = game_state_controller.data.place
+        origin_place = game_state_controller.place
         destination_place = None
 
         if self.target:
@@ -98,7 +98,7 @@ class MoveAction(BaseAction[MoveNarratorCtx, MoveNarratorResponse]):
                 game_state_controller.world_state.places_by_name,
                 origin_place.name,
                 destination_place.name,
-                travel_speed=game_state_controller.data.state.travel_speed,
+                travel_speed=game_state_controller.travel_speed,
             )
 
         self._triggered_lore = None

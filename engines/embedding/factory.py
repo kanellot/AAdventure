@@ -16,6 +16,11 @@ class EmbeddingFactory:
     _instance: Optional[BaseEmbeddingBackend] = None
 
     @classmethod
+    def set_backend(cls, backend: BaseEmbeddingBackend) -> None:
+        """Establece directamente una instancia de backend para pruebas o inyección de dependencias."""
+        cls._instance = backend
+
+    @classmethod
     def get_backend(
         cls,
         backend_type: Optional[str] = None,

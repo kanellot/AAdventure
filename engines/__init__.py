@@ -1,8 +1,11 @@
-"""
-Paquete principal de motores de ejecución de AAdventure.
+"""Paquete principal de motores de ejecución de AAdventure.
 
-Submódulos independientes:
-- engines.game: Lógica de juego, orquestación de turnos, estado y reglas.
-- engines.transformer: Inferencia de modelos de lenguaje (LLMs) y validación estructurada.
-- engines.embedding: Modelos de embeddings vectoriales y búsqueda semántica.
+Expone exclusivamente la fachada pública AdventureSession para clientes y frontends externos.
+Los subsistemas internos (GameEngine, TransformerEngine, EmbeddingFactory, LoreRouter, etc.)
+quedan encapsulados como detalles de implementación.
 """
+
+from engines.session import AdventureSession
+
+__all__ = ["AdventureSession"]
+

@@ -4,7 +4,7 @@ from domains.base import Entity
 from domains.conversation import ConversationRecord
 from domains.items import Item, GameObject
 from domains.story_config import StoryConfig
-from domains.lore import EntityCondition, LoreBlock, LoreBlockState, LoreConditions, LoreEffects
+from domains.lore import EntityCondition, LoreBlock, LoreBlockState, LoreEffects
 from domains.npcs import NPC, NPCInfo, NPCMotivations
 from domains.player import Player
 from domains.system.system_domains import (
@@ -17,7 +17,6 @@ from domains.system.system_domains import (
     MoveNarratorCtx,
     MoveNarratorResponse,
     MoveNarratorResult,
-    PlaceProjection,
     ResponseType,
     ResultType,
     RuntimeState,
@@ -58,7 +57,6 @@ __all__ = [
     "LoreBlock",
     "LoreBlockState",
     "EntityCondition",
-    "LoreConditions",
     "LoreEffects",
     "ConversationRecord",
     "ContextType",

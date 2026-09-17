@@ -32,9 +32,6 @@ from engines.game.state_controller import GameStateController, WorldState
 from engines.game.utils import TimeCalculator
 from engines.transformer import TransformerEngine
 
-# TurnOutput es canónicamente TurnResultProjection (mantiene compatibilidad 100%)
-TurnOutput = TurnResultProjection
-
 
 class GameEngine:
     """Coordinador y fachada principal del motor de juego."""
@@ -190,8 +187,8 @@ class GameEngine:
 
     def get_player_name(self) -> str:
         """Devuelve el nombre del jugador cargado en el estado."""
-        if self.game_state_controller.data.player:
-            return self.game_state_controller.data.player.name
+        if self.game_state_controller.player:
+            return self.game_state_controller.player.name
         return "Jugador"
 
     def get_formatted_time(self) -> str:
@@ -365,8 +362,8 @@ class GameEngine:
             if npc:
                 npc_place = self.get_npc_place(npc.id)
                 if npc_place and (
-                    not self.game_state_controller.data.place
-                    or self.game_state_controller.data.place.id != npc_place.id
+                    not self.game_state_controller.place
+                    or self.game_state_controller.place.id != npc_place.id
                 ):
                     self.game_state_controller.update_location(npc_place.name)
 
@@ -408,23 +405,13 @@ class GameEngine:
                 final_msg = f"{final_msg}\n\n[En el trayecto por {intermediate_place.name}]: {explain_res.message}"
 
         if triggered and not is_blocked:
-            eff = getattr(triggered, "effects", None)
+            eff = triggered.on_active if hasattr(triggered, "on_active") else None
             force_action = getattr(triggered, "force_action", False)
             act_type = getattr(eff, "trigger_action_type", None) if eff else None
+            act_tgt = (getattr(eff, "trigger_action_target", None) or getattr(eff, "target", None)) if eff else None
 
-            act_tgt = getattr(eff, "trigger_action_target", None) if eff else None
-
-            # Si force_action está activo pero no se especificó act_type/act_tgt, deducir de target_entities
-            if force_action and (not act_type or not act_tgt):
-                targets = getattr(triggered, "target_entities", [])
-                if targets:
-                    first_t = targets[0]
-                    if self.get_npc_by_name_or_id(first_t):
-                        act_type = act_type or "TALK"
-                        act_tgt = act_tgt or first_t
-                    else:
-                        act_type = act_type or "EXPLAIN"
-                        act_tgt = act_tgt or first_t
+            if force_action and not act_type and act_tgt:
+                act_type = "TALK" if self.get_npc_by_name_or_id(act_tgt) else "EXPLAIN"
 
             if act_type:
                 act_type = act_type.upper()
@@ -574,8 +561,8 @@ class GameEngine:
     def get_game_state_projection(self) -> GameStateProjection:
         """Devuelve una proyección exhaustiva del estado actual para el inspector visual."""
         state = self.game_state_controller.data.state
-        player = self.game_state_controller.data.player
-        place = self.game_state_controller.data.place
+        player = self.game_state_controller.player
+        place = self.game_state_controller.place
 
         player_summary = PlayerSummaryProjection(
             id=player.id if player else "player",
@@ -647,8 +634,8 @@ class GameEngine:
     def get_ui_state_projection(self) -> UIStateProjection:
         """Devuelve un resumen del estado del juego en formato DTO para la interfaz."""
         state = self.game_state_controller.data.state
-        player = self.game_state_controller.data.player
-        place = self.game_state_controller.data.place
+        player = self.game_state_controller.player
+        place = self.game_state_controller.place
 
         active_affinity = None
         if state and state.player_state.upper() == "TALK":
@@ -656,14 +643,20 @@ class GameEngine:
             if active_affinity is None:
                 active_affinity = getattr(state, "active_npc_affinity", None)
 
+        game_st = state.player_state.upper() if state else "EXPLORE"
+        can_send = game_st in ("TALK", "LOOK")
+        allowed = ["MOVE", "LOOK", "TALK"]
+
         return UIStateProjection(
             player_name=player.name if player else "Jugador",
             gold=player.gold if player else 0,
             current_location=place.name if place else "Desconocido",
             formatted_time=self.get_formatted_time(),
-            game_state=state.player_state.upper() if state else "EXPLORE",
-            player_target=state.player_target if state else None,
+            game_state=game_st,
+            player_target=state.player_target if (state and state.player_target) else None,
             active_npc_affinity=active_affinity,
+            can_send_message=can_send,
+            allowed_actions=allowed,
         )
 
     def get_active_npc_affinity(self) -> Optional[float]:
@@ -672,7 +665,7 @@ class GameEngine:
 
     def get_available_actions_projection(self) -> AvailableActionsProjection:
         """Devuelve las acciones disponibles en formato DTO para la interfaz de usuario."""
-        current_place = self.game_state_controller.data.place
+        current_place = self.game_state_controller.place
         moves = []
         if current_place and current_place.connections:
             for direction, conn in current_place.connections.items():
@@ -847,7 +840,7 @@ class GameEngine:
         elif etype == "item":
             if sub == "have":
                 qty = int(val or 1)
-                curr_inv = getattr(self.game_state_controller.data.player, "inventory", []) if self.game_state_controller.data.player else []
+                curr_inv = getattr(self.game_state_controller.player, "inventory", []) if self.game_state_controller.player else []
                 has_item = eid in curr_inv
                 return f"{neg_prefix}Tener en inventario '{eid}' (Req: {qty}, Posee: {'Sí' if has_item else 'No'})"
 
