@@ -7,13 +7,6 @@ from domains.conversation import ConversationRecord
 from domains.lore import LoreBlock
 
 
-class NPCInfo(BaseModel):
-    """Información simplificada de un NPC."""
-
-    id: str
-    name: str = ""
-
-
 class NPCMotivations(BaseModel):
     """Motivaciones y preferencias de un NPC para modular afinidad."""
 

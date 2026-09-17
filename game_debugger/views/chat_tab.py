@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTextBrowser, QLineEdit, QPushButton, QComboBox, QLabel
 )
 from PySide6.QtCore import Signal
-from domains import ActionCommand
+from domains.projections import ActionCommandProjection
 
 
 class ChatTab(QWidget):
@@ -153,7 +153,7 @@ class ChatTab(QWidget):
         text = self.input_edit.text().strip()
         self.input_edit.clear()
 
-        action_obj = ActionCommand(action=action, target=target)
+        action_obj = ActionCommandProjection(action=action, target=target)
         self.send_action.emit(action_obj, text)
 
     def on_return_pressed(self):

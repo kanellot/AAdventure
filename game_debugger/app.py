@@ -12,8 +12,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from domains import ActionCommand
-from domains.projections import TurnResultProjection
+from domains.projections import ActionCommandProjection, TurnResultProjection
 from engines import AdventureSession
 from game_debugger.views.chat_tab import ChatTab
 from game_debugger.views.entities_tab import EntitiesTreeWidget
@@ -305,7 +304,7 @@ class GameDebuggerApp(QMainWindow):
         self.worker.finished_turn.connect(self.on_turn_finished)
         self.worker.start()
 
-    def on_player_action_command(self, action_obj: ActionCommand, prompt_text: str):
+    def on_player_action_command(self, action_obj: ActionCommandProjection, prompt_text: str):
         """Se ejecuta cuando el usuario pulsa un botón de acción directa (MOVE, LOOK, TALK)."""
         self.chat_tab.set_input_enabled(False)
         self.statusBar().showMessage(f"Ejecutando acción {action_obj.action} sobre {action_obj.target}... (Llamando al LLM)")

@@ -1,8 +1,7 @@
-from typing import Optional, Union
+from typing import Optional
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
 from PySide6.QtCore import Qt
 from domains.projections import GameStateProjection
-from domains.system.system_domains import GameState
 
 
 class GameStateInspector(QTreeWidget):
@@ -17,20 +16,13 @@ class GameStateInspector(QTreeWidget):
         self.setColumnCount(1)
         self.setAlternatingRowColors(True)
 
-    def update_state(
-        self,
-        game_state: Union[GameStateProjection, GameState],
-        formatted_time: Optional[str] = None,
-    ) -> None:
+    def update_state(self, game_state: Optional[GameStateProjection]) -> None:
         """Limpia y reconstruye el árbol con la información del GameStateProjection actual."""
         self.clear()
         if not game_state:
             return
 
-        if isinstance(game_state, GameStateProjection):
-            self._render_dto_state(game_state)
-        else:
-            self._render_legacy_state(game_state, formatted_time or "")
+        self._render_dto_state(game_state)
 
     def _render_dto_state(self, state: GameStateProjection) -> None:
         """Renderiza el estado a partir del DTO canónico GameStateProjection."""
@@ -158,72 +150,5 @@ class GameStateInspector(QTreeWidget):
             done_child = QTreeWidgetItem(item_lore)
             done_text = ", ".join(state.done_lore_blocks) if state.done_lore_blocks else "(Ninguno)"
             done_child.setText(0, f"Completados ({len(state.done_lore_blocks)}): {done_text}")
-
-        self.expandAll()
-
-    def _render_legacy_state(self, game_state: GameState, formatted_time: str) -> None:
-        """Renderizado de respaldo para objetos GameState no proyectados."""
-        state = game_state.state
-        if state:
-            item_state = QTreeWidgetItem(self)
-            item_state.setText(0, f"player_state: {state.player_state}")
-
-            item_target = QTreeWidgetItem(self)
-            item_target.setText(0, f"player_target: '{state.player_target or ''}'")
-
-            aff = getattr(game_state, "active_npc_affinity", None)
-            if aff is None and hasattr(state, "active_npc_affinity"):
-                aff = state.active_npc_affinity
-            if state.player_state.upper() == "TALK" and aff is not None:
-                item_aff = QTreeWidgetItem(self)
-                item_aff.setText(0, f"active_npc_affinity: {aff:.2f} ({int(round(aff * 100))}%)")
-
-            curr_place_name = state.current_place.name if state.current_place else "Ninguno"
-            item_curr = QTreeWidgetItem(self)
-            item_curr.setText(0, f"current_place: {curr_place_name}")
-
-            prev_place_name = state.prev_place.name if state.prev_place else "Ninguno"
-            item_prev = QTreeWidgetItem(self)
-            item_prev.setText(0, f"prev_place: {prev_place_name}")
-
-            item_speed = QTreeWidgetItem(self)
-            item_speed.setText(0, f"travel_speed: {state.travel_speed} km/h")
-
-            item_time = QTreeWidgetItem(self)
-            item_time.setText(0, f"Tiempo Transcurrido: {formatted_time} ({state.elapsed_time} min)")
-
-        sep = QTreeWidgetItem(self)
-        sep.setText(0, "-" * 40)
-        sep.setFlags(sep.flags() & ~Qt.ItemIsEnabled)
-
-        player = game_state.player
-        if player:
-            item_player = QTreeWidgetItem(self)
-            item_player.setText(0, f"Jugador: {player.name}")
-            id_child = QTreeWidgetItem(item_player)
-            id_child.setText(0, f"ID: {player.id}")
-            desc_child = QTreeWidgetItem(item_player)
-            desc_child.setText(0, f"Descripción: {player.description}")
-            gold_child = QTreeWidgetItem(item_player)
-            gold_child.setText(0, f"Oro: {player.gold} monedas")
-
-        place = game_state.place
-        if place:
-            item_place = QTreeWidgetItem(self)
-            item_place.setText(0, f"Lugar Actual: {place.name}")
-            pid_child = QTreeWidgetItem(item_place)
-            pid_child.setText(0, f"ID: {place.id}")
-            pdesc_child = QTreeWidgetItem(item_place)
-            pdesc_child.setText(0, f"Descripción: {place.description}")
-
-        active_lbs = getattr(game_state, "active_lore_blocks", [])
-        done_lbs = getattr(game_state, "done_lore_blocks", [])
-        if active_lbs or done_lbs:
-            item_lore = QTreeWidgetItem(self)
-            item_lore.setText(0, "Estado de Lore (HSM)")
-            act_child = QTreeWidgetItem(item_lore)
-            act_child.setText(0, f"Activos ({len(active_lbs)}): {', '.join(active_lbs) or '(Ninguno)'}")
-            done_child = QTreeWidgetItem(item_lore)
-            done_child.setText(0, f"Completados ({len(done_lbs)}): {', '.join(done_lbs) or '(Ninguno)'}")
 
         self.expandAll()

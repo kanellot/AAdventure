@@ -83,11 +83,9 @@ class GameState(BaseModel):
         return self
 
 
-class ActionCommand(BaseModel):
-    """Comando directo de acción emitido desde la interfaz de usuario."""
+from domains.projections.game import ActionCommandProjection
 
-    action: str
-    target: str
+ActionCommand = ActionCommandProjection
 
 
 class MoveNarratorCtx(ContextType):

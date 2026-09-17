@@ -6,20 +6,6 @@ from domains.base import Entity
 from domains.items import Item
 
 
-class LocationInfo(BaseModel):
-    """Información simplificada de una localización."""
-
-    id: str
-    name: str = ""
-
-
-class PlaceInfo(BaseModel):
-    """Información simplificada de un lugar o sub-zona."""
-
-    id: str
-    name: str = ""
-
-
 class Connection(BaseModel):
     """Conexión física entre dos lugares con distancia y tipo de terreno."""
 

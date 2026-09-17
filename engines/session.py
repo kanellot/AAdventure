@@ -9,8 +9,8 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional
 
-from domains import (
-    ActionCommand,
+from domains.projections import (
+    ActionCommandProjection,
     AvailableActionsProjection,
     GameStateProjection,
     LoreGraphProjection,
@@ -165,7 +165,7 @@ class AdventureSession:
                 self._engine.game_state_controller.sync_active_npc_affinity()
                 interrupted_conversation = True
 
-            cmd = ActionCommand(action=act, target=tgt)
+            cmd = ActionCommandProjection(action=act, target=tgt)
             res = self._engine.execute_turn(cmd, dm=self._dm)
 
             if interrupted_conversation:
@@ -215,7 +215,7 @@ class AdventureSession:
         act = "TALK" if curr_state == "TALK" else "LOOK"
 
         try:
-            cmd = ActionCommand(action=act, target=target)
+            cmd = ActionCommandProjection(action=act, target=target)
             return self._engine.execute_turn(cmd, player_input=clean_text, dm=self._dm)
         except Exception as e:
             return TurnResultProjection(

@@ -1,6 +1,6 @@
 from typing import Any, Optional
 from PySide6.QtCore import QThread, Signal
-from domains import ActionCommand, TurnResultProjection
+from domains.projections import ActionCommandProjection, TurnResultProjection
 
 
 class TurnWorker(QThread):
@@ -20,7 +20,7 @@ class TurnWorker(QThread):
         # Compatibilidad con llamadas heredadas (game_engine, dm, action_cmd, player_input):
         game_engine: Optional[Any] = None,
         dm: Optional[Any] = None,
-        action_cmd: Optional[ActionCommand] = None,
+        action_cmd: Optional[ActionCommandProjection] = None,
     ):
         super().__init__()
         self.session = session
@@ -34,7 +34,7 @@ class TurnWorker(QThread):
         from engines.session import AdventureSession
 
         if (
-            isinstance(target, ActionCommand)
+            isinstance(target, ActionCommandProjection)
             or (target is not None and not isinstance(target, str) and hasattr(target, "action") and hasattr(target, "target"))
         ):
             # Firma heredada posicional: TurnWorker(game_engine, dm, action_cmd, player_input)
@@ -71,7 +71,7 @@ class TurnWorker(QThread):
                 else:
                     turn_output = self.session.execute_action(self.action or "LOOK", self.target or "")
             elif self.game_engine is not None:
-                cmd = self.action_cmd or ActionCommand(action=self.action or "LOOK", target=self.target or "")
+                cmd = self.action_cmd or ActionCommandProjection(action=self.action or "LOOK", target=self.target or "")
                 turn_output = self.game_engine.execute_turn(
                     cmd,
                     player_input=self.player_input,

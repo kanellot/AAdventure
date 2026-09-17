@@ -22,6 +22,7 @@ from domains import (
     PlaceProjection,
     PlayerSummaryProjection,
     ResultType,
+    TurnDebugProjection,
     TurnResultProjection,
     UIStateProjection,
     WorldHierarchyProjection,
@@ -285,15 +286,19 @@ class GameEngine:
 
         rag_eval = LoreRouter.get_instance().get_last_evaluation()
 
+        debug_proj = TurnDebugProjection(
+            prompt="\n\n".join(debug_prompts) if debug_prompts else None,
+            raw_response="\n\n".join(debug_raws) if debug_raws else None,
+            structured_response="\n\n".join(debug_structureds) if debug_structureds else None,
+            engine_result="\n\n".join(debug_results) if debug_results else None,
+            rag_evaluation=rag_eval,
+        )
+
         return TurnResultProjection(
             msg=msg,
             author=author,
             info_msg=info_msg,
-            debug_prompt="\n\n".join(debug_prompts) if debug_prompts else None,
-            debug_raw_response="\n\n".join(debug_raws) if debug_raws else None,
-            debug_structured_response="\n\n".join(debug_structureds) if debug_structureds else None,
-            debug_engine_result="\n\n".join(debug_results) if debug_results else None,
-            rag_evaluation=rag_eval,
+            debug=debug_proj,
         )
 
     def execute_turn(

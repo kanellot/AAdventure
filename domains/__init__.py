@@ -5,7 +5,7 @@ from domains.conversation import ConversationRecord
 from domains.items import Item, GameObject
 from domains.story_config import StoryConfig
 from domains.lore import EntityCondition, LoreBlock, LoreBlockState, LoreEffects
-from domains.npcs import NPC, NPCInfo, NPCMotivations
+from domains.npcs import NPC, NPCMotivations
 from domains.player import Player
 from domains.system.system_domains import (
     ActionCommand,
@@ -21,8 +21,9 @@ from domains.system.system_domains import (
     ResultType,
     RuntimeState,
 )
-from domains.world import Connection, Location, LocationInfo, Place, PlaceInfo, World
+from domains.world import Connection, Location, Place, World
 from domains.projections import (
+    ActionCommandProjection,
     AvailableActionsProjection,
     ConnectionProjection,
     GameSnapshotProjection,
@@ -37,6 +38,7 @@ from domains.projections import (
     LoreGraphProjection,
     RagAntennaScoreProjection,
     RagEvaluationProjection,
+    TurnDebugProjection,
     TurnResultProjection,
     UIStateProjection,
     WorldHierarchyProjection,
@@ -64,17 +66,16 @@ __all__ = [
     "ResultType",
     "GameState",
     "RuntimeState",
-    "PlaceProjection",
     "ActionCommand",
-    "LocationInfo",
-    "PlaceInfo",
-    "NPCInfo",
+    "ActionCommandProjection",
     "MoveNarratorCtx",
     "MoveNarratorResponse",
     "MoveNarratorResult",
     "ExplainLookNarratorCtx",
     "ExplainLookResponse",
     "ExplainLookResult",
+    # Projections
+    "PlaceProjection",
     "UIStateProjection",
     "LocationHierarchyProjection",
     "WorldHierarchyProjection",
@@ -90,5 +91,6 @@ __all__ = [
     "LoreGraphProjection",
     "RagAntennaScoreProjection",
     "RagEvaluationProjection",
+    "TurnDebugProjection",
     "TurnResultProjection",
 ]
