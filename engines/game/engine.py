@@ -272,8 +272,10 @@ class GameEngine:
         msg: str,
         author: str,
         info_msg: Optional[str] = None,
+        popup_message: Optional[str] = None,
+        popup_title: Optional[str] = None,
     ) -> TurnResultProjection:
-        """Empaqueta TurnResultProjection junto con los registros de depuración y RAG."""
+        """Empaqueta TurnResultProjection junto con los registros de depuración, RAG y popups."""
         debug_prompts = []
         debug_raws = []
         debug_structureds = []
@@ -300,6 +302,8 @@ class GameEngine:
             msg=msg,
             author=author,
             info_msg=info_msg,
+            popup_message=popup_message,
+            popup_title=popup_title,
             debug=debug_proj,
         )
 
@@ -439,10 +443,11 @@ class GameEngine:
                     self.game_state_controller.sync_active_npc_affinity()
                     self.save()
 
-                    # Ejecución automatizada de TALK con el LLM
+                    # Ejecución automatizada de TALK con el LLM o bypass
                     if force_action and dm and (not isinstance(step, DialogueAction) or step.target_npc != act_tgt):
                         auto_prompt = getattr(triggered, "directive", "") or f"(El personaje {act_tgt} inicia la conversación)."
                         auto_step = DialogueAction(act_tgt)
+                        auto_step._triggered_lore = triggered
                         self.game_state_controller._is_executing_forced_action = True
                         try:
                             auto_res = self._run_step(auto_step, auto_prompt, dm)
@@ -457,9 +462,10 @@ class GameEngine:
                     self.game_state_controller.data.state.player_target = act_tgt
                     self.save()
 
-                    # Ejecución automatizada de EXPLAIN/LOOK con el LLM
+                    # Ejecución automatizada de EXPLAIN/LOOK con el LLM o bypass
                     if force_action and dm and (not isinstance(step, LookAction) or step.target != act_tgt):
                         auto_step = LookAction(act_tgt)
+                        auto_step._triggered_lore = triggered
                         auto_prompt = getattr(triggered, "directive", "") or f"(Se describe detalladamente {act_tgt})."
                         self.game_state_controller._is_executing_forced_action = True
                         try:
@@ -470,24 +476,89 @@ class GameEngine:
                             final_msg = f"{final_msg}\n\n{auto_res.message}"
                             final_author = "Dungeon Master"
 
+        # Detección de event_popup
+        popup_msg = None
+        popup_title = None
+        if triggered and getattr(triggered, "preset", "") == "event_popup":
+            popup_msg = (
+                triggered.get_directive_for_entity()
+                if hasattr(triggered, "get_directive_for_entity")
+                else ""
+            ) or getattr(triggered, "directive", "") or getattr(triggered, "description", "") or getattr(triggered, "name", "")
+            popup_title = getattr(triggered, "title", "") or getattr(triggered, "name", "Aviso")
+        elif LoreRouter.get_instance().pending_popups:
+            p = LoreRouter.get_instance().pending_popups.pop(0)
+            popup_title = p.get("title", "Aviso")
+            popup_msg = p.get("message", "")
+
         LoreRouter.get_instance().update_lore_state_machine(self.game_state_controller)
-        return self._create_debug_turn_output(msg=final_msg, author=final_author)
+        return self._create_debug_turn_output(
+            msg=final_msg,
+            author=final_author,
+            popup_message=popup_msg,
+            popup_title=popup_title,
+        )
 
     def _run_step(self, step: BaseAction, player_input: str, dm: TransformerEngine) -> ResultType:
-        """Ejecuta el ciclo de vida del step contra el transformer engine."""
+        """Ejecuta el ciclo de vida del step contra el transformer engine o mediante bypass si está configurado."""
         ctx = step.build_context(self.game_state_controller, player_input)
         prompt = step.build_prompt(ctx, player_input)
         response_schema = step.get_response_schema()
         schema_name = getattr(step.response_model, "__name__", "StructuredResponse")
 
-        llm_raw = dm.execute(
-            prompt=prompt,
-            response_schema=response_schema,
-            response_model=step.response_model,
-            profile_name=step.profile_name,
-            schema_name=schema_name,
-        )
-        llm_response = step.response_model.model_validate(llm_raw)
+        triggered = getattr(step, "_triggered_lore", None)
+        bypass = False
+        if triggered:
+            if getattr(triggered, "preset", "") == "event_popup" or getattr(triggered, "bypass_llm", False):
+                bypass = True
+            elif hasattr(triggered, "effects"):
+                for eff in triggered.effects:
+                    if getattr(eff, "bypass_llm", False):
+                        bypass = True
+                        break
+
+        if bypass and triggered:
+            ent_tgt = getattr(step, "target_npc", None) or getattr(step, "target", None) or ""
+            direct_text = ""
+            if hasattr(triggered, "get_directive_for_entity"):
+                direct_text = triggered.get_directive_for_entity(ent_tgt) or ""
+            if not direct_text:
+                direct_text = getattr(triggered, "directive", "") or getattr(triggered, "description", "") or getattr(triggered, "name", "")
+
+            if schema_name == "DialogueNarratorResponse":
+                actual_affinity = 0.5
+                if ent_tgt:
+                    npc_obj = self.game_state_controller.load_npc(ent_tgt)
+                    if npc_obj:
+                        actual_affinity = npc_obj.affinity
+                llm_response = step.response_model(affinity=actual_affinity, msg=direct_text)
+                llm_raw = {"affinity": actual_affinity, "msg": direct_text}
+            elif schema_name == "ExplanationResponse":
+                llm_response = step.response_model(description=direct_text)
+                llm_raw = {"description": direct_text}
+            else:
+                try:
+                    llm_response = step.response_model(msg=direct_text)
+                    llm_raw = {"msg": direct_text}
+                except Exception:
+                    llm_raw = dm.execute(
+                        prompt=prompt,
+                        response_schema=response_schema,
+                        response_model=step.response_model,
+                        profile_name=step.profile_name,
+                        schema_name=schema_name,
+                    )
+                    llm_response = step.response_model.model_validate(llm_raw)
+        else:
+            llm_raw = dm.execute(
+                prompt=prompt,
+                response_schema=response_schema,
+                response_model=step.response_model,
+                profile_name=step.profile_name,
+                schema_name=schema_name,
+            )
+            llm_response = step.response_model.model_validate(llm_raw)
+
         result = step.execute(self.game_state_controller, player_input, llm_response)
 
         self.save()
@@ -830,8 +901,10 @@ class GameEngine:
                 return f"{neg_prefix}Estar en {name_info} (Actual: {curr_loc or 'desconocido'})"
             elif sub == "visited":
                 return f"{neg_prefix}Haber visitado el lugar {name_info}"
-            elif sub == "unlocked":
-                return f"{neg_prefix}Lugar {name_info} desbloqueado"
+            elif sub in ("unlocked", "known"):
+                return f"{neg_prefix}Lugar {name_info} descubierto"
+            elif sub == "visible":
+                return f"{neg_prefix}Lugar {name_info} visible en niebla de guerra"
 
         elif etype == "npc":
             npc = self.get_npc_by_name_or_id(eid) if eid else None
@@ -849,8 +922,16 @@ class GameEngine:
                 if aff_enabled:
                     return f"{neg_prefix}Afinidad con {npc_name} >= {aff_val:.2f} (Actual: {curr_aff:.2f})"
                 return f"{neg_prefix}Afinidad con {npc_name} >= {aff_val:.2f} (Desactivada en opciones)"
+            elif sub == "affinity_range":
+                curr_aff = npc.affinity if npc else 0.5
+                aff_enabled = getattr(self.world_state.story_config, "affinity", True)
+                if aff_enabled:
+                    return f"{neg_prefix}Afinidad con {npc_name} en rango {val} (Actual: {curr_aff:.2f})"
+                return f"{neg_prefix}Afinidad con {npc_name} en rango {val} (Desactivada en opciones)"
             elif sub == "known":
                 return f"{neg_prefix}Conocer a {npc_name}"
+            elif sub == "visible":
+                return f"{neg_prefix}NPC {npc_name} visible en niebla de guerra"
 
         elif etype == "item":
             if sub == "have":
@@ -858,10 +939,14 @@ class GameEngine:
                 curr_inv = getattr(self.game_state_controller.player, "inventory", []) if self.game_state_controller.player else []
                 has_item = eid in curr_inv
                 return f"{neg_prefix}Tener en inventario '{eid}' (Req: {qty}, Posee: {'Sí' if has_item else 'No'})"
+            elif sub == "visible":
+                return f"{neg_prefix}Objeto '{eid}' visible"
 
         elif etype == "loreblock":
-            if sub == "child_done":
+            if sub in ("child_done", "any_child_done"):
                 return f"{neg_prefix}Algún sub-bloque hijo completado (done)"
+            elif sub == "all_children_done":
+                return f"{neg_prefix}Todos los sub-bloques hijos completados (done)"
             elif sub == "active":
                 return f"{neg_prefix}LoreBlock '{eid}' en estado ACTIVE"
             elif sub == "done":
@@ -871,6 +956,11 @@ class GameEngine:
             req_gold = int(val or 0)
             curr_gold = getattr(self.game_state_controller, "gold", 0)
             return f"{neg_prefix}Oro >= {req_gold} (Actual: {curr_gold})"
+
+        elif etype == "time" or sub == "time_range":
+            elapsed = getattr(getattr(self.game_state_controller, "data", None), "state", None)
+            curr_t = getattr(elapsed, "elapsed_time", 0) if elapsed else 0
+            return f"{neg_prefix}Franja de tiempo en rango {val} (Tiempo actual: {curr_t})"
 
         return f"{neg_prefix}{etype}:{eid} ({sub}={val})"
 

@@ -80,6 +80,8 @@ class TurnResultProjection(BaseModel):
     author: str
     msg: str
     info_msg: Optional[str] = None
+    popup_message: Optional[str] = None
+    popup_title: Optional[str] = None
     debug: Optional[TurnDebugProjection] = None
 
     def __init__(self, **data: Any):

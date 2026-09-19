@@ -204,19 +204,25 @@ class EntityPickerDialog(QDialog):
         self.sub_combo.clear()
 
         if etype == "place":
-            self.sub_combo.addItem("known (A la vista / Descubierto)", "known")
             self.sub_combo.addItem("current_location (Ubicación actual del jugador)", "current_location")
+            self.sub_combo.addItem("visited (Haber visitado el lugar)", "visited")
+            self.sub_combo.addItem("visible (Visible en la niebla de guerra)", "visible")
+            self.sub_combo.addItem("known (Lugar descubierto en el mapa)", "known")
         elif etype == "npc":
             self.sub_combo.addItem("talk (Hablar con el NPC / Diálogo)", "talk")
             self.sub_combo.addItem("known (Conocido por el jugador)", "known")
+            self.sub_combo.addItem("visible (Visible en la niebla de guerra)", "visible")
             self.sub_combo.addItem("affinity (Nivel mínimo de afinidad)", "affinity")
+            self.sub_combo.addItem("affinity_range (Rango de afinidad)", "affinity_range")
         elif etype == "item":
             self.sub_combo.addItem("have (En el inventario del jugador)", "have")
             self.sub_combo.addItem("known (Conocido / Visto por el jugador)", "known")
+            self.sub_combo.addItem("visible (Visible en el entorno)", "visible")
         elif etype == "loreblock":
             self.sub_combo.addItem("done (En estado Done / Completado)", "done")
             self.sub_combo.addItem("active (En estado Activo)", "active")
-            self.sub_combo.addItem("any_child_done (Cualquier sub-bloque completado)", "any_child_done")
+            self.sub_combo.addItem("all_children_done (TODOS los sub-bloques completados - AND)", "all_children_done")
+            self.sub_combo.addItem("any_child_done (Cualquier sub-bloque completado - OR)", "any_child_done")
 
         self.on_sub_changed()
 

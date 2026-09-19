@@ -13,22 +13,32 @@ class LoreBlockState(str, Enum):
     DONE = "done"
 
 
-class EntityCondition(BaseModel):
-    """Condición lógica basada en una entidad del juego (Place, NPC, Item, LoreBlock, Gold)."""
+LorePresetType = Literal[
+    "chapter", "quest", "task",
+    "event", "event_diag", "event_look", "event_popup"
+]
 
-    entity_type: Literal["place", "npc", "item", "loreblock", "gold"]
-    entity_id: str
+
+class EntityCondition(BaseModel):
+    """Condición lógica basada en una entidad del juego (Place, NPC, Item, LoreBlock, Gold, Time)."""
+
+    entity_type: Literal["place", "npc", "item", "loreblock", "gold", "time"]
+    entity_id: str = ""
     sub_condition: Literal[
         "known",
+        "visible",
         "current_location",
         "visited",
         "unlocked",
         "affinity",
+        "affinity_range",
         "have",
         "active",
         "done",
         "any_child_done",
+        "all_children_done",
         "talk",
+        "time_range",
     ]
     value: Optional[Any] = None
     is_negated: bool = False
@@ -40,6 +50,8 @@ class LoreEffects(BaseModel):
     timing: Literal["active", "done"] = "active"
     target: Optional[str] = None
     directive: str = ""
+    execution_mode: Literal["push", "hook"] = "push"
+    bypass_llm: bool = False
     force_action: bool = False
     trigger_action_type: Optional[str] = None
     trigger_action_target: Optional[str] = None
@@ -60,6 +72,19 @@ class LoreEffects(BaseModel):
     block_connections: List[str] = Field(default_factory=list)
     allow_connections: List[str] = Field(default_factory=list)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_effects(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        d = dict(data)
+        # Compatibilidad: Si force_action es True y execution_mode no se indicó, forzar 'push'
+        if d.get("force_action") and "execution_mode" not in d:
+            d["execution_mode"] = "push"
+        elif d.get("execution_mode") == "push" and not d.get("force_action"):
+            d["force_action"] = True
+        return d
+
 
 class LoreBlock(BaseModel):
     """Bloque de lore como máquina de estados jerárquica (HSM)."""
@@ -67,6 +92,7 @@ class LoreBlock(BaseModel):
     id: str
     name: str
     description: Optional[str] = None
+    preset: str = "event"
     state: str = "unknown"
     parent_id: Optional[str] = None
     trigger_mode: str = "proactive"
@@ -120,6 +146,21 @@ class LoreBlock(BaseModel):
     def force_action(self) -> bool:
         return any(eff.force_action for eff in self.effects)
 
+    @property
+    def bypass_llm(self) -> bool:
+        """Indica si el bloque debe omitir la llamada al LLM para emitir texto directo."""
+        if getattr(self, "preset", "") == "event_popup":
+            return True
+        return any(getattr(eff, "bypass_llm", False) for eff in self.effects)
+
+    @property
+    def execution_mode(self) -> str:
+        """Modo de ejecución de los efectos del bloque (push o hook)."""
+        for eff in self.effects:
+            if getattr(eff, "execution_mode", None):
+                return eff.execution_mode
+        return "push" if self.force_action else "hook"
+
     @model_validator(mode="before")
     @classmethod
     def _normalize_loreblock(cls, data: Any) -> Any:
@@ -135,6 +176,10 @@ class LoreBlock(BaseModel):
             d["title"] = d["name"]
         if not d.get("name"):
             d["name"] = d.get("id", "")
+
+        # Normalizar preset
+        if "preset" not in d or not d["preset"]:
+            d["preset"] = "event"
 
         # Normalizar effects si viene como dict único
         raw_effects = d.get("effects")

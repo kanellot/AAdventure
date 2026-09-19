@@ -77,20 +77,35 @@ class LoreEffectDialog(QDialog):
         target_form.addRow(target_hint)
         layout.addWidget(target_group)
 
-        # 3. Directiva para el LLM
-        dir_group = QGroupBox("Directiva para el Modelo de Lenguaje (LLM)")
+        # 3. Directiva y Bypass de LLM
+        dir_group = QGroupBox("Directiva / Mensaje Narrativo")
         dir_vbox = QVBoxLayout(dir_group)
         self.directive_edit = QTextEdit()
-        self.directive_edit.setPlaceholderText("Instrucción narrativa estricta inyectada al interactuar con esta entidad...")
+        self.directive_edit.setPlaceholderText("Instrucción narrativa inyectada o texto exacto para el jugador...")
         self.directive_edit.setMaximumHeight(80)
         dir_vbox.addWidget(self.directive_edit)
+
+        self.bypass_llm_check = QCheckBox("⚡ Bypasear LLM (Respuesta directa exacta sin llamar a IA)")
+        self.bypass_llm_check.setToolTip(
+            "Si está marcado, la directiva se entrega textualmente al jugador como réplica de diálogo "
+            "o descripción de inspección sin consultar al LLM ni consumir tokens."
+        )
+        dir_vbox.addWidget(self.bypass_llm_check)
         layout.addWidget(dir_group)
 
-        # 4. Acción Automatizada (Auto-Action)
-        auto_group = QGroupBox("Acción Automatizada (Auto-Action)")
+        # 4. Modo de Ejecución (Push vs Hook) y Acción Automatizada
+        auto_group = QGroupBox("Modo de Ejecución y Acción Automatizada")
         auto_vbox = QVBoxLayout(auto_group)
 
-        self.force_check = QCheckBox("Forzar acción automática en este momento")
+        exec_form = QFormLayout()
+        self.exec_mode_combo = QComboBox()
+        self.exec_mode_combo.addItem("⚡ Push (Inmediato / Acción automática del sistema)", "push")
+        self.exec_mode_combo.addItem("🎧 Hook (Reactivo / En espera de interacción del jugador)", "hook")
+        self.exec_mode_combo.currentIndexChanged.connect(self.on_exec_mode_changed)
+        exec_form.addRow("Comportamiento:", self.exec_mode_combo)
+        auto_vbox.addLayout(exec_form)
+
+        self.force_check = QCheckBox("Forzar acción automática del sistema")
         self.force_check.toggled.connect(self.on_force_toggled)
         auto_vbox.addWidget(self.force_check)
 
@@ -239,6 +254,13 @@ class LoreEffectDialog(QDialog):
             self.timing_combo.setCurrentIndex(idx_t)
 
         self.directive_edit.setPlainText(eff.directive or "")
+        self.bypass_llm_check.setChecked(getattr(eff, "bypass_llm", False))
+
+        exec_mode = getattr(eff, "execution_mode", "push")
+        idx_exec = self.exec_mode_combo.findData(exec_mode)
+        if idx_exec >= 0:
+            self.exec_mode_combo.setCurrentIndex(idx_exec)
+        self.on_exec_mode_changed()
 
         delta = eff.gold_delta if eff.gold_delta != 0 else (eff.give_gold - eff.take_gold)
         self.gold_spin.setValue(delta)
@@ -259,6 +281,14 @@ class LoreEffectDialog(QDialog):
                 self.auto_type_combo.setCurrentIndex(idx_act)
 
         self._update_auto_target_options(current_selection=eff.trigger_action_target or eff.target)
+
+    def on_exec_mode_changed(self):
+        mode = self.exec_mode_combo.currentData()
+        if mode == "hook":
+            self.force_check.setChecked(False)
+            self.force_check.setEnabled(False)
+        else:
+            self.force_check.setEnabled(True)
 
     def on_target_changed(self):
         selected_target = self.target_combo.currentData()
@@ -382,6 +412,8 @@ class LoreEffectDialog(QDialog):
         self.effect.timing = self.timing_combo.currentData() or "active"
         self.effect.target = self.target_combo.currentData() or None
         self.effect.directive = self.directive_edit.toPlainText().strip()
+        self.effect.bypass_llm = self.bypass_llm_check.isChecked()
+        self.effect.execution_mode = self.exec_mode_combo.currentData() or "push"
 
         gold_val = self.gold_spin.value()
         self.effect.gold_delta = gold_val
@@ -473,6 +505,17 @@ class LoreBlockForm(QWidget):
 
         props_group = QGroupBox("Propiedades Generales del LoreBlock")
         props_form = QFormLayout(props_group)
+
+        self.preset_combo = QComboBox()
+        self.preset_combo.addItem("📖 Capítulo (Contenedor Principal)", "chapter")
+        self.preset_combo.addItem("⚔️ Quest (Misión Principal)", "quest")
+        self.preset_combo.addItem("📌 Tarea / Task (Objetivo Concreto)", "task")
+        self.preset_combo.addItem("💬 Evento Diálogo (Interacción con NPC)", "event_diag")
+        self.preset_combo.addItem("👁️ Evento Inspección (Examinar Lugar/Objeto)", "event_look")
+        self.preset_combo.addItem("📢 Evento Pop-up (Aviso Directo)", "event_popup")
+        self.preset_combo.addItem("⚡ Evento Libre / Personalizado", "event")
+        self.preset_combo.currentIndexChanged.connect(self.on_preset_changed)
+        props_form.addRow("Tipo de Bloque (Preset):", self.preset_combo)
 
         self.id_edit = QLineEdit()
         self.id_edit.setPlaceholderText("pista_mago_taberna")
@@ -685,10 +728,24 @@ class LoreBlockForm(QWidget):
             self.id_edit.clear()
             self.title_edit.clear()
             self.desc_edit.clear()
+            idx_ev = self.preset_combo.findData("event")
+            if idx_ev >= 0:
+                self.preset_combo.setCurrentIndex(idx_ev)
+            self._apply_preset_styling("event")
             self.active_conditions_widget.set_conditions([])
             self.exit_conditions_widget.set_conditions([])
             self.refresh_effects_list()
             return
+
+        preset_val = getattr(block, "preset", "event") or "event"
+        idx_preset = self.preset_combo.findData(preset_val)
+        if idx_preset >= 0:
+            self.preset_combo.setCurrentIndex(idx_preset)
+        else:
+            idx_ev = self.preset_combo.findData("event")
+            if idx_ev >= 0:
+                self.preset_combo.setCurrentIndex(idx_ev)
+        self._apply_preset_styling(preset_val)
 
         self.id_edit.setText(block.id)
         self.title_edit.setText(block.title or block.name or "")
@@ -884,6 +941,13 @@ class LoreBlockForm(QWidget):
             act = eff.trigger_action_type or "TALK"
             tgt = eff.trigger_action_target or eff.target or ""
             tags.append(f"⚡ {act} -> {tgt}")
+        if getattr(eff, "bypass_llm", False):
+            tags.append("⚡ Bypass LLM")
+        mode = getattr(eff, "execution_mode", "push")
+        if mode == "hook":
+            tags.append("🎧 Hook")
+        elif mode == "push" and not (eff.force_action or eff.trigger_action_type):
+            tags.append("⚡ Push")
         return tags
 
     def on_add_effect_clicked(self):
@@ -1012,6 +1076,30 @@ class LoreBlockForm(QWidget):
 
         self.parent_combo.blockSignals(False)
 
+    def _apply_preset_styling(self, preset: str):
+        PRESET_TITLES = {
+            "chapter": ("📖", "Capítulo", "#2b6cb0"),
+            "quest": ("⚔️", "Quest (Misión)", "#b7791f"),
+            "task": ("📌", "Tarea (Objetivo)", "#2c7a7b"),
+            "event_diag": ("💬", "Evento de Diálogo", "#4a5568"),
+            "event_look": ("👁️", "Evento de Inspección", "#4a5568"),
+            "event_popup": ("📢", "Pop-up Informativo", "#c53030"),
+            "event": ("⚡", "Evento Libre", "#5c6bc0"),
+        }
+        icon, label, color = PRESET_TITLES.get(preset, ("📜", "Bloque de Lore", "#5c6bc0"))
+        self.header_title.setText(f"<b>{icon} {label} (HSM)</b>")
+        self.header_title.setStyleSheet(f"font-size: 14px; color: {color};")
+
+    def on_preset_changed(self):
+        if not self.lore_block or getattr(self, "_loading", False):
+            return
+        preset_val = self.preset_combo.currentData() or "event"
+        self.lore_block.preset = preset_val
+        self._apply_preset_styling(preset_val)
+        if self.parent_app and hasattr(self.parent_app, "refresh_tree"):
+            self.parent_app.refresh_tree()
+        self.on_field_changed()
+
     def on_title_changed(self, text: str):
         if not self.lore_block or getattr(self, "_loading", False):
             return
@@ -1062,6 +1150,7 @@ class LoreBlockForm(QWidget):
             return
 
         self.lore_block.id = self.id_edit.text().strip()
+        self.lore_block.preset = self.preset_combo.currentData() or "event"
         self.lore_block.description = self.desc_edit.toPlainText().strip()
 
         phrases = [p.strip() for p in self.phrases_edit.toPlainText().split("\n") if p.strip()]

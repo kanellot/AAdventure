@@ -131,16 +131,39 @@ class LoreBlockTreeWidget(QWidget):
 
         roots = [b for b in self.lore_blocks if not b.parent_id or b.parent_id not in id_to_block]
 
+        PRESET_ICONS = {
+            "chapter": "📖",
+            "quest": "⚔️",
+            "task": "📌",
+            "event_diag": "💬",
+            "event_look": "👁️",
+            "event_popup": "📢",
+            "event": "⚡",
+        }
+
+        PRESET_LABELS = {
+            "chapter": "Capítulo",
+            "quest": "Quest",
+            "task": "Tarea",
+            "event_diag": "Diálogo",
+            "event_look": "Inspección",
+            "event_popup": "Popup Directo",
+            "event": "Evento Libre",
+        }
+
         def create_tree_item(parent_widget, block: LoreBlock):
             item = QTreeWidgetItem(parent_widget)
             item.setData(0, Qt.UserRole, block.id)
 
             has_children = block.id in parent_to_children and bool(parent_to_children[block.id])
+            preset_val = getattr(block, "preset", "event") or "event"
+            icon_emoji = PRESET_ICONS.get(preset_val, "📜")
 
             if has_children:
-                icon_prefix = "📂 " if block.state == LoreBlockState.ACTIVE or str(block.state).lower() == "active" else "📁 "
+                folder_flag = "📂 " if block.state == LoreBlockState.ACTIVE or str(block.state).lower() == "active" else "📁 "
+                icon_prefix = f"{icon_emoji} {folder_flag}"
             else:
-                icon_prefix = "📜 "
+                icon_prefix = f"{icon_emoji} "
 
             title = block.title or (block.directive[:35] + "..." if len(block.directive) > 35 else block.directive)
             item.setText(0, f"{icon_prefix}{title}  ({block.id})")
@@ -164,8 +187,11 @@ class LoreBlockTreeWidget(QWidget):
                 item.setText(2, f"⚪ {st}")
                 item.setForeground(2, Qt.darkGray)
 
-            # Columna 3: Modo
-            item.setText(3, block.trigger_mode.capitalize())
+            # Columna 3: Tipo / Preset
+            preset_text = PRESET_LABELS.get(preset_val, preset_val.capitalize())
+            if block.bypass_llm:
+                preset_text += " ⚡Directo"
+            item.setText(3, preset_text)
 
             # Columna 4: Condiciones
             c_info = f"{len(block.conditions)} act."

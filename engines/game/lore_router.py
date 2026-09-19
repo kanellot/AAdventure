@@ -32,6 +32,7 @@ class LoreRouter:
     def __init__(self, embedding_backend: Optional[BaseEmbeddingBackend] = None):
         self._embedder: Optional[BaseEmbeddingBackend] = embedding_backend
         self.last_evaluation: Optional[RagEvaluationProjection] = None
+        self.pending_popups: List[dict] = []
 
     @property
     def embedder(self) -> BaseEmbeddingBackend:
@@ -49,6 +50,7 @@ class LoreRouter:
             player_input=player_input,
             threshold=threshold,
         )
+        self.pending_popups.clear()
 
     def get_last_evaluation(self) -> Optional[RagEvaluationProjection]:
         """Devuelve la última evaluación semántica RAG efectuada."""
@@ -159,9 +161,8 @@ class LoreRouter:
             cond = EntityCondition(**cond)
 
         if cond.entity_type == "place":
-
             target_id_or_name = cond.entity_id.strip()
-            if cond.sub_condition == "known":
+            if cond.sub_condition in ("known", "unlocked"):
                 known_places = list(getattr(game_state, "known_places", []))
                 if hasattr(game_state, "fog_war") and game_state.fog_war:
                     known_places.extend(game_state.fog_war.get_all_discovered_places())
@@ -178,6 +179,34 @@ class LoreRouter:
                             all_known_ids.add(p.name)
 
                 result = target_id_or_name in known_places or target_id_or_name in all_known_ids
+
+            elif cond.sub_condition == "visible":
+                vis_places = set()
+                if hasattr(game_state, "fog_war") and game_state.fog_war:
+                    vis_places.update(game_state.fog_war.get_all_discovered_places())
+                if player and hasattr(player, "unlocked_places"):
+                    vis_places.update(player.unlocked_places or [])
+                all_vis_ids = set()
+                if hasattr(game_state, "world_state") and game_state.world_state:
+                    for p_name in vis_places:
+                        p = game_state.world_state.places_by_name.get(p_name) or game_state.world_state.places_by_id.get(p_name)
+                        if p:
+                            all_vis_ids.add(p.id.lower())
+                            all_vis_ids.add(p.name.lower())
+                result = target_id_or_name.lower() in [p.lower() for p in vis_places] or target_id_or_name.lower() in all_vis_ids
+
+            elif cond.sub_condition == "visited":
+                visited = set(getattr(game_state, "visited_places", []) or [])
+                if player and hasattr(player, "visited_places"):
+                    visited.update(player.visited_places or [])
+                all_vis_ids = set()
+                if hasattr(game_state, "world_state") and game_state.world_state:
+                    for p_name in visited:
+                        p = game_state.world_state.places_by_name.get(p_name) or game_state.world_state.places_by_id.get(p_name)
+                        if p:
+                            all_vis_ids.add(p.id.lower())
+                            all_vis_ids.add(p.name.lower())
+                result = target_id_or_name.lower() in [p.lower() for p in visited] or target_id_or_name.lower() in all_vis_ids
 
             elif cond.sub_condition == "current_location":
                 curr_loc = getattr(game_state, "current_location", "")
@@ -215,6 +244,18 @@ class LoreRouter:
                 else:
                     result = cond.entity_id in all_known
 
+            elif cond.sub_condition == "visible":
+                vis_npcs = set(getattr(game_state, "visible_npcs", []) or [])
+                if hasattr(game_state, "fog_war") and game_state.fog_war:
+                    vis_npcs.update(game_state.fog_war.get_visible_npcs())
+                if target_npc:
+                    result = (
+                        target_npc.name.lower() in [n.lower() for n in vis_npcs]
+                        or target_npc.id.lower() in [n.lower() for n in vis_npcs]
+                    )
+                else:
+                    result = cond.entity_id.lower() in [n.lower() for n in vis_npcs]
+
             elif cond.sub_condition == "affinity":
                 aff_enabled = True
                 if hasattr(game_state, "world_state") and hasattr(game_state.world_state, "story_config"):
@@ -228,6 +269,28 @@ class LoreRouter:
                     min_val = float(cond.value or 0.0)
                     if target_npc is not None:
                         result = target_npc.affinity >= min_val
+
+            elif cond.sub_condition == "affinity_range":
+                aff_enabled = True
+                if hasattr(game_state, "world_state") and hasattr(game_state.world_state, "story_config"):
+                    aff_enabled = getattr(game_state.world_state.story_config, "affinity", True)
+                elif hasattr(game_state, "story_config"):
+                    aff_enabled = getattr(game_state.story_config, "affinity", True)
+
+                if not aff_enabled:
+                    result = True
+                else:
+                    if target_npc is not None:
+                        val = cond.value
+                        min_v, max_v = 0.0, 1.0
+                        if isinstance(val, (list, tuple)) and len(val) >= 2:
+                            min_v, max_v = float(val[0]), float(val[1])
+                        elif isinstance(val, dict):
+                            min_v = float(val.get("min", 0.0))
+                            max_v = float(val.get("max", 1.0))
+                        elif val is not None:
+                            min_v = float(val)
+                        result = (min_v <= target_npc.affinity <= max_v)
 
             elif cond.sub_condition == "talk":
                 # Condición cumplida si el jugador interactúa con el NPC en diálogo (y no es acción forzada)
@@ -261,7 +324,7 @@ class LoreRouter:
 
         elif cond.entity_type == "item":
             target_item_id = cond.entity_id.strip()
-            if cond.sub_condition == "known":
+            if cond.sub_condition in ("known", "visible"):
                 known_objs = set(getattr(game_state, "known_objs", []) or [])
                 known_objs.update(getattr(game_state, "visible_objs", []) or [])
                 if player:
@@ -285,6 +348,12 @@ class LoreRouter:
                     getattr(b, "parent_id", None) == p_id and getattr(b, "state", "") == "done"
                     for b in all_blocks
                 )
+            elif cond.sub_condition == "all_children_done":
+                target_id = cond.entity_id.strip()
+                p_id = target_id or (evaluating_block.id if evaluating_block else "")
+                all_blocks = self._get_all_blocks(game_state)
+                children = [b for b in all_blocks if getattr(b, "parent_id", None) == p_id]
+                result = bool(children) and all(getattr(b, "state", "") == "done" for b in children)
             else:
                 target_lore_id = cond.entity_id.strip()
                 found_state = self.find_lore_block_state(target_lore_id, game_state)
@@ -298,6 +367,24 @@ class LoreRouter:
                     result = (found_state == "active")
                 elif cond.sub_condition == "done":
                     result = (found_state == "done")
+
+        elif cond.entity_type == "time" or cond.sub_condition == "time_range":
+            elapsed = 0
+            if hasattr(game_state, "data") and hasattr(game_state.data, "state"):
+                elapsed = getattr(game_state.data.state, "elapsed_time", 0) or 0
+            elif hasattr(game_state, "elapsed_time"):
+                elapsed = getattr(game_state, "elapsed_time", 0) or 0
+
+            val = cond.value
+            min_t, max_t = 0.0, float("inf")
+            if isinstance(val, (list, tuple)) and len(val) >= 2:
+                min_t, max_t = float(val[0]), float(val[1])
+            elif isinstance(val, dict):
+                min_t = float(val.get("min", 0.0))
+                max_t = float(val.get("max", float("inf")))
+            elif val is not None:
+                min_t = float(val)
+            result = (min_t <= float(elapsed) <= max_t)
 
         if cond.is_negated:
             result = not result
@@ -876,6 +963,18 @@ class LoreRouter:
             if hasattr(game_state, "done_lore_blocks") and block.id not in game_state.done_lore_blocks:
                 game_state.done_lore_blocks.append(block.id)
 
+            if getattr(block, "preset", "") == "event_popup":
+                p_msg = (
+                    block.get_directive_for_entity()
+                    if hasattr(block, "get_directive_for_entity")
+                    else ""
+                ) or getattr(block, "directive", "") or getattr(block, "description", "") or getattr(block, "name", "")
+                self.pending_popups.append({
+                    "title": getattr(block, "title", "") or getattr(block, "name", "Aviso"),
+                    "message": p_msg,
+                    "block_id": block.id,
+                })
+
             done_effects = block.get_effects_for_timing("done") if hasattr(block, "get_effects_for_timing") else []
             if not done_effects and getattr(block, "on_done", None):
                 done_effects = [block.on_done]
@@ -897,9 +996,28 @@ class LoreRouter:
             for eff in active_effects:
                 mutations.update(self.apply_lore_effects(eff, game_state, npc, block=block))
 
+            # Si es un evento popup, registrarlo en los popups pendientes del turno
+            if getattr(block, "preset", "") == "event_popup":
+                p_msg = (
+                    block.get_directive_for_entity()
+                    if hasattr(block, "get_directive_for_entity")
+                    else ""
+                ) or getattr(block, "directive", "") or getattr(block, "description", "") or getattr(block, "name", "")
+                self.pending_popups.append({
+                    "title": getattr(block, "title", "") or getattr(block, "name", "Aviso"),
+                    "message": p_msg,
+                    "block_id": block.id,
+                })
+
             # Regla: Si no tiene ninguna condición para done (exit_conditions vacías),
-            # y no tiene RAG de salida habilitado, pasa inmediatamente a done en este mismo ciclo.
-            if not block.exit_conditions and not getattr(block, "exit_rag_enabled", False):
+            # y no tiene RAG de salida habilitado, pasa inmediatamente a done en este mismo ciclo,
+            # A MENOS QUE sea un hook en espera o un contenedor jerárquico.
+            is_hook_or_container = (
+                getattr(block, "execution_mode", "push") == "hook"
+                or getattr(block, "preset", "") in ("chapter", "quest", "task", "event_diag", "event_look", "event_popup")
+                or self.has_child_blocks(block, game_state)
+            )
+            if not block.exit_conditions and not getattr(block, "exit_rag_enabled", False) and not is_hook_or_container:
                 block.state = "done"
                 mutations["state"] = "done"
                 if hasattr(game_state, "active_lore_blocks") and block.id in game_state.active_lore_blocks:
@@ -963,7 +1081,7 @@ class LoreRouter:
 
         Reglas del usuario:
         - Si no tiene condición para active, pasa a active (si todos sus ancestros están activos).
-        - Si no tiene condición para done, pasa a done (a menos que tenga antenas RAG de salida exit_rag_enabled).
+        - Si no tiene condición para done, pasa a done (a menos que tenga antenas RAG de salida exit_rag_enabled o sea hook/contenedor).
         - Los bloques hijos solo se evalúan cuando cumplen su condición Y todos sus padres están activos.
         """
         all_blocks = self._get_all_blocks(game_state)
@@ -979,10 +1097,18 @@ class LoreRouter:
                 # Si tiene antenas RAG de salida, SOLO transiciona a done si el RAG se ejecuta y hace match
                 if getattr(block, "exit_rag_enabled", False):
                     continue
+
+                is_hook_or_container = (
+                    getattr(block, "execution_mode", "push") == "hook"
+                    or getattr(block, "preset", "") in ("chapter", "quest", "task", "event_diag", "event_look", "event_popup")
+                    or self.has_child_blocks(block, game_state)
+                )
+
                 if not block.exit_conditions:
-                    self.apply_effects(block, game_state, npc, to_state="done")
-                    transitions.append(f"{block.id} -> done")
-                    changed = True
+                    if not is_hook_or_container:
+                        self.apply_effects(block, game_state, npc, to_state="done")
+                        transitions.append(f"{block.id} -> done")
+                        changed = True
                 elif self.check_conditions(block.exit_conditions, game_state, npc, evaluating_block=block):
                     self.apply_effects(block, game_state, npc, to_state="done")
                     transitions.append(f"{block.id} -> done")
