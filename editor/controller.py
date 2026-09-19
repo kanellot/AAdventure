@@ -67,7 +67,7 @@ class EditorController:
         self.lore_blocks = []
 
         # 5. Configuración de historia por defecto
-        self.story_config = StoryConfig(elapsed_time=True, fog_war=True)
+        self.story_config = StoryConfig(elapsed_time=True, fog_war=True, affinity=True)
 
         # 6. Jugador asignado obligatoriamente al lugar inicial
         self.player = Player(

@@ -216,9 +216,18 @@ class LoreRouter:
                     result = cond.entity_id in all_known
 
             elif cond.sub_condition == "affinity":
-                min_val = float(cond.value or 0.0)
-                if target_npc is not None:
-                    result = target_npc.affinity >= min_val
+                aff_enabled = True
+                if hasattr(game_state, "world_state") and hasattr(game_state.world_state, "story_config"):
+                    aff_enabled = getattr(game_state.world_state.story_config, "affinity", True)
+                elif hasattr(game_state, "story_config"):
+                    aff_enabled = getattr(game_state.story_config, "affinity", True)
+
+                if not aff_enabled:
+                    result = True
+                else:
+                    min_val = float(cond.value or 0.0)
+                    if target_npc is not None:
+                        result = target_npc.affinity >= min_val
 
             elif cond.sub_condition == "talk":
                 # Condición cumplida si el jugador interactúa con el NPC en diálogo (y no es acción forzada)
@@ -657,35 +666,42 @@ class LoreRouter:
             mutations.setdefault("items_removed", []).append(item)
 
         # 3. Afinidad
-        aff_delta = getattr(effects, "affinity_delta", 0.0)
-        target_npc_for_aff = npc
-        eff_target = getattr(effects, "target", None)
-        if target_npc_for_aff is None and eff_target:
-            if hasattr(game_state, "data") and hasattr(game_state.data, "npcs") and eff_target in game_state.data.npcs:
-                target_npc_for_aff = game_state.data.npcs[eff_target]
-            elif hasattr(game_state, "world_state") and game_state.world_state:
-                target_npc_for_aff = game_state.world_state.npcs.get(eff_target) or game_state.world_state.npcs_by_name.get(eff_target)
+        aff_enabled = True
+        if hasattr(game_state, "world_state") and hasattr(game_state.world_state, "story_config"):
+            aff_enabled = getattr(game_state.world_state.story_config, "affinity", True)
+        elif hasattr(game_state, "story_config"):
+            aff_enabled = getattr(game_state.story_config, "affinity", True)
 
-        if target_npc_for_aff is not None and aff_delta != 0.0:
-            target_npc_for_aff.affinity = round(max(0.0, min(1.0, target_npc_for_aff.affinity + aff_delta)), 4)
-            mutations["affinity_delta"] = aff_delta
-            mutations["new_affinity"] = target_npc_for_aff.affinity
-            if hasattr(game_state, "sync_active_npc_affinity"):
-                game_state.sync_active_npc_affinity()
-
-        npc_aff_deltas = getattr(effects, "npc_affinity_deltas", {})
-        if npc_aff_deltas:
-            for n_id, delta in npc_aff_deltas.items():
-                t_npc = None
-                if hasattr(game_state, "data") and hasattr(game_state.data, "npcs") and n_id in game_state.data.npcs:
-                    t_npc = game_state.data.npcs[n_id]
+        if aff_enabled:
+            aff_delta = getattr(effects, "affinity_delta", 0.0)
+            target_npc_for_aff = npc
+            eff_target = getattr(effects, "target", None)
+            if target_npc_for_aff is None and eff_target:
+                if hasattr(game_state, "data") and hasattr(game_state.data, "npcs") and eff_target in game_state.data.npcs:
+                    target_npc_for_aff = game_state.data.npcs[eff_target]
                 elif hasattr(game_state, "world_state") and game_state.world_state:
-                    t_npc = game_state.world_state.npcs.get(n_id) or game_state.world_state.npcs_by_name.get(n_id)
-                if t_npc:
-                    t_npc.affinity = round(max(0.0, min(1.0, t_npc.affinity + delta)), 4)
-                    mutations.setdefault("npc_affinity_changes", {})[n_id] = t_npc.affinity
-            if hasattr(game_state, "sync_active_npc_affinity"):
-                game_state.sync_active_npc_affinity()
+                    target_npc_for_aff = game_state.world_state.npcs.get(eff_target) or game_state.world_state.npcs_by_name.get(eff_target)
+
+            if target_npc_for_aff is not None and aff_delta != 0.0:
+                target_npc_for_aff.affinity = round(max(0.0, min(1.0, target_npc_for_aff.affinity + aff_delta)), 4)
+                mutations["affinity_delta"] = aff_delta
+                mutations["new_affinity"] = target_npc_for_aff.affinity
+                if hasattr(game_state, "sync_active_npc_affinity"):
+                    game_state.sync_active_npc_affinity()
+
+            npc_aff_deltas = getattr(effects, "npc_affinity_deltas", {})
+            if npc_aff_deltas:
+                for n_id, delta in npc_aff_deltas.items():
+                    t_npc = None
+                    if hasattr(game_state, "data") and hasattr(game_state.data, "npcs") and n_id in game_state.data.npcs:
+                        t_npc = game_state.data.npcs[n_id]
+                    elif hasattr(game_state, "world_state") and game_state.world_state:
+                        t_npc = game_state.world_state.npcs.get(n_id) or game_state.world_state.npcs_by_name.get(n_id)
+                    if t_npc:
+                        t_npc.affinity = round(max(0.0, min(1.0, t_npc.affinity + delta)), 4)
+                        mutations.setdefault("npc_affinity_changes", {})[n_id] = t_npc.affinity
+                if hasattr(game_state, "sync_active_npc_affinity"):
+                    game_state.sync_active_npc_affinity()
 
         # 4. Misiones
         for q in getattr(effects, "unlock_quests", []):

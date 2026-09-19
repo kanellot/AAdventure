@@ -66,6 +66,17 @@ class TestActions(unittest.TestCase):
         new_aff = self.ctrl.world_state.npcs["npc_tabernero"].affinity
         self.assertGreaterEqual(new_aff, init_aff)
 
+    def test_dialogue_action_affinity_disabled(self):
+        self.ctrl.world_state.story_config.affinity = False
+        init_aff = self.ctrl.world_state.npcs["npc_tabernero"].affinity
+        dialogue = DialogueAction("npc_tabernero")
+        resp = DialogueNarratorResponse(msg="¡Bienvenido a mi taberna!", affinity="GOOD")
+
+        res = dialogue.execute(self.ctrl, "Saludos buen hombre", resp)
+        self.assertTrue(res.success)
+        self.assertEqual(self.ctrl.world_state.npcs["npc_tabernero"].affinity, init_aff)
+        self.assertIsNone(self.ctrl.game_state.active_npc_affinity)
+
 
 if __name__ == "__main__":
     unittest.main()

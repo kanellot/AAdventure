@@ -14,7 +14,7 @@ class AdventurePackager:
     - player.json: Datos de jugador, oro, inventario, active_block y lugar de inicio.
     - objects.json: Objetos e items del mundo.
     - loreblocks.json: Catálogo centralizado de LoreBlocks (HSM).
-    - story_config.json: Banderas de simulación (elapsed_time, fog_war).
+    - story_config.json: Banderas de simulación (elapsed_time, fog_war, affinity).
     """
 
     @staticmethod
@@ -35,7 +35,7 @@ class AdventurePackager:
         if lore_data is None:
             lore_data = {"lore_blocks": []}
         if config_data is None:
-            config_data = {"elapsed_time": True, "fog_war": True}
+            config_data = {"elapsed_time": True, "fog_war": True, "affinity": True}
 
         temp_dir = tempfile.mkdtemp()
         try:

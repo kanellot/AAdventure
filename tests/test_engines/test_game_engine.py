@@ -68,6 +68,21 @@ class TestGameEngine(unittest.TestCase):
         self.assertTrue(bool(res.msg))
         self.assertEqual(self.engine.game_state_controller.place.id, "p_01")
 
+    def test_affinity_disabled_projection_and_mutations(self):
+        self.engine.world_state.story_config.affinity = False
+        tabernero = self.engine.get_npc_by_name_or_id("npc_tabernero")
+        if tabernero:
+            init_aff = tabernero.affinity
+            self.engine.change_npc_affinity("npc_tabernero", 0.2)
+            self.assertEqual(tabernero.affinity, init_aff)
+
+        # En estado TALK, active_npc_affinity debe permanecer None
+        self.engine.game_state_controller.update_state("TALK")
+        self.engine.game_state_controller.data.state.player_target = "Tabernero"
+        self.assertIsNone(self.engine.get_active_npc_affinity())
+        ui = self.engine.get_ui_state_projection()
+        self.assertIsNone(ui.active_npc_affinity)
+
 
 if __name__ == "__main__":
     unittest.main()

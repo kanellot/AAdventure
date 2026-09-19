@@ -169,9 +169,16 @@ class DialogueAction(BaseAction[DialogueNarratorCtx, DialogueNarratorResponse]):
             npc.conversation.msg.append({"Player": player_input})
             npc.conversation.msg.append({"Npc": llm_response.msg})
 
-            delta = (llm_response.affinity - 0.5) * 0.35
-            npc.affinity = round(max(0.0, min(1.0, npc.affinity + delta)), 4)
-            game_state_controller.game_state.active_npc_affinity = npc.affinity
+            affinity_enabled = True
+            if hasattr(game_state_controller, "world_state") and hasattr(game_state_controller.world_state, "story_config"):
+                affinity_enabled = getattr(game_state_controller.world_state.story_config, "affinity", True)
+
+            if affinity_enabled:
+                delta = (llm_response.affinity - 0.5) * 0.35
+                npc.affinity = round(max(0.0, min(1.0, npc.affinity + delta)), 4)
+                game_state_controller.game_state.active_npc_affinity = npc.affinity
+            else:
+                game_state_controller.game_state.active_npc_affinity = None
 
             if self._triggered_lore:
                 router = LoreRouter.get_instance()

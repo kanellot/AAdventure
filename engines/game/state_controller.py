@@ -480,7 +480,11 @@ class GameStateController:
             self.game_state.active_npc_affinity = None
 
     def sync_active_npc_affinity(self) -> Optional[float]:
-        """Sincroniza la afinidad del NPC activo si el estado es TALK."""
+        """Sincroniza la afinidad del NPC activo si el estado es TALK y la afinidad está habilitada."""
+        if not getattr(self.world_state.story_config, "affinity", True):
+            self.game_state.active_npc_affinity = None
+            return None
+
         if self.game_state.player_state.upper() == "TALK" and self.game_state.player_target:
             npc = self.load_npc(self.game_state.player_target)
             if npc:

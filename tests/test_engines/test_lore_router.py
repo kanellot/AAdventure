@@ -86,6 +86,29 @@ class TestLoreRouter(unittest.TestCase):
         self.assertIn("objeto_recompensa", self.ctrl.player.inventory)
         self.assertGreater(self.ctrl.world_state.npcs["npc_tabernero"].affinity, npc_aff)
 
+    def test_evaluate_npc_affinity_condition_when_affinity_disabled(self):
+        self.ctrl.world_state.story_config.affinity = False
+        npc = self.ctrl.world_state.npcs["npc_tabernero"]
+        npc.affinity = 0.5
+
+        # Con afinidad desactivada, la condición se considera satisfecha para evitar bloqueos
+        cond_high = EntityCondition(entity_type="npc", entity_id="npc_tabernero", sub_condition="affinity", value=0.9)
+        self.assertTrue(self.router.evaluate_single_condition(cond_high, self.ctrl))
+
+    def test_apply_lore_effects_when_affinity_disabled(self):
+        self.ctrl.world_state.story_config.affinity = False
+        npc_aff = self.ctrl.world_state.npcs["npc_tabernero"].affinity
+
+        effects = LoreEffects(
+            gold_delta=10,
+            affinity_delta=0.25,
+            target="npc_tabernero",
+        )
+
+        self.router.apply_lore_effects(effects, self.ctrl, npc=self.ctrl.world_state.npcs["npc_tabernero"])
+        # Oro sí muta, pero afinidad no cambia
+        self.assertEqual(self.ctrl.world_state.npcs["npc_tabernero"].affinity, npc_aff)
+
 
 if __name__ == "__main__":
     unittest.main()

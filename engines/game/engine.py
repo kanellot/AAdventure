@@ -178,7 +178,9 @@ class GameEngine:
         return None
 
     def change_npc_affinity(self, npc_name_or_id: str, delta: float) -> None:
-        """Modifica la afinidad de un NPC."""
+        """Modifica la afinidad de un NPC si el sistema está activo."""
+        if not getattr(self.world_state.story_config, "affinity", True):
+            return
         npc = self.get_npc_by_name_or_id(npc_name_or_id)
         if npc:
             npc.affinity = round(max(0.0, min(1.0, npc.affinity + delta)), 4)
@@ -376,7 +378,10 @@ class GameEngine:
                 self.game_state_controller.update_state("TALK")
                 self.game_state_controller.data.state.player_target = npc.name
                 actual_npc = loaded_npc or npc
-                self.game_state_controller.data.state.active_npc_affinity = round(actual_npc.affinity, 4)
+                if getattr(self.world_state.story_config, "affinity", True):
+                    self.game_state_controller.data.state.active_npc_affinity = round(actual_npc.affinity, 4)
+                else:
+                    self.game_state_controller.data.state.active_npc_affinity = None
                 final_author = npc.name
             else:
                 self.game_state_controller.update_state("TALK")
@@ -614,7 +619,8 @@ class GameEngine:
         )
 
         active_affinity = None
-        if state and state.player_state.upper() == "TALK":
+        affinity_enabled = getattr(self.world_state.story_config, "affinity", True)
+        if affinity_enabled and state and state.player_state.upper() == "TALK":
             active_affinity = self.game_state_controller.sync_active_npc_affinity()
             if active_affinity is None:
                 active_affinity = getattr(state, "active_npc_affinity", None)
@@ -643,7 +649,8 @@ class GameEngine:
         place = self.game_state_controller.place
 
         active_affinity = None
-        if state and state.player_state.upper() == "TALK":
+        affinity_enabled = getattr(self.world_state.story_config, "affinity", True)
+        if affinity_enabled and state and state.player_state.upper() == "TALK":
             active_affinity = self.game_state_controller.sync_active_npc_affinity()
             if active_affinity is None:
                 active_affinity = getattr(state, "active_npc_affinity", None)
@@ -838,7 +845,10 @@ class GameEngine:
             elif sub == "affinity":
                 aff_val = float(val or 0.5)
                 curr_aff = npc.affinity if npc else 0.5
-                return f"{neg_prefix}Afinidad con {npc_name} >= {aff_val:.2f} (Actual: {curr_aff:.2f})"
+                aff_enabled = getattr(self.world_state.story_config, "affinity", True)
+                if aff_enabled:
+                    return f"{neg_prefix}Afinidad con {npc_name} >= {aff_val:.2f} (Actual: {curr_aff:.2f})"
+                return f"{neg_prefix}Afinidad con {npc_name} >= {aff_val:.2f} (Desactivada en opciones)"
             elif sub == "known":
                 return f"{neg_prefix}Conocer a {npc_name}"
 

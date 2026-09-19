@@ -5,6 +5,7 @@ import shutil
 import tempfile
 import unittest
 import zipfile
+import json
 from adventure_packager import AdventurePackager
 
 
@@ -44,6 +45,13 @@ class TestAdventurePackager(unittest.TestCase):
                 "story_config.json",
             }
             self.assertEqual(names, expected)
+
+            # Verificar contenido por defecto de story_config.json
+            with z.open("story_config.json") as sc:
+                cfg_dict = json.loads(sc.read().decode("utf-8"))
+                self.assertTrue(cfg_dict.get("affinity"))
+                self.assertTrue(cfg_dict.get("elapsed_time"))
+                self.assertTrue(cfg_dict.get("fog_war"))
 
     def test_unpack_to_temp(self):
         # Empaquetar primero

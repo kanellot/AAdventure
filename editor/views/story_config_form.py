@@ -24,14 +24,21 @@ class StoryConfigForm(QWidget):
         self.fog_war_cb.toggled.connect(self.on_fog_war_toggled)
         form_layout.addRow(self.fog_war_cb)
 
+        self.affinity_cb = QCheckBox("Activar sistema de Afinidad con NPCs (Affinity)")
+        self.affinity_cb.toggled.connect(self.on_affinity_toggled)
+        form_layout.addRow(self.affinity_cb)
+
         main_layout.addWidget(group)
         main_layout.addStretch()
+
+        self.set_config(self.config)
 
     def set_config(self, config: StoryConfig):
         self.config = config
         if config:
             self.elapsed_time_cb.setChecked(config.elapsed_time)
             self.fog_war_cb.setChecked(config.fog_war)
+            self.affinity_cb.setChecked(config.affinity)
 
     def on_elapsed_time_toggled(self, checked: bool):
         if self.config:
@@ -40,3 +47,7 @@ class StoryConfigForm(QWidget):
     def on_fog_war_toggled(self, checked: bool):
         if self.config:
             self.config.fog_war = checked
+
+    def on_affinity_toggled(self, checked: bool):
+        if self.config:
+            self.config.affinity = checked
