@@ -1,6 +1,7 @@
+from __future__ import annotations
 from typing import List, Optional
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTextBrowser, QLineEdit, QPushButton, QComboBox, QLabel
+    QWidget, QVBoxLayout, QHBoxLayout, QTextBrowser, QLineEdit, QPushButton, QComboBox, QLabel, QProgressBar
 )
 from PySide6.QtCore import Signal
 from domains.projections import ActionCommandProjection
@@ -59,7 +60,7 @@ class ChatTab(QWidget):
 
         layout.addLayout(action_layout)
 
-        # 3. Barra de entrada de comandos / diálogo inferior
+        # 3. Barra de entrada de comandos / diálogo inferior con Spinner de Thinking
         input_layout = QHBoxLayout()
         self.input_edit = QLineEdit()
         self.input_edit.setEnabled(False)
@@ -72,9 +73,31 @@ class ChatTab(QWidget):
         self.send_btn.setVisible(False)
         self.send_btn.setEnabled(False)
 
+        # Spinner visual para el estado 'Thinking'
+        self.spinner = QProgressBar()
+        self.spinner.setRange(0, 0)
+        self.spinner.setTextVisible(False)
+        self.spinner.setFixedHeight(18)
+        self.spinner.setFixedWidth(70)
+        self.spinner.setVisible(False)
+        self.spinner.setToolTip("Procesando acción en el motor (Thinking)...")
+
+        self.lbl_thinking = QLabel("")
+        self.lbl_thinking.setStyleSheet("color: #0288d1; font-weight: bold; font-style: italic; font-size: 11px;")
+        self.lbl_thinking.setVisible(False)
+
         input_layout.addWidget(self.input_edit)
         input_layout.addWidget(self.send_btn)
+        input_layout.addWidget(self.spinner)
+        input_layout.addWidget(self.lbl_thinking)
         layout.addLayout(input_layout)
+
+    def set_thinking(self, is_thinking: bool, message: str = ""):
+        """Activa o desactiva el indicador visual de Thinking y bloquea las entradas para evitar confusión."""
+        self.spinner.setVisible(is_thinking)
+        self.lbl_thinking.setVisible(is_thinking)
+        self.lbl_thinking.setText(f"⏳ {message}" if message else "⏳ Pensando...")
+        self.set_input_enabled(not is_thinking)
 
     def set_targets(self, targets: List[str]):
         """
@@ -100,9 +123,10 @@ class ChatTab(QWidget):
         """
         self.current_game_state = state.upper()
         is_interactive = (self.current_game_state in ["TALK", "LOOK"])
+        is_currently_thinking = not self.spinner.isHidden()
         self.send_btn.setVisible(is_interactive)
-        self.send_btn.setEnabled(is_interactive)
-        self.input_edit.setEnabled(is_interactive)
+        self.send_btn.setEnabled(is_interactive and not is_currently_thinking)
+        self.input_edit.setEnabled(is_interactive and not is_currently_thinking)
 
         if self.current_game_state == "TALK":
             if active_affinity is not None:

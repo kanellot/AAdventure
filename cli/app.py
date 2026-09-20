@@ -4,15 +4,18 @@ from typing import Optional, Tuple
 from domains.projections import TurnResultProjection
 from engines import AdventureSession
 from cli.formatter import CLIFormatter, Colors
+from cli.listener import CLIEventListener
 
 
 class CLIApp:
-    """Controlador del bucle interactivo de la interfaz de consola."""
+    """Controlador del bucle interactivo de la interfaz de consola basado en eventos."""
 
     def __init__(self, session: AdventureSession, verbose: bool = False):
         self.session = session
         self.verbose = verbose
         self.is_running = True
+        self.listener = CLIEventListener(session=self.session, verbose=self.verbose)
+        self.session.add_listener(self.listener)
 
     def parse_command(self, raw_input: str) -> Tuple[str, str]:
         """Analiza la entrada del jugador identificando comandos con '/' o mensajes libres."""
@@ -46,8 +49,8 @@ class CLIApp:
         # Texto libre para conversación o respuesta
         return "MESSAGE", clean
 
-    def handle_input(self, raw_input: str) -> Optional[TurnResultProjection]:
-        """Procesa una línea de entrada del usuario y devuelve el resultado del turno si corresponde."""
+    def handle_input(self, raw_input: str) -> Optional[str]:
+        """Procesa una línea de entrada del usuario despachando la acción de forma asíncrona y reactiva."""
         cmd_type, arg = self.parse_command(raw_input)
 
         if cmd_type == "EMPTY":
@@ -77,10 +80,14 @@ class CLIApp:
             if not arg:
                 print(f"{Colors.FAIL}[SYSTEM] > Debes especificar un objetivo para /{cmd_type}. Ejemplo: /{cmd_type} <destino_o_personaje>{Colors.ENDC}")
                 return None
-            return self.session.execute_action(cmd_type, arg)
+            task_id = self.session.post_action(cmd_type, arg)
+            self.session.wait_idle()
+            return task_id
 
         if cmd_type == "MESSAGE":
-            return self.session.send_message(arg)
+            task_id = self.session.post_message(arg)
+            self.session.wait_idle()
+            return task_id
 
         return None
 
@@ -115,23 +122,14 @@ class CLIApp:
 
         while self.is_running:
             try:
-                ui_state = self.session.get_ui_state()
+                ui_state = self.listener.latest_ui_state or self.session.get_ui_state()
                 time_str = ui_state.formatted_time
                 player_name = self.session.get_player_name()
 
                 prompt_str = f"\n{Colors.BOLD}[{time_str}] [{player_name}] > {Colors.ENDC}"
                 raw_input = input(prompt_str).strip()
 
-                turn_result = self.handle_input(raw_input)
-                if turn_result is not None:
-                    CLIFormatter.print_turn_result(turn_result)
-
-                    if self.verbose:
-                        CLIFormatter.print_verbose_debug(
-                            turn_result=turn_result,
-                            game_state=self.session.get_game_state(),
-                            lore_graph=self.session.get_lore_graph(),
-                        )
+                self.handle_input(raw_input)
 
             except (KeyboardInterrupt, EOFError):
                 print(f"\n\n{Colors.OKBLUE}Interrupción detectada. Guardando y saliendo...{Colors.ENDC}")

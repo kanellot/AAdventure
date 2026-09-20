@@ -73,19 +73,69 @@ class TestLoreBlockForm(unittest.TestCase):
         dlg = LoreEffectDialog(effect=eff)
         self.assertTrue(dlg.bypass_llm_check.isChecked())
         self.assertEqual(dlg.exec_mode_combo.currentData(), "hook")
-        # En modo hook, force_check debe estar deshabilitado
-        self.assertFalse(dlg.force_check.isEnabled())
+        # En modo hook, auto_panel debe estar oculto
+        self.assertTrue(dlg.auto_panel.isHidden())
 
         # Cambiar a push
         idx_push = dlg.exec_mode_combo.findData("push")
         dlg.exec_mode_combo.setCurrentIndex(idx_push)
-        self.assertTrue(dlg.force_check.isEnabled())
+        self.assertFalse(dlg.auto_panel.isHidden())
 
         # Probar guardado
         dlg.bypass_llm_check.setChecked(False)
         saved = dlg.get_effect()
         self.assertEqual(saved.execution_mode, "push")
+        self.assertTrue(saved.force_action)
         self.assertFalse(saved.bypass_llm)
+
+    def test_preset_adaptation_event_popup(self):
+        block = LoreBlock(
+            id="popup_intro",
+            name="Aviso inicial",
+            preset="event_popup",
+        )
+        self.form.set_lore_block(block)
+
+        self.assertFalse(self.form.popup_group.isHidden())
+        self.assertTrue(self.form.effects_group.isHidden())
+        self.assertTrue(self.form.container_note_group.isHidden())
+        self.assertTrue(self.form.active_rag_box.isHidden())
+
+        self.form.popup_text_edit.setPlainText("¡Bienvenido al calabozo!")
+        self.assertEqual(block.on_active.directive, "¡Bienvenido al calabozo!")
+        self.assertTrue(block.on_active.bypass_llm)
+        self.assertEqual(block.on_active.execution_mode, "push")
+
+    def test_preset_adaptation_chapter_quest_task(self):
+        for p in ("chapter", "quest", "task"):
+            block = LoreBlock(id=f"{p}_1", name=f"Test {p}", preset=p)
+            self.form.set_lore_block(block)
+
+            self.assertFalse(self.form.container_note_group.isHidden(), f"Fallo en preset {p}")
+            self.assertTrue(self.form.effects_group.isHidden(), f"Fallo en preset {p}")
+            self.assertTrue(self.form.popup_group.isHidden(), f"Fallo en preset {p}")
+            self.assertTrue(self.form.active_rag_box.isHidden(), f"Fallo en preset {p}")
+            self.assertFalse(self.form.desc_group.isHidden(), f"Fallo en preset {p}")
+
+    def test_preset_adaptation_event_diag(self):
+        block = LoreBlock(id="diag_1", name="Diálogo tabernero", preset="event_diag")
+        self.form.set_lore_block(block)
+
+        self.assertFalse(self.form.effects_group.isHidden())
+        self.assertFalse(self.form.active_rag_box.isHidden())
+        self.assertTrue(self.form.popup_group.isHidden())
+        self.assertTrue(self.form.container_note_group.isHidden())
+        self.assertEqual(self.form._get_allowed_target_types_for_current_preset(), ["npc"])
+
+    def test_preset_adaptation_event_look(self):
+        block = LoreBlock(id="look_1", name="Inspección altar", preset="event_look")
+        self.form.set_lore_block(block)
+
+        self.assertFalse(self.form.effects_group.isHidden())
+        self.assertFalse(self.form.active_rag_box.isHidden())
+        self.assertTrue(self.form.popup_group.isHidden())
+        self.assertTrue(self.form.container_note_group.isHidden())
+        self.assertEqual(self.form._get_allowed_target_types_for_current_preset(), ["place", "item"])
 
 
 if __name__ == "__main__":

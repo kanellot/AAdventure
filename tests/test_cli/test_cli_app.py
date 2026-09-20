@@ -69,7 +69,9 @@ class TestCLIApp(unittest.TestCase):
         self.assertEqual(cmd, "EMPTY")
 
     def test_handle_input_move_action(self):
-        res = self.app.handle_input("/MOVE Calle Pobre")
+        task_id = self.app.handle_input("/MOVE Calle Pobre")
+        self.assertIsNotNone(task_id)
+        res = self.app.listener.latest_turn_result
         self.assertIsNotNone(res)
         self.assertIsInstance(res, TurnResultProjection)
         self.assertEqual(res.author, "Dungeon Master")
@@ -85,7 +87,9 @@ class TestCLIApp(unittest.TestCase):
 
     def test_handle_input_free_message_discrepancy(self):
         # En modo EXPLORE, send_message devuelve la proyección del sistema informando de la discrepancia
-        res = self.app.handle_input("¿Alguien me ayuda?")
+        task_id = self.app.handle_input("¿Alguien me ayuda?")
+        self.assertIsNotNone(task_id)
+        res = self.app.listener.latest_turn_result
         self.assertIsNotNone(res)
         self.assertEqual(res.author, "SYSTEM")
         self.assertIn("EXPLORE", res.msg)

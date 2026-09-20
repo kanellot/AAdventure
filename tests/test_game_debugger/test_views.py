@@ -61,6 +61,27 @@ class TestDebuggerViews(unittest.TestCase):
         self.assertEqual(cmd.action, "MOVE")
         self.assertEqual(cmd.target, "Calle Pobre")
 
+    def test_chat_tab_set_thinking(self):
+        chat = ChatTab()
+        chat.set_game_state("TALK")
+        self.assertTrue(chat.spinner.isHidden())
+        self.assertTrue(chat.lbl_thinking.isHidden())
+
+        # Activar Thinking
+        chat.set_thinking(True, "Consultando al DM...")
+        self.assertFalse(chat.spinner.isHidden())
+        self.assertFalse(chat.lbl_thinking.isHidden())
+        self.assertIn("Consultando al DM...", chat.lbl_thinking.text())
+        self.assertFalse(chat.input_edit.isEnabled())
+        self.assertFalse(chat.send_btn.isEnabled())
+
+        # Desactivar Thinking
+        chat.set_thinking(False)
+        self.assertTrue(chat.spinner.isHidden())
+        self.assertTrue(chat.lbl_thinking.isHidden())
+        self.assertTrue(chat.input_edit.isEnabled())
+        self.assertTrue(chat.send_btn.isEnabled())
+
     def test_entities_tree_widget(self):
         tree = EntitiesTreeWidget(header_title="Test Entidades")
         hierarchy = [

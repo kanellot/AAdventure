@@ -4,9 +4,9 @@ import unittest
 import os
 from PySide6.QtWidgets import QApplication
 from domains import TurnResultProjection
-from engines.game.engine import GameEngine
+from domains.projections import UIStateProjection
+from engines import AdventureSession
 from engines.transformer.base_adapter import BaseLLMAdapter
-from engines.transformer.engine import TransformerEngine
 from game_debugger.app import GameDebuggerApp
 
 
@@ -26,14 +26,14 @@ class TestGameDebuggerApp(unittest.TestCase):
             raise unittest.SkipTest("Adventure.aad no existe en Resources/adventure_data")
 
     def setUp(self):
-        self.engine = GameEngine(world_json_path=self.aad_path)
-        self.dm = TransformerEngine(MockNarratorAdapter())
-        self.debugger = GameDebuggerApp(self.engine, self.dm, aad_path=self.aad_path)
+        self.session = AdventureSession.start_for_testing(
+            self.aad_path,
+            llm_adapter=MockNarratorAdapter(),
+        )
+        self.debugger = GameDebuggerApp(session=self.session, aad_path=self.aad_path)
 
     def tearDown(self):
         self.debugger.close()
-        if hasattr(self.engine, "cleanup"):
-            self.engine.cleanup()
 
     def test_app_initialization_and_tabs(self):
         self.assertIn("Adventure.aad", self.debugger.windowTitle())
@@ -52,19 +52,35 @@ class TestGameDebuggerApp(unittest.TestCase):
         self.debugger.on_entity_selected_from_tree("Calle Pobre")
         self.assertEqual(self.debugger.chat_tab.target_combo.currentText(), "Calle Pobre")
 
-    def test_on_turn_finished_updates_ui(self):
+    def test_reactive_slots_update_ui(self):
+        from engines.events import ThinkingEvent
+        # 1. Probar on_thinking_changed(True)
+        event_true = ThinkingEvent(task_id="t1", is_thinking=True, action="MOVE", message="Caminando...")
+        self.debugger.on_thinking_changed(event_true.model_dump_json())
+        self.assertFalse(self.debugger.chat_tab.spinner.isHidden())
+        self.assertIn("Caminando...", self.debugger.chat_tab.lbl_thinking.text())
+
+        # 2. Probar on_task_completed
         res = TurnResultProjection(
             author="Dungeon Master",
-            msg="Llegas a una nueva zona.",
-            debug_prompt="PROMPT ENVIADO",
-            debug_raw_response='{"msg": "Llegas..."}',
+            msg="Has llegado a la taberna.",
+            debug_prompt="PROMPT REACTIVO",
+            debug_raw_response="{}",
         )
+        self.debugger.on_task_completed("t1", res.model_dump_json())
+        self.assertIn("Has llegado a la taberna.", self.debugger.chat_tab.chat_browser.toHtml())
+        self.assertEqual(self.debugger.prompt_edit.toPlainText(), "PROMPT REACTIVO")
+        self.assertEqual(self.debugger.result_tab.narrative_edit.toPlainText(), "Has llegado a la taberna.")
 
-        self.debugger.on_turn_finished(res)
+        # 3. Probar on_state_updated
+        ui_state = self.session.get_ui_state()
+        self.debugger.on_state_updated(ui_state.model_dump_json())
+        self.assertIn("Jugador:", self.debugger.statusBar().currentMessage())
 
-        self.assertIn("Llegas a una nueva zona.", self.debugger.chat_tab.chat_browser.toHtml())
-        self.assertEqual(self.debugger.prompt_edit.toPlainText(), "PROMPT ENVIADO")
-        self.assertEqual(self.debugger.result_tab.narrative_edit.toPlainText(), "Llegas a una nueva zona.")
+        # 4. Probar on_thinking_changed(False)
+        event_false = ThinkingEvent(task_id="t1", is_thinking=False)
+        self.debugger.on_thinking_changed(event_false.model_dump_json())
+        self.assertTrue(self.debugger.chat_tab.spinner.isHidden())
 
 
 if __name__ == "__main__":

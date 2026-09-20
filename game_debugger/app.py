@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 from typing import Any, Optional
 from PySide6.QtCore import Qt
@@ -12,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from domains.projections import ActionCommandProjection, TurnResultProjection
+from domains.projections import ActionCommandProjection, TurnResultProjection, UIStateProjection
 from engines import AdventureSession
 from game_debugger.views.chat_tab import ChatTab
 from game_debugger.views.entities_tab import EntitiesTreeWidget
@@ -20,7 +21,8 @@ from game_debugger.views.inspector import GameStateInspector
 from game_debugger.views.lore_graph_tab import LoreGraphTab
 from game_debugger.views.rag_tab import RagTab
 from game_debugger.views.result_tab import ResultTab
-from game_debugger.worker import TurnWorker
+from game_debugger.qt_listener import QtEngineListener
+from engines.events import ThinkingEvent
 
 
 class GameDebuggerApp(QMainWindow):
@@ -31,36 +33,32 @@ class GameDebuggerApp(QMainWindow):
 
     def __init__(
         self,
-        session_or_engine: Any = None,
-        dm_or_aad: Any = None,
-        aad_path: Optional[str] = None,
         session: Optional[AdventureSession] = None,
+        aad_path: Optional[str] = None,
     ):
         super().__init__()
         self.setWindowTitle("Depurador de Juego - AAdventure")
         self.resize(1150, 780)
 
-        # Resolver sesión (soporta tanto AdventureSession como firma heredada game_engine, dm)
         if session is not None:
             self.session = session
             self.aad_path = aad_path or session.aad_path
-        elif isinstance(session_or_engine, AdventureSession):
-            self.session = session_or_engine
-            self.aad_path = aad_path or (dm_or_aad if isinstance(dm_or_aad, str) else None) or self.session.aad_path
-        elif session_or_engine is not None:
-            resolved_aad = aad_path or (dm_or_aad if isinstance(dm_or_aad, str) else None)
-            self.session = AdventureSession(
-                game_engine=session_or_engine,
-                transformer_engine=dm_or_aad if hasattr(dm_or_aad, "llm_adapter") else None,
-                aad_path=resolved_aad,
-            )
-            self.aad_path = resolved_aad
+        elif aad_path is not None:
+            self.session = AdventureSession.start(aad_path)
+            self.aad_path = aad_path
         else:
-            raise ValueError("Se debe proporcionar una AdventureSession a GameDebuggerApp.")
+            raise ValueError("Se debe proporcionar una AdventureSession o aad_path a GameDebuggerApp.")
 
         self.engine = self.session._engine
         self.dm = self.session._dm
-        self.worker = None
+
+        # Conectar observador reactivo Qt para comunicación desacoplada y spinner
+        self.listener = QtEngineListener(self)
+        self.session.add_listener(self.listener)
+        self.listener.thinking_changed.connect(self.on_thinking_changed)
+        self.listener.task_completed.connect(self.on_task_completed)
+        self.listener.state_updated.connect(self.on_state_updated)
+        self.listener.task_error.connect(self.on_task_error)
 
         self._setup_menu()
 
@@ -197,6 +195,7 @@ class GameDebuggerApp(QMainWindow):
             self.statusBar().showMessage(f"Cargando aventura {os.path.basename(aad_path)}...")
             self.session.close()
             self.session = AdventureSession.start(aad_path)
+            self.session.add_listener(self.listener)
             self.engine = self.session._engine
             self.dm = self.session._dm
             self.aad_path = aad_path
@@ -289,8 +288,6 @@ class GameDebuggerApp(QMainWindow):
 
     def on_player_action(self, player_input: str):
         """Se ejecuta cuando el jugador envía un mensaje de texto libre."""
-        self.chat_tab.set_input_enabled(False)
-        self.statusBar().showMessage("Enviando mensaje... (Llamando al LLM)")
         self.prompt_edit.setPlainText(
             f"Enviando interacción de diálogo...\nEsperando prompt y respuesta del LLM..."
         )
@@ -299,15 +296,11 @@ class GameDebuggerApp(QMainWindow):
 
         self.chat_tab.append_message(self.session.get_player_name(), player_input)
 
-        # Iniciar hilo de trabajo asíncrono con send_message
-        self.worker = TurnWorker(session=self.session, player_input=player_input)
-        self.worker.finished_turn.connect(self.on_turn_finished)
-        self.worker.start()
+        # Enviar vía asíncrona reactiva no bloqueante
+        self.session.post_message(player_input)
 
     def on_player_action_command(self, action_obj: ActionCommandProjection, prompt_text: str):
         """Se ejecuta cuando el usuario pulsa un botón de acción directa (MOVE, LOOK, TALK)."""
-        self.chat_tab.set_input_enabled(False)
-        self.statusBar().showMessage(f"Ejecutando acción {action_obj.action} sobre {action_obj.target}... (Llamando al LLM)")
         self.prompt_edit.setPlainText(
             f"Generando interacción [{action_obj.action} -> {action_obj.target}]...\nEsperando prompt y respuesta del LLM..."
         )
@@ -320,38 +313,66 @@ class GameDebuggerApp(QMainWindow):
             cmd_text += f' "{prompt_text}"'
         self.chat_tab.append_message(self.session.get_player_name(), cmd_text)
 
-        # Iniciar hilo de trabajo asíncrono con execute_action
-        self.worker = TurnWorker(
-            session=self.session,
+        # Enviar vía asíncrona reactiva no bloqueante
+        self.session.post_action(
             action=action_obj.action,
             target=action_obj.target,
             player_input=prompt_text,
         )
-        self.worker.finished_turn.connect(self.on_turn_finished)
-        self.worker.start()
 
-    def on_turn_finished(self, turn_output: TurnResultProjection):
-        """Callback que recibe el TurnResultProjection del QThread al finalizar."""
-        ui_state = self.session.get_ui_state()
-        self.chat_tab.set_game_state(
-            ui_state.game_state,
-            active_affinity=ui_state.active_npc_affinity,
-            target_name=ui_state.player_target,
-        )
-        self.chat_tab.set_input_enabled(True)
+    # =========================================================================
+    # SLOTS REACTIVOS DESPACHADOS POR QTENGINE LISTENER EN EL HILO DE UI
+    # =========================================================================
 
+    def on_thinking_changed(self, event_json: str):
+        """Maneja el cambio de estado Thinking activando/deteniendo el spinner y bloqueando entradas."""
+        event = ThinkingEvent.model_validate_json(event_json)
+        self.chat_tab.set_thinking(event.is_thinking, event.message)
+        if event.is_thinking:
+            self.statusBar().showMessage(f"⏳ {event.message or 'Pensando...'}")
+        else:
+            self.update_status_bar()
+
+    def on_task_completed(self, task_id: str, result_json: str):
+        """Recibe el resultado completado en JSON desde el worker thread de la sesión."""
+        turn_output = TurnResultProjection.model_validate_json(result_json)
         # Agregar respuesta del Dungeon Master o NPC al chat
-        self.chat_tab.append_message(turn_output.author, turn_output.msg)
+        self.chat_tab.append_message(turn_output.author or "Dungeon Master", turn_output.msg)
         if turn_output.info_msg:
             self.chat_tab.append_message("SYSTEM", turn_output.info_msg)
+
+        # Si hubo un popup modal directo en la proyección, mostrarlo en pantalla
+        if getattr(turn_output, "popup_message", None):
+            title = getattr(turn_output, "popup_title", None) or "Aviso del Sistema"
+            QMessageBox.information(self, title, turn_output.popup_message)
 
         # Actualizar pestañas del panel principal
         self.rag_tab.update_rag_evaluation(turn_output.rag_evaluation)
         self.prompt_edit.setPlainText(turn_output.debug_prompt or "No disponible")
         self.result_tab.update_result(turn_output)
 
-        # Actualizar inspector, árboles de entidades, lore graph y barra de estado
+    def on_state_updated(self, state_json: str):
+        """Actualiza la interfaz consolidada con el nuevo estado tras mutaciones."""
+        ui_state = UIStateProjection.model_validate_json(state_json)
+        self.chat_tab.set_game_state(
+            ui_state.game_state,
+            active_affinity=ui_state.active_npc_affinity,
+            target_name=ui_state.player_target,
+        )
+        self.chat_tab.set_targets(self.session.get_all_target_names())
         self.refresh_inspector()
         self.refresh_entities()
         self.refresh_lore_graph()
         self.update_status_bar()
+
+    def on_task_error(self, task_id: str, error_message: str, error_code: str):
+        """Maneja errores recibidos del motor."""
+        self.chat_tab.append_message("SYSTEM", f"Error [{error_code}]: {error_message}")
+        self.update_status_bar()
+
+
+    def closeEvent(self, event):
+        """Asegura la liberación de recursos y detención limpia del worker thread."""
+        if hasattr(self, "session") and self.session:
+            self.session.close()
+        event.accept()

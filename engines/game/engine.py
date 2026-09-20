@@ -57,17 +57,19 @@ class GameEngine:
             objects_path = os.path.join(self.temp_dir, "objects.json")
             lore_path = os.path.join(self.temp_dir, "loreblocks.json")
             config_path = os.path.join(self.temp_dir, "story_config.json")
+        elif os.path.isdir(world_json_path) and os.path.exists(os.path.join(world_json_path, "world.json")):
+            self.temp_dir = None
+            world_path = os.path.join(world_json_path, "world.json")
+            npcs_path = os.path.join(world_json_path, "npcs.json")
+            player_path = os.path.join(world_json_path, "player.json")
+            objects_path = os.path.join(world_json_path, "objects.json")
+            lore_path = os.path.join(world_json_path, "loreblocks.json")
+            config_path = os.path.join(world_json_path, "story_config.json")
         else:
-            base_dir = os.path.dirname(world_json_path)
-            base_name = os.path.basename(world_json_path)
-            suffix = ("_" + base_name.split("_", 1)[1]) if ("_" in base_name and not base_name.startswith("world.")) else ""
-
-            world_path = world_json_path
-            npcs_path = npcs_json_path or (os.path.join(base_dir, f"npcs{suffix}") if os.path.exists(os.path.join(base_dir, f"npcs{suffix}")) else os.path.join(base_dir, "npcs.json"))
-            player_path = player_json_path or (os.path.join(base_dir, f"player{suffix}") if os.path.exists(os.path.join(base_dir, f"player{suffix}")) else os.path.join(base_dir, "player.json"))
-            objects_path = objects_json_path or (os.path.join(base_dir, f"objects{suffix}") if os.path.exists(os.path.join(base_dir, f"objects{suffix}")) else os.path.join(base_dir, "objects.json"))
-            lore_path = lore_json_path or (os.path.join(base_dir, f"loreblocks{suffix}") if os.path.exists(os.path.join(base_dir, f"loreblocks{suffix}")) else os.path.join(base_dir, "loreblocks.json"))
-            config_path = config_json_path or (os.path.join(base_dir, f"story_config{suffix}") if os.path.exists(os.path.join(base_dir, f"story_config{suffix}")) else os.path.join(base_dir, "story_config.json"))
+            raise ValueError(
+                f"Formato no compatible: '{world_json_path}'. "
+                "Las aventuras deben ser paquetes canónicos .aad de 6 archivos."
+            )
 
         self.world_state = WorldState(
             world_path,
@@ -79,6 +81,7 @@ class GameEngine:
         )
         self.game_state_controller = GameStateController.create_from_world(self.world_state)
         self.fog_war = self.game_state_controller.fog_war
+        self.pending_autonomous_actions: List[Dict[str, str]] = []
         LoreRouter.get_instance().update_lore_state_machine(self.game_state_controller)
 
     @property
@@ -443,38 +446,34 @@ class GameEngine:
                     self.game_state_controller.sync_active_npc_affinity()
                     self.save()
 
-                    # Ejecución automatizada de TALK con el LLM o bypass
+                    # Encolado de acción autónoma TALK para despacho secuencial por eventos
                     if force_action and dm and (not isinstance(step, DialogueAction) or step.target_npc != act_tgt):
                         auto_prompt = getattr(triggered, "directive", "") or f"(El personaje {act_tgt} inicia la conversación)."
-                        auto_step = DialogueAction(act_tgt)
-                        auto_step._triggered_lore = triggered
-                        self.game_state_controller._is_executing_forced_action = True
-                        try:
-                            auto_res = self._run_step(auto_step, auto_prompt, dm)
-                        finally:
-                            self.game_state_controller._is_executing_forced_action = False
-                        if auto_res and auto_res.message:
-                            final_msg = f"{final_msg}\n\n[{act_tgt}]: {auto_res.message}"
-                            final_author = act_tgt
+                        if not hasattr(self, "pending_autonomous_actions") or self.pending_autonomous_actions is None:
+                            self.pending_autonomous_actions = []
+                        self.pending_autonomous_actions.append({
+                            "action": "TALK",
+                            "target": act_tgt,
+                            "prompt": auto_prompt,
+                            "triggered_lore": getattr(triggered, "id", "")
+                        })
 
                 elif act_type in ["LOOK", "EXPLAIN"]:
                     self.game_state_controller.update_state("LOOK")
                     self.game_state_controller.data.state.player_target = act_tgt
                     self.save()
 
-                    # Ejecución automatizada de EXPLAIN/LOOK con el LLM o bypass
+                    # Encolado de acción autónoma LOOK para despacho secuencial por eventos
                     if force_action and dm and (not isinstance(step, LookAction) or step.target != act_tgt):
-                        auto_step = LookAction(act_tgt)
-                        auto_step._triggered_lore = triggered
                         auto_prompt = getattr(triggered, "directive", "") or f"(Se describe detalladamente {act_tgt})."
-                        self.game_state_controller._is_executing_forced_action = True
-                        try:
-                            auto_res = self._run_step(auto_step, auto_prompt, dm)
-                        finally:
-                            self.game_state_controller._is_executing_forced_action = False
-                        if auto_res and auto_res.message:
-                            final_msg = f"{final_msg}\n\n{auto_res.message}"
-                            final_author = "Dungeon Master"
+                        if not hasattr(self, "pending_autonomous_actions") or self.pending_autonomous_actions is None:
+                            self.pending_autonomous_actions = []
+                        self.pending_autonomous_actions.append({
+                            "action": "LOOK",
+                            "target": act_tgt,
+                            "prompt": auto_prompt,
+                            "triggered_lore": getattr(triggered, "id", "")
+                        })
 
         # Detección de event_popup
         popup_msg = None
@@ -773,13 +772,6 @@ class GameEngine:
             look_targets=look_targets,
         )
 
-    def get_available_actions(self) -> dict:
-        """Devuelve las acciones disponibles para la interfaz de usuario (compatibilidad dict)."""
-        return self.get_available_actions_projection().model_dump()
-
-    def get_ui_state(self) -> dict:
-        """Devuelve un resumen del estado del juego para la barra de interfaz (compatibilidad dict)."""
-        return self.get_ui_state_projection().model_dump()
 
     def get_lore_graph_projection(self) -> LoreGraphProjection:
         """Genera una proyección exhaustiva de todos los LoreBlocks y sus condiciones evaluadas en tiempo real."""

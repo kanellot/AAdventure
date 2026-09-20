@@ -380,18 +380,30 @@ class StoryEditorApp(QMainWindow):
 
         roots = [b for b in lore_blocks if not b.parent_id or b.parent_id not in id_to_block]
 
+        PRESET_ICONS = {
+            "chapter": "📖",
+            "quest": "⚔️",
+            "task": "📌",
+            "event_diag": "💬",
+            "event_look": "👁️",
+            "event_popup": "📢",
+            "event": "⚡",
+        }
+
         def add_lore_tree_item(parent_node, b: LoreBlock):
             item = QTreeWidgetItem(parent_node)
             has_children = b.id in parent_to_children and bool(parent_to_children[b.id])
 
             # Semáforo de estado
-            st = b.state.lower()
+            st = b.state.lower() if isinstance(b.state, str) else b.state.value.lower()
             st_dot = "🟢" if st == "active" else ("🔵" if st == "done" else "⚪")
 
-            # Icono
-            icon = "📁" if has_children else "📜"
+            # Icono según preset
+            preset_val = getattr(b, "preset", "event") or "event"
+            icon = PRESET_ICONS.get(preset_val, "⚡")
+            folder_mark = " 📁" if has_children else ""
             title = b.title or b.name or b.id
-            item.setText(0, f"{st_dot} {icon} {title}")
+            item.setText(0, f"{st_dot} {icon}{folder_mark} {title}")
             item.setData(0, Qt.UserRole, ("loreblock", b))
 
             for child in parent_to_children.get(b.id, []):

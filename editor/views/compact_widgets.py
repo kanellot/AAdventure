@@ -180,6 +180,9 @@ class CompactConditionListWidget(QWidget):
         del_btn.clicked.connect(lambda _, i=index: self.on_delete_condition(i))
         layout.addWidget(del_btn)
 
+        frame.setCursor(Qt.PointingHandCursor)
+        frame.mouseDoubleClickEvent = lambda event, i=index: self.on_edit_condition(i)
+
         return frame
 
     def on_add_condition(self):

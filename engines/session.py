@@ -7,6 +7,10 @@ desacoplando completamente los clientes UI y depuradores de la lógica interna d
 
 from __future__ import annotations
 import os
+import queue
+import threading
+import time
+import uuid
 from typing import Any, Dict, List, Optional
 
 from domains.projections import (
@@ -20,6 +24,7 @@ from domains.projections import (
 )
 from engines.embedding.base_backend import BaseEmbeddingBackend
 from engines.embedding.factory import EmbeddingFactory
+from engines.events import EngineEventListener, EngineTask, ThinkingEvent
 from engines.game.engine import GameEngine
 from engines.transformer.base_adapter import BaseLLMAdapter
 from engines.transformer.engine import TransformerEngine
@@ -49,6 +54,14 @@ class AdventureSession:
             self._dm = transformer_engine
         self._aad_path = aad_path
         self._closed = False
+
+        # Cola de tareas reactiva y listeners observadores
+        self._listeners: List[EngineEventListener] = []
+        self._listeners_lock = threading.Lock()
+        self._task_queue: queue.Queue[Optional[EngineTask]] = queue.Queue()
+        self._worker_thread: Optional[threading.Thread] = None
+        self._worker_lock = threading.Lock()
+        self._start_worker()
 
     @classmethod
     def start(
@@ -111,16 +124,272 @@ class AdventureSession:
         return self._aad_path
 
     # =========================================================================
-    # ACCIONES E INTERACCIÓN DEFENSIVA
+    # GESTIÓN DE LISTENERS Y EVENTOS REACTIVOS (MOTOR-UI)
+    # =========================================================================
+
+    def add_listener(self, listener: EngineEventListener) -> None:
+        """Registra un observador para recibir eventos reactivos de ejecución y estado."""
+        with self._listeners_lock:
+            if listener not in self._listeners:
+                self._listeners.append(listener)
+
+    def remove_listener(self, listener: EngineEventListener) -> None:
+        """Elimina un observador registrado."""
+        with self._listeners_lock:
+            if listener in self._listeners:
+                self._listeners.remove(listener)
+
+    def _notify_thinking(self, event: ThinkingEvent) -> None:
+        event_json = event.model_dump_json()
+        with self._listeners_lock:
+            listeners = list(self._listeners)
+        for l in listeners:
+            try:
+                l.on_thinking_changed(event_json)
+            except Exception:
+                pass
+
+    def _notify_task_completed(self, task_id: str, result: TurnResultProjection) -> None:
+        result_json = result.model_dump_json()
+        with self._listeners_lock:
+            listeners = list(self._listeners)
+        for l in listeners:
+            try:
+                l.on_task_completed(task_id, result_json)
+            except Exception:
+                pass
+
+    def _notify_state_updated(self, ui_state: UIStateProjection) -> None:
+        state_json = ui_state.model_dump_json()
+        with self._listeners_lock:
+            listeners = list(self._listeners)
+        for l in listeners:
+            try:
+                l.on_state_updated(state_json)
+            except Exception:
+                pass
+
+    def _notify_error(self, task_id: str, error_message: str, error_code: str) -> None:
+        with self._listeners_lock:
+            listeners = list(self._listeners)
+        for l in listeners:
+            try:
+                l.on_error(task_id, error_message, error_code)
+            except Exception:
+                pass
+
+    # =========================================================================
+    # BUCLE ASÍNCRONO DEL WORKER THREAD
+    # =========================================================================
+
+    def _start_worker(self) -> None:
+        with self._worker_lock:
+            if self._worker_thread is None or not self._worker_thread.is_alive():
+                self._worker_thread = threading.Thread(
+                    target=self._worker_loop,
+                    name="AdventureSessionWorker",
+                    daemon=True,
+                )
+                self._worker_thread.start()
+
+    def _worker_loop(self) -> None:
+        while not self._closed:
+            try:
+                task = self._task_queue.get()
+                if task is None:
+                    self._task_queue.task_done()
+                    break
+
+                self._process_task(task)
+                self._task_queue.task_done()
+            except Exception:
+                pass
+
+    def _process_task(self, task: EngineTask) -> None:
+        # 1. Notificar Thinking = True
+        desc = f"Pensando... [{task.action} -> {task.target}]" if task.action else "Pensando respuesta..."
+        event_start = ThinkingEvent(
+            task_id=task.task_id,
+            is_thinking=True,
+            action=task.action,
+            target=task.target,
+            source=task.source,
+            message=desc,
+        )
+        self._notify_thinking(event_start)
+
+        self._engine.pending_autonomous_actions = []
+
+        try:
+            if task.player_input and not task.action:
+                result = self._execute_send_message_core(task.player_input)
+            elif task.action:
+                result = self._execute_action_core(task.action, task.target, player_input=task.player_input)
+            else:
+                result = self._execute_send_message_core(task.player_input)
+
+            ui_state = self.get_ui_state()
+
+            # 2. Entregar resultado y estado actualizado
+            self._notify_task_completed(task.task_id, result)
+            self._notify_state_updated(ui_state)
+
+            # 3. Capturar acciones autónomas desencadenadas por LoreBlocks
+            auto_actions = list(getattr(self._engine, "pending_autonomous_actions", []))
+            self._engine.pending_autonomous_actions = []
+
+            # 4. Notificar Thinking = False para la tarea actual
+            event_done = ThinkingEvent(
+                task_id=task.task_id,
+                is_thinking=False,
+                action=task.action,
+                target=task.target,
+                source=task.source,
+                message="",
+            )
+            self._notify_thinking(event_done)
+
+            # 5. Si hay acciones autónomas, encolarlas de inmediato como turnos secundarios
+            for auto in auto_actions:
+                act_type = auto.get("action", "TALK")
+                act_target = auto.get("target", "")
+                auto_task = EngineTask(
+                    task_id=f"lore_{uuid.uuid4().hex[:8]}",
+                    action=act_type,
+                    target=act_target,
+                    player_input=auto.get("prompt", ""),
+                    source="LORE",
+                )
+                self._task_queue.put(auto_task)
+
+        except Exception as e:
+            self._notify_error(task.task_id, str(e), type(e).__name__)
+            event_err = ThinkingEvent(
+                task_id=task.task_id,
+                is_thinking=False,
+                action=task.action,
+                target=task.target,
+                source=task.source,
+                message=f"Error: {str(e)}",
+            )
+            self._notify_thinking(event_err)
+
+    # =========================================================================
+    # API ASÍNCRONA REACTIVA (NO BLOQUEANTE CON TASK_ID)
+    # =========================================================================
+
+    def post_action(self, action: str, target: str, player_input: str = "") -> str:
+        """Encola una acción de forma asíncrona y no bloqueante.
+
+        Retorna inmediatamente el task_id generado.
+        Emite ThinkingEvent(is_thinking=True) para que la UI active su spinner de inmediato.
+        """
+        task_id = f"task_{uuid.uuid4().hex[:8]}"
+        task = EngineTask(
+            task_id=task_id,
+            action=(action or "").strip().upper(),
+            target=(target or "").strip(),
+            player_input=player_input or "",
+            source="PLAYER",
+        )
+
+        event_queued = ThinkingEvent(
+            task_id=task_id,
+            is_thinking=True,
+            action=task.action,
+            target=task.target,
+            source=task.source,
+            message=f"Pensando... [{task.action} -> {task.target}]",
+        )
+        self._notify_thinking(event_queued)
+
+        self._task_queue.put(task)
+        return task_id
+
+    def post_message(self, text: str) -> str:
+        """Encola un mensaje de texto libre de forma asíncrona y no bloqueante.
+
+        Retorna inmediatamente el task_id generado.
+        Emite ThinkingEvent(is_thinking=True) para activar el spinner de inmediato.
+        """
+        task_id = f"task_{uuid.uuid4().hex[:8]}"
+        task = EngineTask(
+            task_id=task_id,
+            action="",
+            target="",
+            player_input=(text or "").strip(),
+            source="PLAYER",
+        )
+
+        event_queued = ThinkingEvent(
+            task_id=task_id,
+            is_thinking=True,
+            action="",
+            target="",
+            source="PLAYER",
+            message="Pensando respuesta...",
+        )
+        self._notify_thinking(event_queued)
+
+        self._task_queue.put(task)
+        return task_id
+
+    def wait_idle(self, timeout: Optional[float] = None) -> bool:
+        """Espera a que todas las tareas encoladas y sus acciones autónomas terminen.
+
+        Retorna True si todas las tareas finalizaron, o False si expiró el tiempo de espera.
+        """
+        with self._task_queue.all_tasks_done:
+            if timeout is None:
+                while self._task_queue.unfinished_tasks:
+                    self._task_queue.all_tasks_done.wait()
+                return True
+            else:
+                end_time = time.time() + timeout
+                while self._task_queue.unfinished_tasks:
+                    remaining = end_time - time.time()
+                    if remaining <= 0.0:
+                        return False
+                    self._task_queue.all_tasks_done.wait(remaining)
+                return True
+
+    # =========================================================================
+    # ACCIONES E INTERACCIÓN SÍNCRONA DIRECTA (TESTS Y SCRIPTS)
     # =========================================================================
 
     def execute_action(self, action: str, target: str) -> TurnResultProjection:
-        """Ejecuta una acción directa del mundo (MOVE, LOOK, TALK).
+        """Ejecuta una acción directa del mundo (MOVE, LOOK, TALK) de forma síncrona."""
+        task_id = f"sync_{uuid.uuid4().hex[:8]}"
+        self._notify_thinking(ThinkingEvent(
+            task_id=task_id, is_thinking=True, action=action, target=target, message="Pensando..."
+        ))
+        try:
+            res = self._execute_action_core(action, target)
+            self._notify_task_completed(task_id, res)
+            self._notify_state_updated(self.get_ui_state())
 
-        Si el jugador se encuentra en estado TALK y la UI dispara una acción MOVE,
-        la conversación finaliza abruptamente (limpiando conversación activa y afinidad del NPC)
-        y el estado cambia a MOVE, ejecutando el desplazamiento de forma limpia.
-        """
+            # Drenar acciones autónomas de LoreBlocks si se hubieran producido
+            auto_actions = list(getattr(self._engine, "pending_autonomous_actions", []))
+            self._engine.pending_autonomous_actions = []
+            for auto in auto_actions:
+                act_type = auto.get("action", "TALK")
+                act_target = auto.get("target", "")
+                auto_task = EngineTask(
+                    task_id=f"lore_{uuid.uuid4().hex[:8]}",
+                    action=act_type,
+                    target=act_target,
+                    player_input=auto.get("prompt", ""),
+                    source="LORE",
+                )
+                self._task_queue.put(auto_task)
+
+            return res
+        finally:
+            self._notify_thinking(ThinkingEvent(
+                task_id=task_id, is_thinking=False, action=action, target=target, message=""
+            ))
+
+    def _execute_action_core(self, action: str, target: str, player_input: str = "") -> TurnResultProjection:
         if self._closed:
             return TurnResultProjection(
                 author="SYSTEM",
@@ -152,12 +421,10 @@ class AdventureSession:
             )
 
         try:
-            # Regla acordada: Salida abrupta de TALK si se emite MOVE
             current_ui_state = self.get_ui_state()
             interrupted_conversation = False
 
             if current_ui_state.game_state == "TALK" and act == "MOVE":
-                # Finalización abrupta de la conversación
                 self._engine.game_state_controller.update_state("EXPLORE")
                 if hasattr(self._engine.game_state_controller.data, "state"):
                     self._engine.game_state_controller.data.state.player_target = ""
@@ -166,7 +433,7 @@ class AdventureSession:
                 interrupted_conversation = True
 
             cmd = ActionCommandProjection(action=act, target=tgt)
-            res = self._engine.execute_turn(cmd, dm=self._dm)
+            res = self._engine.execute_turn(cmd, player_input=player_input, dm=self._dm)
 
             if interrupted_conversation:
                 extra_info = "Has interrumpido la conversación abruptamente al desplazarte."
@@ -181,11 +448,38 @@ class AdventureSession:
             )
 
     def send_message(self, text: str) -> TurnResultProjection:
-        """Envía un mensaje de texto libre en una interacción conversacional (TALK o LOOK).
+        """Envía un mensaje de texto libre en una interacción conversacional (TALK o LOOK) de forma síncrona."""
+        task_id = f"sync_{uuid.uuid4().hex[:8]}"
+        self._notify_thinking(ThinkingEvent(
+            task_id=task_id, is_thinking=True, action="", target="", message="Pensando respuesta..."
+        ))
+        try:
+            res = self._execute_send_message_core(text)
+            self._notify_task_completed(task_id, res)
+            self._notify_state_updated(self.get_ui_state())
 
-        Si el jugador se encuentra en modo EXPLORE, no lanza excepción y devuelve un
-        TurnResultProjection descriptivo indicando la discrepancia de estado.
-        """
+            # Drenar acciones autónomas de LoreBlocks si se hubieran producido
+            auto_actions = list(getattr(self._engine, "pending_autonomous_actions", []))
+            self._engine.pending_autonomous_actions = []
+            for auto in auto_actions:
+                act_type = auto.get("action", "TALK")
+                act_target = auto.get("target", "")
+                auto_task = EngineTask(
+                    task_id=f"lore_{uuid.uuid4().hex[:8]}",
+                    action=act_type,
+                    target=act_target,
+                    player_input=auto.get("prompt", ""),
+                    source="LORE",
+                )
+                self._task_queue.put(auto_task)
+
+            return res
+        finally:
+            self._notify_thinking(ThinkingEvent(
+                task_id=task_id, is_thinking=False, action="", target="", message=""
+            ))
+
+    def _execute_send_message_core(self, text: str) -> TurnResultProjection:
         if self._closed:
             return TurnResultProjection(
                 author="SYSTEM",
@@ -232,25 +526,49 @@ class AdventureSession:
         """Devuelve el estado consolidado de la interfaz (HUD)."""
         return self._engine.get_ui_state_projection()
 
+    def get_ui_state_json(self) -> str:
+        """Devuelve el estado consolidado de la interfaz como cadena JSON."""
+        return self.get_ui_state().model_dump_json()
+
     def get_available_actions(self) -> AvailableActionsProjection:
         """Devuelve las opciones y acciones accesibles en el turno actual."""
         return self._engine.get_available_actions_projection()
+
+    def get_available_actions_json(self) -> str:
+        """Devuelve las opciones accesibles como cadena JSON."""
+        return self.get_available_actions().model_dump_json()
 
     def get_game_state(self) -> GameStateProjection:
         """Devuelve una instantánea detallada del estado para depuración o inspección."""
         return self._engine.get_game_state_projection()
 
+    def get_game_state_json(self) -> str:
+        """Devuelve la instantánea detallada del estado como cadena JSON."""
+        return self.get_game_state().model_dump_json()
+
     def get_navigation_tree(self) -> WorldHierarchyProjection:
         """Devuelve la jerarquía de lugares descubiertos bajo la niebla de guerra."""
         return self._engine.get_navigation_hierarchy()
+
+    def get_navigation_tree_json(self) -> str:
+        """Devuelve la jerarquía bajo niebla de guerra como cadena JSON."""
+        return self.get_navigation_tree().model_dump_json()
 
     def get_entities_tree(self) -> WorldHierarchyProjection:
         """Devuelve la jerarquía completa del mundo con fines de depuración."""
         return self._engine.get_entities_hierarchy()
 
+    def get_entities_tree_json(self) -> str:
+        """Devuelve la jerarquía completa del mundo como cadena JSON."""
+        return self.get_entities_tree().model_dump_json()
+
     def get_lore_graph(self) -> LoreGraphProjection:
         """Devuelve el grafo de LoreBlocks y sus condiciones evaluadas."""
         return self._engine.get_lore_graph_projection()
+
+    def get_lore_graph_json(self) -> str:
+        """Devuelve el grafo de LoreBlocks como cadena JSON."""
+        return self.get_lore_graph().model_dump_json()
 
     def get_player_name(self) -> str:
         """Devuelve el nombre del personaje jugador."""
@@ -280,9 +598,15 @@ class AdventureSession:
     def close(self) -> None:
         """Cierra la sesión y limpia los recursos temporales."""
         if not self._closed:
+            self._closed = True
+            try:
+                self._task_queue.put(None)
+                if self._worker_thread and self._worker_thread.is_alive():
+                    self._worker_thread.join(timeout=1.0)
+            except Exception:
+                pass
             if hasattr(self._engine, "cleanup"):
                 self._engine.cleanup()
-            self._closed = True
 
     def __enter__(self) -> AdventureSession:
         return self
