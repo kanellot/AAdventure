@@ -31,10 +31,11 @@ class CLIEventListener(BaseEngineEventListener):
         self.latest_turn_result = result
         CLIFormatter.print_turn_result(result)
 
-        if getattr(result, "popup_message", None):
-            title = getattr(result, "popup_title", None) or "Aviso del Sistema"
+        if result.output.type == "popup" or result.output.popup_message:
+            title = result.output.popup_title or "Aviso del Sistema"
+            msg = result.output.popup_message or result.output.msg
             print(f"\n{Colors.WARNING}{Colors.BOLD}╔══════ {title.upper()} ══════╗{Colors.ENDC}")
-            print(f"{Colors.WARNING}  {result.popup_message}{Colors.ENDC}")
+            print(f"{Colors.WARNING}  {msg}{Colors.ENDC}")
             print(f"{Colors.WARNING}{Colors.BOLD}╚{'═' * (len(title) + 16)}╝{Colors.ENDC}\n")
 
         if self.verbose and getattr(result, "debug", None):

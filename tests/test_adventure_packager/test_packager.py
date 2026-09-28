@@ -40,7 +40,7 @@ class TestAdventurePackager(unittest.TestCase):
                 "world.json",
                 "npcs.json",
                 "player.json",
-                "objects.json",
+                "items.json",
                 "loreblocks.json",
                 "story_config.json",
             }
@@ -60,7 +60,7 @@ class TestAdventurePackager(unittest.TestCase):
             world_data={"world": {}},
             npcs_data={"npcs": []},
             player_data={"player": {}},
-            objects_data={"objects": []},
+            items_data={"items": []},
             lore_data={"lore_blocks": []},
             config_data={"fog_war": True},
         )
@@ -68,7 +68,7 @@ class TestAdventurePackager(unittest.TestCase):
         unpacked_dir = AdventurePackager.unpack_to_temp(self.aad_path)
         try:
             self.assertTrue(os.path.isdir(unpacked_dir))
-            for fn in ["world.json", "npcs.json", "player.json", "objects.json", "loreblocks.json", "story_config.json"]:
+            for fn in ["world.json", "npcs.json", "player.json", "items.json", "loreblocks.json", "story_config.json"]:
                 self.assertTrue(os.path.exists(os.path.join(unpacked_dir, fn)))
         finally:
             shutil.rmtree(unpacked_dir, ignore_errors=True)

@@ -34,10 +34,12 @@ class LMStudioAdapter(BaseLLMAdapter):
         self.auto_reload = lm_config.get("auto_reload_lm_studio", self.config.get("auto_reload_lm_studio", True))
         self.inference_profiles = self.config.get("inference_profiles", {})
 
-        if self.auto_reload:
-            self.reload_server_model()
+        self.is_connected = False
+        model_ready = self._check_server_connection()
 
-        self._check_server_connection()
+        if self.auto_reload and not model_ready:
+            self.reload_server_model()
+            self._check_server_connection()
 
     def reload_server_model(
         self,
@@ -76,8 +78,12 @@ class LMStudioAdapter(BaseLLMAdapter):
         except Exception:
             return False
 
-    def _check_server_connection(self) -> None:
-        """Verifica preliminarmente la conectividad con el servidor de LM Studio."""
+    def _check_server_connection(self) -> bool:
+        """Verifica conectividad con LM Studio e identifica el modelo cargado.
+
+        Retorna True si el modelo objetivo (o compatible) ya está cargado y listo.
+        """
+        # 1. Intentar endpoint nativo v0 (proporciona estado 'loaded')
         try:
             v0_url = f"{self.base_url.replace('/v1', '')}/api/v0/models"
             req = urllib.request.Request(
@@ -86,10 +92,26 @@ class LMStudioAdapter(BaseLLMAdapter):
             )
             with urllib.request.urlopen(req, timeout=3) as resp:
                 if resp.status == 200:
-                    return
+                    data = json.loads(resp.read().decode("utf-8"))
+                    models_list = data.get("data", [])
+                    loaded_models = [m.get("id") for m in models_list if m.get("state") == "loaded" and "id" in m]
+                    if loaded_models:
+                        self.is_connected = True
+                        if self.model and self.model in loaded_models:
+                            return True
+                        matching = [m for m in loaded_models if self.model in m or m in self.model]
+                        if matching:
+                            self.model = matching[0]
+                            return True
+                        self.model = loaded_models[0]
+                        return True
+                    elif models_list:
+                        self.is_connected = True
+                        return False
         except Exception:
             pass
 
+        # 2. Intentar endpoint OpenAI /models estándar
         models_url = f"{self.base_url}/models"
         try:
             req = urllib.request.Request(
@@ -98,6 +120,7 @@ class LMStudioAdapter(BaseLLMAdapter):
             )
             with urllib.request.urlopen(req, timeout=3) as resp:
                 if resp.status == 200:
+                    self.is_connected = True
                     data = json.loads(resp.read().decode("utf-8"))
                     available_models = [m.get("id") for m in data.get("data", []) if "id" in m]
                     if self.model and available_models and self.model not in available_models:
@@ -106,8 +129,12 @@ class LMStudioAdapter(BaseLLMAdapter):
                             self.model = matching[0]
                         else:
                             self.model = available_models[0]
+                    return bool(available_models)
         except Exception:
             pass
+
+        self.is_connected = False
+        return False
 
     def _clean_json_markdown(self, raw_text: str) -> str:
         """Remueve bloques delimitadores de código markdown si existen."""

@@ -1,28 +1,23 @@
-"""Pruebas unitarias para el modelo de Objetos/Items (domains.items)."""
+"""Pruebas unitarias para el modelo de Ítems (domains.items)."""
 
 import unittest
-from domains.items import Item, GameObject
+from domains.items import Item
 
 
 class TestItemModels(unittest.TestCase):
-    """Pruebas del modelo Item y GameObject."""
+    """Pruebas del modelo Item y su ubicación inicial."""
 
     def test_item_creation(self):
         item = Item(
             id="obj_llave_hierro",
             name="Llave de Hierro",
             description="Una llave pesada y oxidada.",
-            initial_place="Plaza Mayor"
+            initial_location="Plaza Mayor"
         )
         self.assertEqual(item.id, "obj_llave_hierro")
         self.assertEqual(item.name, "Llave de Hierro")
         self.assertEqual(item.state, "default")
-        self.assertEqual(item.initial_place, "Plaza Mayor")
-
-    def test_game_object_alias(self):
-        self.assertIs(GameObject, Item)
-        obj = GameObject(id="obj_espada", name="Espada Corta", description="Una espada afilada.")
-        self.assertEqual(obj.id, "obj_espada")
+        self.assertEqual(item.initial_location, "Plaza Mayor")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,14 @@
 """Pruebas unitarias para el módulo de listeners de engines."""
 
 import unittest
-from domains.projections import TurnResultProjection, UIStateProjection
+from domains.projections import (
+    InventoryProjection,
+    NotebookProjection,
+    TurnOutput,
+    TurnResultProjection,
+    UIStateProjection,
+    WorldMapProjection,
+)
 from engines.events import ThinkingEvent
 from engines.listeners import (
     BaseEngineEventListener,
@@ -34,7 +41,12 @@ class TestListeners(unittest.TestCase):
         self.assertIsInstance(listener.thinking_events[0], str)
 
         # 2. on_task_completed
-        res = TurnResultProjection(author="DM", msg="Llegaste.")
+        res = TurnResultProjection(
+            output=TurnOutput(author="DM", msg="Llegaste."),
+            map=WorldMapProjection(),
+            inventory=InventoryProjection(),
+            notebook=NotebookProjection(),
+        )
         listener.on_task_completed("t1", res.model_dump_json())
         self.assertEqual(len(listener.completed_tasks), 1)
         self.assertEqual(listener.last_task_id, "t1")

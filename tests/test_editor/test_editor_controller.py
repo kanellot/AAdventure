@@ -3,7 +3,7 @@
 import unittest
 import os
 import tempfile
-from editor.controller import EditorController
+from editor_debugger.editor.controller import EditorController
 from domains import LoreBlock
 
 
@@ -25,7 +25,7 @@ class TestEditorController(unittest.TestCase):
         self.assertIsNotNone(self.controller.player)
         self.assertEqual(len(self.controller.world.locations), 1)
         self.assertEqual(len(self.controller.get_all_places()), 1)
-        self.assertTrue(bool(self.controller.player.initial_place))
+        self.assertTrue(bool(self.controller.player.initial_location))
 
         valid, err = self.controller.validate_story()
         self.assertTrue(valid)
@@ -46,9 +46,10 @@ class TestEditorController(unittest.TestCase):
         loc = self.controller.add_location("Bosque Oscuro", "Un bosque sombrío.")
         new_place = self.controller.add_place(loc.id, "Claro del Bosque", "Un claro iluminado por la luna.")
         self.assertIsNotNone(new_place)
+        self.controller.add_connection("Parque", "Claro del Bosque", "South", "North", 150, "forest")
 
         # 2. Agregar nuevo NPC
-        new_npc = self.controller.add_npc("Druida Silvano", "Un anciano protector del bosque.", initial_place=new_place.id)
+        new_npc = self.controller.add_npc("Druida Silvano", "Un anciano protector del bosque.", initial_location=new_place.id)
         self.assertIn(new_npc, self.controller.npcs)
 
         # 3. Agregar nuevo LoreBlock
@@ -82,6 +83,31 @@ class TestEditorController(unittest.TestCase):
         self.assertTrue(removed)
         self.assertNotIn(npc, self.controller.npcs)
 
+    def test_start_editor_imports(self):
+        """Verifica que start_editor se exporte correctamente en editor_debugger.editor, .main y .app."""
+        from editor_debugger.editor import start_editor as s1
+        from editor_debugger.editor.main import start_editor as s2
+        from editor_debugger.editor.app import start_editor as s3
+
+        self.assertTrue(callable(s1))
+        self.assertTrue(callable(s2))
+        self.assertTrue(callable(s3))
+
+    def test_main_editor_flag_dispatch(self):
+        """Verifica que main.py --editor invoque start_editor_debugger sin errores de importación."""
+        import sys
+        from unittest.mock import patch
+        import main
+
+        called = []
+        with patch.object(sys, "argv", ["main.py", "--editor"]):
+            with patch("editor_debugger.main.start_editor_debugger", lambda **kw: called.append(True)):
+                with self.assertRaises(SystemExit) as cm:
+                    main.main()
+                self.assertEqual(cm.exception.code, 0)
+        self.assertTrue(called, "start_editor_debugger debió ser invocado al pasar el flag --editor")
+
 
 if __name__ == "__main__":
     unittest.main()
+

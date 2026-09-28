@@ -6,15 +6,23 @@ Organizado en dos capas:
 """
 
 from domains.projections.game import (
-    ActionCommand,
     ActionCommandProjection,
     AvailableActionsProjection,
+    InventoryItemDTO,
+    InventoryProjection,
     LocationHierarchyProjection,
+    MapItemDTO,
+    MapLocationDTO,
+    MapNPCDTO,
+    MapPlaceDTO,
     MoveOptionProjection,
+    NotebookProjection,
     PlaceProjection,
+    TurnOutput,
     TurnResultProjection,
     UIStateProjection,
     WorldHierarchyProjection,
+    WorldMapProjection,
 )
 from domains.projections.debug import (
     ConnectionProjection,
@@ -31,16 +39,24 @@ from domains.projections.debug import (
 )
 
 __all__ = [
-    # Game UI Projections
-    "ActionCommand",
+    # Game UI Projections & DTOs
     "ActionCommandProjection",
-    "AvailableActionsProjection",
-    "LocationHierarchyProjection",
-    "MoveOptionProjection",
-    "PlaceProjection",
+    "TurnOutput",
+    "MapItemDTO",
+    "MapNPCDTO",
+    "MapPlaceDTO",
+    "MapLocationDTO",
+    "WorldMapProjection",
+    "InventoryItemDTO",
+    "InventoryProjection",
+    "NotebookProjection",
     "TurnResultProjection",
-    "UIStateProjection",
+    "PlaceProjection",
+    "LocationHierarchyProjection",
     "WorldHierarchyProjection",
+    "MoveOptionProjection",
+    "AvailableActionsProjection",
+    "UIStateProjection",
     # Debug Projections
     "ConnectionProjection",
     "GameSnapshotProjection",

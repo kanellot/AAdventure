@@ -4,7 +4,6 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 from domains.base import Entity
 from domains.conversation import ConversationRecord
-from domains.lore import LoreBlock
 
 
 class NPCMotivations(BaseModel):
@@ -19,9 +18,9 @@ class NPC(Entity):
 
     state: str = "none"
     occupation: Optional[str] = None
-    current_location: Optional[str] = None
-    initial_place: Optional[str] = None
+    initial_location: Optional[str] = None
     conversation: Optional[ConversationRecord] = None
     affinity: float = 0.5
     motivations: NPCMotivations = Field(default_factory=NPCMotivations)
-    dynamic_lore: List[LoreBlock] = Field(default_factory=list)
+
+

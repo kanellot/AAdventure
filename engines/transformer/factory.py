@@ -22,7 +22,12 @@ class LLMFactory:
         """Crea e inicializa una instancia del adaptador LLM configurado."""
         if isinstance(config_or_path, str):
             if not os.path.exists(config_or_path):
-                raise FileNotFoundError(f"No se encontró el archivo de configuración del LLM en '{config_or_path}'.")
+                project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+                candidate = os.path.join(project_root, config_or_path)
+                if os.path.exists(candidate):
+                    config_or_path = candidate
+                else:
+                    raise FileNotFoundError(f"No se encontró el archivo de configuración del LLM en '{config_or_path}'.")
             with open(config_or_path, "r", encoding="utf-8") as f:
                 config_data = json.load(f)
             config_path = config_or_path

@@ -65,15 +65,14 @@ class CLIFormatter:
     @staticmethod
     def print_turn_result(turn_result: TurnResultProjection) -> None:
         """Muestra el resultado narrativo del turno."""
-        if turn_result.author == "SYSTEM":
-            print(f"\n{Colors.FAIL}{Colors.BOLD}[SYSTEM] > {Colors.ENDC}{turn_result.msg}")
-        elif turn_result.author == "Dungeon Master":
-            print(f"\n{Colors.OKBLUE}{Colors.BOLD}[Dungeon Master] > {Colors.ENDC}{turn_result.msg}")
+        author = turn_result.output.author
+        msg = turn_result.output.msg
+        if author == "SYSTEM":
+            print(f"\n{Colors.FAIL}{Colors.BOLD}[SYSTEM] > {Colors.ENDC}{msg}")
+        elif author == "Dungeon Master":
+            print(f"\n{Colors.OKBLUE}{Colors.BOLD}[Dungeon Master] > {Colors.ENDC}{msg}")
         else:
-            print(f"\n{Colors.OKGREEN}{Colors.BOLD}[{turn_result.author}] > {Colors.ENDC}{turn_result.msg}")
-
-        if turn_result.info_msg:
-            print(f"{Colors.WARNING}{Colors.BOLD}[INFO] {turn_result.info_msg}{Colors.ENDC}")
+            print(f"\n{Colors.OKGREEN}{Colors.BOLD}[{author}] > {Colors.ENDC}{msg}")
 
     @staticmethod
     def print_verbose_debug(
@@ -86,13 +85,15 @@ class CLIFormatter:
         print(" [DEBUG MODE -v]: Inspeccion Detallada del Turno")
         print("-" * 70 + f"{Colors.ENDC}")
 
+        dbg = turn_result.debug
+
         # 1. Prompt enviado al LLM
-        if turn_result.debug_prompt:
+        if dbg and dbg.prompt:
             print(f"{Colors.OKCYAN}{Colors.BOLD}[PROMPT ENVIADO AL LLM]:{Colors.ENDC}")
-            print(f"{Colors.DIM}{turn_result.debug_prompt.strip()}{Colors.ENDC}\n")
+            print(f"{Colors.DIM}{dbg.prompt.strip()}{Colors.ENDC}\n")
 
         # 2. Evaluación RAG y Antenas
-        rag = turn_result.rag_evaluation
+        rag = dbg.rag_evaluation if dbg else None
         if rag:
             print(f"{Colors.OKCYAN}{Colors.BOLD}[EVALUACION SEMANTICA RAG]:{Colors.ENDC}")
             print(f"  * Input Evaluado   : \"{rag.player_input}\"")
@@ -125,9 +126,9 @@ class CLIFormatter:
             print()
 
         # 4. Respuesta Estructurada o Raw del LLM
-        if turn_result.debug_structured_response or turn_result.debug_raw_response:
+        if dbg and (dbg.structured_response or dbg.raw_response):
             print(f"{Colors.OKCYAN}{Colors.BOLD}[RESPUESTA DEL MODELO (LLM)]:{Colors.ENDC}")
-            resp_str = turn_result.debug_structured_response or turn_result.debug_raw_response or ""
+            resp_str = dbg.structured_response or dbg.raw_response or ""
             print(f"{Colors.DIM}{resp_str.strip()}{Colors.ENDC}\n")
 
         # 5. GameState

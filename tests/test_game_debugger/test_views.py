@@ -2,22 +2,27 @@
 
 import unittest
 from PySide6.QtWidgets import QApplication
-from domains import (
-    ActionCommand,
+from domains.projections import (
+    ActionCommandProjection,
     GameStateProjection,
+    InventoryProjection,
     LoreBlockDetailProjection,
     LoreGraphProjection,
+    NotebookProjection,
     PlayerSummaryProjection,
     RagAntennaScoreProjection,
     RagEvaluationProjection,
+    TurnDebugProjection,
+    TurnOutput,
     TurnResultProjection,
+    WorldMapProjection,
 )
-from game_debugger.views.chat_tab import ChatTab
-from game_debugger.views.entities_tab import EntitiesTreeWidget
-from game_debugger.views.inspector import GameStateInspector
-from game_debugger.views.lore_graph_tab import LoreGraphTab
-from game_debugger.views.rag_tab import RagTab
-from game_debugger.views.result_tab import ResultTab
+from editor_debugger.debugger.views.chat_tab import ChatTab
+from editor_debugger.debugger.views.entities_tab import EntitiesTreeWidget
+from editor_debugger.debugger.views.inspector import GameStateInspector
+from editor_debugger.debugger.views.lore_graph_tab import LoreGraphTab
+from editor_debugger.debugger.views.rag_tab import RagTab
+from editor_debugger.debugger.views.result_tab import ResultTab
 
 
 class TestDebuggerViews(unittest.TestCase):
@@ -57,7 +62,7 @@ class TestDebuggerViews(unittest.TestCase):
 
         self.assertEqual(len(emitted_actions), 1)
         cmd, player_inp = emitted_actions[0]
-        self.assertIsInstance(cmd, ActionCommand)
+        self.assertIsInstance(cmd, ActionCommandProjection)
         self.assertEqual(cmd.action, "MOVE")
         self.assertEqual(cmd.target, "Calle Pobre")
 
@@ -119,11 +124,107 @@ class TestDebuggerViews(unittest.TestCase):
         )
         inspector.update_state(dto)
 
+        self.assertEqual(inspector.columnCount(), 2)
         self.assertGreater(inspector.topLevelItemCount(), 0)
-        texts = [inspector.topLevelItem(i).text(0) for i in range(inspector.topLevelItemCount())]
-        self.assertTrue(any("player_state: EXPLORE" in t for t in texts))
-        self.assertTrue(any("current_place: Plaza Mayor" in t for t in texts))
-        self.assertTrue(any("Tiempo Transcurrido" in t for t in texts))
+
+        # Buscar propiedades en la jerarquía de 2 columnas
+        found_props = {}
+        for i in range(inspector.topLevelItemCount()):
+            top = inspector.topLevelItem(i)
+            for j in range(top.childCount()):
+                child = top.child(j)
+                found_props[child.text(0)] = child.text(1)
+
+        self.assertEqual(found_props.get("player_state"), "EXPLORE")
+        self.assertEqual(found_props.get("current_place"), "Plaza Mayor")
+        self.assertEqual(found_props.get("formatted_time"), "Día 1, 08:30")
+
+    def test_notebook_tree_widget(self):
+        from editor_debugger.debugger.views.inspector import NotebookTreeWidget
+        from domains.game_state import NotebookEntry
+        nb_tree = NotebookTreeWidget()
+        projection = NotebookProjection(
+            quests=[
+                NotebookEntry(id="q1", name="Misión Activa", description="Detalle activo", status="active"),
+                NotebookEntry(id="q2", name="Misión Completada", description="Detalle hecho", status="done"),
+            ]
+        )
+        nb_tree.update_notebook(projection)
+        self.assertEqual(nb_tree.topLevelItemCount(), 2)
+        self.assertIn("Activas (1)", nb_tree.topLevelItem(0).text(0))
+        self.assertIn("Completadas (1)", nb_tree.topLevelItem(1).text(0))
+
+    def test_map_tree_widget(self):
+        from editor_debugger.debugger.views.entities_tab import MapTreeWidget
+        from domains.projections import MapLocationDTO, MapPlaceDTO, MapNPCDTO
+        map_tree = MapTreeWidget()
+        world_map = WorldMapProjection(
+            locations=[
+                MapLocationDTO(
+                    id="loc_1",
+                    name="Valle",
+                    places=[
+                        MapPlaceDTO(
+                            id="p_1",
+                            name="Plaza Mayor",
+                            status="visited",
+                            entities=[MapNPCDTO(id="n_1", name="Tabernero")],
+                        ),
+                        MapPlaceDTO(
+                            id="p_2",
+                            name="Bosque",
+                            status="visible",
+                            entities=[],
+                        ),
+                        MapPlaceDTO(
+                            id="p_3",
+                            name="Cueva Oculta",
+                            status="hidden",
+                            entities=[],
+                        ),
+                    ],
+                ),
+                MapLocationDTO(
+                    id="loc_2",
+                    name="Reino Lejano",
+                    places=[
+                        MapPlaceDTO(
+                            id="p_4",
+                            name="Castillo Oculto",
+                            status="hidden",
+                            entities=[],
+                        ),
+                    ],
+                ),
+            ]
+        )
+        map_tree.update_map(world_map, current_place="Plaza Mayor")
+        # loc_2 solo tiene lugares ocultos, no debe incluirse
+        self.assertEqual(map_tree.topLevelItemCount(), 1)
+        loc_item = map_tree.topLevelItem(0)
+        # Solo p_1 (visitado/actual) y p_2 (visible) deben incluirse; p_3 (hidden) queda excluido
+        self.assertEqual(loc_item.childCount(), 2)
+
+        p1_item = loc_item.child(0)
+        self.assertIn("[Actual]", p1_item.text(0))
+        p2_item = loc_item.child(1)
+        self.assertIn("[Visible]", p2_item.text(0))
+        # Al estar visitado, muestra el NPC como hijo
+        self.assertEqual(p1_item.childCount(), 1)
+        self.assertIn("[NPC] Tabernero", p1_item.child(0).text(0))
+
+        # Doble clic en NPC emite TALK
+        emitted_actions = []
+        map_tree.action_requested.connect(lambda a, t: emitted_actions.append((a, t)))
+        map_tree._on_item_double_clicked(p1_item.child(0), 0)
+        self.assertEqual(emitted_actions, [("TALK", "Tabernero")])
+
+    def test_chat_tab_header_info(self):
+        chat = ChatTab()
+        chat.update_header_info("Día 2, 14:00", "TALK", "Taberna")
+        self.assertEqual(chat.header_time_lbl.text(), "[Tiempo: Día 2, 14:00]")
+        self.assertEqual(chat.header_state_lbl.text(), "[Estado: TALK]")
+        self.assertEqual(chat.header_loc_lbl.text(), "[Ubicación: Taberna]")
 
     def test_lore_graph_tab(self):
         lore_tab = LoreGraphTab()
@@ -177,10 +278,17 @@ class TestDebuggerViews(unittest.TestCase):
     def test_result_tab(self):
         result_tab = ResultTab()
         turn_res = TurnResultProjection(
-            author="Tabernero",
-            msg="¡Aquí tienes la jarra más fresca de la comarca!",
-            debug_prompt="Prompt enviado al modelo",
-            debug_raw_response='{"msg": "¡Aquí tienes..."}',
+            output=TurnOutput(
+                author="Tabernero",
+                msg="¡Aquí tienes la jarra más fresca de la comarca!",
+            ),
+            map=WorldMapProjection(),
+            inventory=InventoryProjection(),
+            notebook=NotebookProjection(),
+            debug=TurnDebugProjection(
+                prompt="Prompt enviado al modelo",
+                raw_response='{"msg": "¡Aquí tienes..."}',
+            ),
         )
         result_tab.update_result(turn_res)
 

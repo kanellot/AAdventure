@@ -1,6 +1,6 @@
 """Modelo de dominio para el jugador y su estado inicial."""
 
-from typing import List, Optional
+from typing import List, Optional, Any
 from pydantic import Field, model_validator
 from domains.base import Entity
 
@@ -11,10 +11,9 @@ class Player(Entity):
     gold: int = 10
     inventory: List[str] = Field(default_factory=list)
     active_block: Optional[str] = None
-    initial_place: str = ""
+    initial_location: str = ""
 
-    # Campos de soporte y compatibilidad
-    player_location: Optional[str] = None
+    # Campos de soporte y estado
     state: str = "EXPLORE"
     travel_speed: float = 4.5
     elapsed_time: int = 0
@@ -27,20 +26,18 @@ class Player(Entity):
 
     @model_validator(mode="before")
     @classmethod
-    def sync_locations(cls, values: dict):
+    def sync_active_block(cls, values: Any) -> Any:
         if isinstance(values, dict):
-            # Sincronizar initial_place y player_location
-            init_p = values.get("initial_place")
-            loc = values.get("player_location")
-            if not init_p and loc:
-                values["initial_place"] = loc
-            elif init_p and not loc:
-                values["player_location"] = init_p
-            # Sincronizar active_block y active_quest
-            ab = values.get("active_block")
-            aq = values.get("active_quest")
+            d = dict(values)
+            ab = d.get("active_block")
+            aq = d.get("active_quest")
             if not ab and aq:
-                values["active_block"] = aq
+                d["active_block"] = aq
             elif ab and not aq:
-                values["active_quest"] = ab
-        return values
+                d["active_quest"] = ab
+            return d
+
+# Re-exportación para compatibilidad de importación
+from domains.game_state import GameState
+
+__all__ = ["Player", "GameState"]

@@ -1,9 +1,9 @@
-"""Modelos de proyección (DTOs) exclusivos para la interfaz de usuario de juego (Game UI)."""
+"""Modelos de proyección (DTOs) para la interfaz de usuario de juego (Game UI)."""
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import List, Literal, Optional, Union
 from pydantic import BaseModel, Field
-
-from domains.projections.debug import RagEvaluationProjection, TurnDebugProjection
+from domains.game_state import NotebookEntry
+from domains.projections.debug import TurnDebugProjection
 
 
 class ActionCommandProjection(BaseModel):
@@ -13,12 +13,90 @@ class ActionCommandProjection(BaseModel):
     target: str
 
 
-# Alias para ergonomía y compatibilidad
-ActionCommand = ActionCommandProjection
+class TurnOutput(BaseModel):
+    """Mensaje y estado emitido en el turno actual."""
+
+    author: str
+    type: Literal["msg", "popup"] = "msg"
+    msg: str
+    player_state: str = "EXPLORE"
+    popup_title: Optional[str] = None
+    popup_message: Optional[str] = None
 
 
+class MapItemDTO(BaseModel):
+    """Ítem visible en un lugar del mapa."""
+
+    id: str
+    name: str
+    visible: bool = True
+
+
+class MapNPCDTO(BaseModel):
+    """NPC en un lugar del mapa con su estado de conocimiento."""
+
+    id: str
+    name: str
+    status: Literal["visible", "Known"] = "visible"
+
+
+class MapPlaceDTO(BaseModel):
+    """Lugar del mapa con su estado de niebla de guerra y entidades contenidas."""
+
+    id: str
+    name: str
+    status: Literal["visited", "visible", "hidden"] = "visible"
+    entities: List[Union[MapNPCDTO, MapItemDTO]] = Field(default_factory=list)
+
+
+class MapLocationDTO(BaseModel):
+    """Localización que agrupa lugares en el mapa."""
+
+    id: str
+    name: str
+    places: List[MapPlaceDTO] = Field(default_factory=list)
+
+
+class WorldMapProjection(BaseModel):
+    """Mapa consolidado del mundo descubierto según la niebla de guerra."""
+
+    locations: List[MapLocationDTO] = Field(default_factory=list)
+
+
+class InventoryItemDTO(BaseModel):
+    """Ítem en posesión del jugador."""
+
+    id: str
+    name: str
+    description: str = ""
+
+
+class InventoryProjection(BaseModel):
+    """Inventario consolidado con ítems y oro del jugador."""
+
+    items: List[InventoryItemDTO] = Field(default_factory=list)
+    gold: int = 0
+
+
+class NotebookProjection(BaseModel):
+    """Cuaderno de misiones activas y completadas."""
+
+    quests: List[NotebookEntry] = Field(default_factory=list)
+
+
+class TurnResultProjection(BaseModel):
+    """Resultado unificado de turno entregado a la UI en cada turno."""
+
+    output: TurnOutput
+    map: WorldMapProjection
+    inventory: InventoryProjection
+    notebook: NotebookProjection
+    debug: Optional[TurnDebugProjection] = None
+
+
+# DTOs complementarios para clientes UI
 class PlaceProjection(BaseModel):
-    """Proyección simplificada de un lugar para visualización en clientes de juego."""
+    """Proyección simplificada de un lugar."""
 
     id: str
     name: str
@@ -68,67 +146,3 @@ class UIStateProjection(BaseModel):
     active_npc_affinity: Optional[float] = None
     can_send_message: bool = False
     allowed_actions: List[str] = Field(default_factory=list)
-
-
-class TurnResultProjection(BaseModel):
-    """Resultado de turno de juego consumido por la interfaz de usuario.
-    
-    Para una UI de juego convencional, únicamente son relevantes `author`, `msg` e `info_msg`.
-    Los detalles técnicos y de diagnóstico de IA se encapsulan en el DTO opcional `debug`.
-    """
-
-    author: str
-    msg: str
-    info_msg: Optional[str] = None
-    popup_message: Optional[str] = None
-    popup_title: Optional[str] = None
-    debug: Optional[TurnDebugProjection] = None
-
-    def __init__(self, **data: Any):
-        # Compatibilidad transparente con constructores legacy que pasaban campos debug sueltos
-        if "debug" not in data or data["debug"] is None:
-            prompt = data.pop("debug_prompt", None)
-            raw = data.pop("debug_raw_response", None)
-            struct = data.pop("debug_structured_response", None)
-            res = data.pop("debug_engine_result", None)
-            rag = data.pop("rag_evaluation", None)
-            if any(x is not None for x in (prompt, raw, struct, res, rag)):
-                data["debug"] = TurnDebugProjection(
-                    prompt=prompt,
-                    raw_response=raw,
-                    structured_response=struct,
-                    engine_result=res,
-                    rag_evaluation=rag,
-                )
-        else:
-            data.pop("debug_prompt", None)
-            data.pop("debug_raw_response", None)
-            data.pop("debug_structured_response", None)
-            data.pop("debug_engine_result", None)
-            data.pop("rag_evaluation", None)
-
-        super().__init__(**data)
-
-    # =========================================================================
-    # Propiedades de compatibilidad para herramientas de depuración e inspección
-    # =========================================================================
-
-    @property
-    def debug_prompt(self) -> Optional[str]:
-        return self.debug.prompt if self.debug else None
-
-    @property
-    def debug_raw_response(self) -> Optional[str]:
-        return self.debug.raw_response if self.debug else None
-
-    @property
-    def debug_structured_response(self) -> Optional[str]:
-        return self.debug.structured_response if self.debug else None
-
-    @property
-    def debug_engine_result(self) -> Optional[str]:
-        return self.debug.engine_result if self.debug else None
-
-    @property
-    def rag_evaluation(self) -> Optional[RagEvaluationProjection]:
-        return self.debug.rag_evaluation if self.debug else None

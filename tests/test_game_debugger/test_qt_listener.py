@@ -3,9 +3,16 @@
 import unittest
 from PySide6.QtWidgets import QApplication
 
-from domains.projections import TurnResultProjection, UIStateProjection
+from domains.projections import (
+    InventoryProjection,
+    NotebookProjection,
+    TurnOutput,
+    TurnResultProjection,
+    UIStateProjection,
+    WorldMapProjection,
+)
 from engines.events import EngineEventListener, ThinkingEvent
-from game_debugger.qt_listener import QtEngineListener
+from editor_debugger.debugger.qt_listener import QtEngineListener
 
 
 class TestQtEngineListener(unittest.TestCase):
@@ -45,7 +52,12 @@ class TestQtEngineListener(unittest.TestCase):
             lambda t_id, j_str: emitted.append((t_id, j_str))
         )
 
-        result = TurnResultProjection(author="Dungeon Master", msg="Te mueves con sigilo.")
+        result = TurnResultProjection(
+            output=TurnOutput(author="Dungeon Master", msg="Te mueves con sigilo."),
+            map=WorldMapProjection(),
+            inventory=InventoryProjection(),
+            notebook=NotebookProjection(),
+        )
         self.listener.on_task_completed("t2", result.model_dump_json())
 
         self.assertEqual(len(emitted), 1)

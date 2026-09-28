@@ -2,7 +2,7 @@
 
 import unittest
 from PySide6.QtWidgets import QApplication
-from editor.views.story_config_form import StoryConfigForm
+from editor_debugger.editor.views.story_config_form import StoryConfigForm
 from domains.story_config import StoryConfig
 
 

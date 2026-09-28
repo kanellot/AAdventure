@@ -1,16 +1,23 @@
 """Pruebas unitarias para las Proyecciones y DTOs de Cliente (domains.projections)."""
 
 import unittest
+from domains.game_state import NotebookEntry
 from domains.projections.game import (
-    ActionCommand,
     ActionCommandProjection,
     AvailableActionsProjection,
-    LocationHierarchyProjection,
+    InventoryItemDTO,
+    InventoryProjection,
+    MapItemDTO,
+    MapLocationDTO,
+    MapNPCDTO,
+    MapPlaceDTO,
     MoveOptionProjection,
+    NotebookProjection,
     PlaceProjection,
+    TurnOutput,
     TurnResultProjection,
     UIStateProjection,
-    WorldHierarchyProjection,
+    WorldMapProjection,
 )
 from domains.projections.debug import (
     ConnectionProjection,
@@ -28,7 +35,7 @@ from domains.projections.debug import (
 
 
 class TestProjections(unittest.TestCase):
-    """Pruebas de modelos DTO y proyecciones de estado (Game UI vs Debug)."""
+    """Pruebas de modelos DTO y proyecciones de estado estándar."""
 
     def test_place_projection(self):
         proj = PlaceProjection(id="p_01", name="Plaza Mayor", status="visited")
@@ -41,34 +48,85 @@ class TestProjections(unittest.TestCase):
             direction="norte",
             target="Calle Pobre",
             distance=150,
-            terrain="village"
+            terrain="village",
         )
         self.assertEqual(move.direction, "norte")
         self.assertEqual(move.target, "Calle Pobre")
         self.assertEqual(move.distance, 150)
         self.assertEqual(move.terrain, "village")
 
-    def test_action_command_projection(self):
+    def test_action_command(self):
         cmd = ActionCommandProjection(action="MOVE", target="Calle Pobre")
         self.assertEqual(cmd.action, "MOVE")
         self.assertEqual(cmd.target, "Calle Pobre")
-        self.assertIs(ActionCommand, ActionCommandProjection)
 
-    def test_turn_result_projection_clean_game_ui(self):
-        """La UI de juego solo necesita consumir author, msg e info_msg."""
-        res = TurnResultProjection(
-            author="SYSTEM",
-            msg="Llegas a la Taberna del Jabalí.",
-            info_msg="Tiempo transcurrido: 2 min."
+    def test_turn_output_and_map_dtos(self):
+        output = TurnOutput(
+            author="Dungeon Master",
+            type="msg",
+            msg="Caminas hacia la plaza.",
+            player_state="EXPLORE",
         )
-        self.assertEqual(res.author, "SYSTEM")
-        self.assertEqual(res.msg, "Llegas a la Taberna del Jabalí.")
-        self.assertEqual(res.info_msg, "Tiempo transcurrido: 2 min.")
+        self.assertEqual(output.author, "Dungeon Master")
+        self.assertEqual(output.type, "msg")
+
+        item = MapItemDTO(id="item_sword", name="Espada", visible=True)
+        npc = MapNPCDTO(id="npc_guard", name="Guardia", status="visible")
+        place = MapPlaceDTO(
+            id="p_01",
+            name="Plaza",
+            status="visited",
+            entities=[item, npc],
+        )
+        location = MapLocationDTO(id="loc_01", name="Pueblo", places=[place])
+        world_map = WorldMapProjection(locations=[location])
+
+        self.assertEqual(len(world_map.locations), 1)
+        self.assertEqual(world_map.locations[0].places[0].status, "visited")
+        self.assertEqual(len(world_map.locations[0].places[0].entities), 2)
+
+    def test_inventory_and_notebook_dtos(self):
+        inv = InventoryProjection(
+            items=[InventoryItemDTO(id="it_1", name="Poción", description="Cura 10 HP")],
+            gold=75,
+        )
+        self.assertEqual(inv.gold, 75)
+        self.assertEqual(len(inv.items), 1)
+
+        notebook = NotebookProjection(
+            quests=[NotebookEntry(id="q_1", name="Salvar el pueblo", status="active")]
+        )
+        self.assertEqual(len(notebook.quests), 1)
+        self.assertEqual(notebook.quests[0].status, "active")
+
+    def test_turn_result_projection(self):
+        """Verifica la proyección consolidada completa entregada a la UI."""
+        res = TurnResultProjection(
+            output=TurnOutput(
+                author="SYSTEM",
+                type="msg",
+                msg="Llegas a la Taberna del Jabalí.",
+                player_state="EXPLORE",
+            ),
+            map=WorldMapProjection(
+                locations=[
+                    MapLocationDTO(
+                        id="loc_1",
+                        name="Valle",
+                        places=[MapPlaceDTO(id="p_1", name="Taberna", status="visited")],
+                    )
+                ]
+            ),
+            inventory=InventoryProjection(items=[], gold=20),
+            notebook=NotebookProjection(quests=[]),
+        )
+        self.assertEqual(res.output.author, "SYSTEM")
+        self.assertEqual(res.output.msg, "Llegas a la Taberna del Jabalí.")
+        self.assertEqual(res.inventory.gold, 20)
         self.assertIsNone(res.debug)
-        self.assertIsNone(res.debug_prompt)
 
     def test_turn_result_projection_with_debug_dto(self):
-        """Los depuradores consumen el DTO TurnDebugProjection."""
+        """Los depuradores consumen el DTO TurnDebugProjection opcional."""
         debug_dto = TurnDebugProjection(
             prompt="Prompt de prueba para LLM",
             raw_response='{"msg": "Hola viajero"}',
@@ -83,34 +141,23 @@ class TestProjections(unittest.TestCase):
                         lore_id="lb_01",
                         lore_title="Misión 1",
                         score=0.92,
-                        is_matched=True
+                        is_matched=True,
                     )
-                ]
-            )
+                ],
+            ),
         )
         res = TurnResultProjection(
-            author="Tabernero",
-            msg="Bienvenido a mi taberna.",
-            debug=debug_dto
+            output=TurnOutput(author="Tabernero", type="msg", msg="Bienvenido.", player_state="TALK"),
+            map=WorldMapProjection(),
+            inventory=InventoryProjection(),
+            notebook=NotebookProjection(),
+            debug=debug_dto,
         )
         self.assertIsNotNone(res.debug)
         self.assertEqual(res.debug.prompt, "Prompt de prueba para LLM")
-        # Verificar propiedades de conveniencia
-        self.assertEqual(res.debug_prompt, "Prompt de prueba para LLM")
-        self.assertEqual(res.debug_raw_response, '{"msg": "Hola viajero"}')
-        self.assertIsNotNone(res.rag_evaluation)
-        self.assertEqual(len(res.rag_evaluation.antennas), 1)
-
-    def test_turn_result_projection_legacy_kwargs_compatibility(self):
-        """Comprueba que pasar kwargs de debug legacy sigue funcionando transparentemente."""
-        res = TurnResultProjection(
-            author="SYSTEM",
-            msg="Mensaje",
-            debug_prompt="Prompt heredado"
-        )
-        self.assertIsNotNone(res.debug)
-        self.assertEqual(res.debug.prompt, "Prompt heredado")
-        self.assertEqual(res.debug_prompt, "Prompt heredado")
+        self.assertEqual(res.debug.raw_response, '{"msg": "Hola viajero"}')
+        self.assertIsNotNone(res.debug.rag_evaluation)
+        self.assertEqual(len(res.debug.rag_evaluation.antennas), 1)
 
     def test_ui_state_projection(self):
         ui = UIStateProjection(
@@ -119,52 +166,27 @@ class TestProjections(unittest.TestCase):
             current_location="Plaza",
             formatted_time="Día 1, 10:00",
             game_state="EXPLORE",
-            can_send_message=False,
-            allowed_actions=["MOVE", "LOOK", "TALK"],
         )
         self.assertEqual(ui.player_name, "Héroe")
         self.assertEqual(ui.gold, 100)
-        self.assertFalse(ui.can_send_message)
-        self.assertEqual(ui.allowed_actions, ["MOVE", "LOOK", "TALK"])
 
-    def test_lore_block_detail_projection(self):
-        cond_detail = LoreConditionDetailProjection(
-            entity_type="npc",
-            entity_id="npc_tabernero",
-            sub_condition="affinity",
-            value=0.5,
-            is_met=True
-        )
-        block_proj = LoreBlockDetailProjection(
-            id="lb_01",
-            name="Misión 1",
-            title="Buscar la llave",
-            state="active",
-            conditions=[cond_detail]
-        )
-        self.assertEqual(block_proj.id, "lb_01")
-        self.assertEqual(block_proj.state, "active")
-        self.assertEqual(len(block_proj.conditions), 1)
-        self.assertTrue(block_proj.conditions[0].is_met)
-
-    def test_game_state_projection(self):
+    def test_debug_projections(self):
         player_summary = PlayerSummaryProjection(id="p_01", name="Jugador", gold=50)
-        place_detail = PlaceDetailProjection(
-            id="plaza",
-            name="Plaza Mayor",
-            connections=[ConnectionProjection(direction="norte", target="calle", distance=100)]
-        )
-        gs = GameStateProjection(
+        self.assertEqual(player_summary.name, "Jugador")
+        self.assertEqual(player_summary.gold, 50)
+
+        conn = ConnectionProjection(target="B", direction="norte", distance=10, terrain_type="road")
+        self.assertEqual(conn.distance, 10)
+
+        place_detail = PlaceDetailProjection(id="A", name="Lugar A", connections=[conn])
+        self.assertEqual(len(place_detail.connections), 1)
+
+        snap = GameSnapshotProjection(
             player=player_summary,
-            current_place="plaza",
-            current_place_detail=place_detail,
-            discovered_places=["plaza", "calle"],
-            active_lore_blocks=["lb_01"],
-            done_lore_blocks=[]
+            current_place="A",
         )
-        self.assertEqual(gs.player.name, "Jugador")
-        self.assertEqual(gs.current_place_detail.connections[0].direction, "norte")
-        self.assertEqual(gs.active_lore_blocks, ["lb_01"])
+        self.assertEqual(snap.player.name, "Jugador")
+        self.assertEqual(snap.current_place, "A")
 
 
 if __name__ == "__main__":

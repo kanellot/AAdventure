@@ -1,7 +1,9 @@
-"""Pruebas unitarias para la fachada pública AdventureSession y caja cerrada de engines."""
+"""Pruebas unitarias para la fachada pública AdventureSession."""
 
+import json
 import os
 import unittest
+
 from domains import (
     AvailableActionsProjection,
     GameStateProjection,
@@ -11,12 +13,11 @@ from domains import (
     WorldHierarchyProjection,
 )
 from engines import AdventureSession
-from engines.embedding.mock_backend import MockEmbeddingBackend
-from engines.transformer.mock_adapter import MockLLMAdapter
+from engines.listeners import SyncCollectingEventListener
 
 
 class TestAdventureSession(unittest.TestCase):
-    """Verifica el contrato público, comportamiento defensivo y transiciones de AdventureSession."""
+    """Verifica el contrato público reactivo, interfaz única post_action y acceso al motor."""
 
     @classmethod
     def setUpClass(cls):
@@ -25,129 +26,228 @@ class TestAdventureSession(unittest.TestCase):
             raise unittest.SkipTest("Adventure.aad no existe en Resources/adventure_data")
 
     def setUp(self):
-        self.mock_llm = MockLLMAdapter({"msg": "Respuesta narrativa de prueba."})
-        self.mock_emb = MockEmbeddingBackend()
-        self.session = AdventureSession.start_for_testing(
-            self.aad_path,
-            llm_adapter=self.mock_llm,
-            embedding_backend=self.mock_emb,
-        )
+        self.session = AdventureSession.create(self.aad_path)
+        self.listener = SyncCollectingEventListener()
+        self.session.add_listener(self.listener)
 
     def tearDown(self):
         self.session.close()
 
-    def test_session_initialization_and_metadata(self):
-        self.assertFalse(self.session.is_closed)
-        self.assertEqual(self.session.get_player_name(), "Aventurero")
-        self.assertEqual(self.session.get_world_name(), "Shire")
-        targets = self.session.get_all_target_names()
+    def _get_latest_ui_state(self) -> UIStateProjection:
+        self.assertGreater(len(self.listener.state_updates), 0, "No se registraron actualizaciones de estado.")
+        return UIStateProjection.model_validate_json(self.listener.state_updates[-1])
+
+    def _get_latest_turn_result(self) -> TurnResultProjection:
+        self.assertGreater(len(self.listener.completed_tasks), 0, "No se completó ninguna tarea.")
+        return TurnResultProjection.model_validate_json(self.listener.completed_tasks[-1][1])
+
+    def test_single_entry_interface(self):
+        """Verifica que AdventureSession expone únicamente post_action como método de entrada de datos."""
+        # 1. Métodos y atributos públicos permitidos en AdventureSession
+        self.assertTrue(hasattr(AdventureSession, "create"))
+        self.assertTrue(hasattr(self.session, "start"))
+        self.assertTrue(hasattr(self.session, "save"))
+        self.assertTrue(hasattr(self.session, "close"))
+        self.assertTrue(hasattr(self.session, "add_listener"))
+        self.assertTrue(hasattr(self.session, "remove_listener"))
+        self.assertTrue(hasattr(self.session, "post_action"))
+        self.assertTrue(hasattr(self.session, "wait_idle"))
+        self.assertTrue(hasattr(self.session, "is_closed"))
+        self.assertTrue(hasattr(self.session, "aad_path"))
+
+        # 2. Propiedades y métodos prohibidos en AdventureSession (Cero fugas de debug o motor interno)
+        forbidden_members = [
+            "engine",
+            "_listeners",
+            "post_message",
+            "send_message",
+            "execute_action",
+            "start_for_testing",
+            "get_ui_state",
+            "get_game_state",
+            "get_navigation_tree",
+            "get_entities_tree",
+            "get_lore_graph",
+            "get_available_actions",
+            "get_all_target_names",
+            "get_player_name",
+            "get_world_name",
+        ]
+        for member_name in forbidden_members:
+            self.assertFalse(
+                hasattr(self.session, member_name),
+                f"AdventureSession NO debe exponer '{member_name}'.",
+            )
+
+        # 3. Comprobar que DebugAdventureSession no existe en engines
+        import engines
+        self.assertFalse(
+            hasattr(engines, "DebugAdventureSession"),
+            "DebugAdventureSession debe estar completamente eliminado.",
+        )
+
+    def test_engine_introspection_direct_access(self):
+        """Verifica que GameEngine provee todas las proyecciones para herramientas de diagnóstico."""
+        from engines.game.engine import GameEngine
+        engine = GameEngine(aad_path=self.aad_path)
+        self.assertIsNotNone(engine)
+
+        self.assertEqual(engine.get_player_name(), "Aventurero")
+        self.assertEqual(engine.get_world_name(), "Shire")
+
+        targets = engine.get_all_target_names()
         self.assertGreater(len(targets), 0)
         self.assertIn("Plaza Mayor", targets)
 
-    def test_projections(self):
-        ui = self.session.get_ui_state()
+        ui = engine.get_ui_state_projection()
         self.assertIsInstance(ui, UIStateProjection)
         self.assertEqual(ui.game_state, "EXPLORE")
         self.assertFalse(ui.can_send_message)
         self.assertIn("MOVE", ui.allowed_actions)
-        self.assertIn("TALK", ui.allowed_actions)
-        self.assertIn("LOOK", ui.allowed_actions)
 
-        actions = self.session.get_available_actions()
+        actions = engine.get_available_actions_projection()
         self.assertIsInstance(actions, AvailableActionsProjection)
         self.assertGreater(len(actions.moves), 0)
 
-        gs = self.session.get_game_state()
+        gs = engine.get_game_state_projection()
         self.assertIsInstance(gs, GameStateProjection)
         self.assertEqual(gs.player_state, "EXPLORE")
 
-        nav = self.session.get_navigation_tree()
+        nav = engine.get_navigation_hierarchy()
         self.assertIsInstance(nav, WorldHierarchyProjection)
 
-        entities = self.session.get_entities_tree()
+        entities = engine.get_entities_hierarchy()
         self.assertIsInstance(entities, WorldHierarchyProjection)
 
-        lg = self.session.get_lore_graph()
+        lg = engine.get_lore_graph_projection()
         self.assertIsInstance(lg, LoreGraphProjection)
 
-    def test_execute_action_move_success(self):
-        res = self.session.execute_action("MOVE", "Calle Pobre")
-        self.assertIsInstance(res, TurnResultProjection)
-        self.assertEqual(res.author, "Dungeon Master")
-        ui = self.session.get_ui_state()
+    def test_state_on_connect(self):
+        """Verifica que add_listener emite inmediatamente on_state_updated con JSON válido (State-on-Connect)."""
+        new_listener = SyncCollectingEventListener()
+        self.assertEqual(len(new_listener.state_updates), 0)
+
+        self.session.add_listener(new_listener)
+
+        self.assertEqual(len(new_listener.state_updates), 1)
+        state_json = new_listener.state_updates[0]
+        self.assertIsInstance(state_json, str)
+
+        parsed = json.loads(state_json)
+        self.assertIn("player_name", parsed)
+        self.assertIn("current_location", parsed)
+
+        state_dto = UIStateProjection.model_validate_json(state_json)
+        self.assertEqual(state_dto.player_name, "Aventurero")
+        self.assertEqual(state_dto.game_state, "EXPLORE")
+
+        self.session.remove_listener(new_listener)
+
+    def test_post_action_move_success(self):
+        task_id = self.session.post_action("MOVE", "Calle Pobre")
+        self.session.wait_idle()
+
+        res = self._get_latest_turn_result()
+        self.assertEqual(res.output.author, "Dungeon Master")
+
+        ui = self._get_latest_ui_state()
         self.assertEqual(ui.current_location, "Calle Pobre")
         self.assertEqual(ui.game_state, "EXPLORE")
 
-    def test_execute_action_defensive_invalid_command(self):
+    def test_post_action_defensive_invalid_command(self):
         # Acción desconocida
-        res = self.session.execute_action("DANCE", "Plaza Mayor")
-        self.assertIsInstance(res, TurnResultProjection)
-        self.assertEqual(res.author, "SYSTEM")
-        self.assertIn("no reconocida", res.msg)
+        self.session.post_action("DANCE", "Plaza Mayor")
+        self.session.wait_idle()
+        res = self._get_latest_turn_result()
+        self.assertEqual(res.output.author, "SYSTEM")
+        self.assertIn("no reconocida", res.output.msg)
 
-        # Target vacío
-        res2 = self.session.execute_action("MOVE", "")
-        self.assertIsInstance(res2, TurnResultProjection)
-        self.assertEqual(res2.author, "SYSTEM")
-        self.assertIn("especificar un objetivo", res2.msg)
+        # Target vacío en MOVE
+        self.session.post_action("MOVE", "")
+        self.session.wait_idle()
+        res2 = self._get_latest_turn_result()
+        self.assertEqual(res2.output.author, "SYSTEM")
+        self.assertIn("indicar un destino", res2.output.msg)
 
-    def test_send_message_in_explore_returns_discrepancy(self):
-        # En modo EXPLORE, send_message no debe lanzar excepción sino informar de la discrepancia
-        res = self.session.send_message("Hola, ¿hay alguien aquí?")
-        self.assertIsInstance(res, TurnResultProjection)
-        self.assertEqual(res.author, "SYSTEM")
-        self.assertIn("EXPLORE", res.msg)
-        self.assertIn("Discrepancia de estado", res.info_msg)
+    def test_post_action_message_in_explore_returns_discrepancy(self):
+        # En modo EXPLORE, texto libre vía post_action informa de la discrepancia
+        self.session.post_action(action="", target="", player_input="Hola, ¿hay alguien aquí?")
+        self.session.wait_idle()
+        res = self._get_latest_turn_result()
+        self.assertEqual(res.output.author, "SYSTEM")
+        self.assertIn("Debes seleccionar una acción", res.output.msg)
 
-    def test_send_message_in_talk_mode(self):
-        # Iniciar diálogo con un NPC visible o del mundo
-        npc_targets = self.session.get_available_actions().npcs
-        target_npc = npc_targets[0] if npc_targets else "npc_tabernero"
+    def test_post_action_message_in_talk_mode(self):
+        # Mover a Calle Pobre donde se encuentra el mendigo
+        self.session.post_action("MOVE", "Calle Pobre")
+        self.session.wait_idle()
 
-        res_talk = self.session.execute_action("TALK", target_npc)
-        self.assertIsInstance(res_talk, TurnResultProjection)
+        self.session.post_action("TALK", "npc_mendigo")
+        self.session.wait_idle()
 
-        ui = self.session.get_ui_state()
+        ui = self._get_latest_ui_state()
         self.assertEqual(ui.game_state, "TALK")
         self.assertTrue(ui.can_send_message)
 
-        # Ahora send_message debe ejecutarse normalmente
-        res_msg = self.session.send_message("¿Qué novedades hay en el pueblo?")
-        self.assertIsInstance(res_msg, TurnResultProjection)
-        self.assertNotEqual(res_msg.author, "SYSTEM")
+        # Ahora el diálogo se envía con post_action
+        self.session.post_action(action="", target="", player_input="¿Qué novedades hay en el pueblo?")
+        self.session.wait_idle()
+        res_msg = self._get_latest_turn_result()
+        self.assertNotEqual(res_msg.output.author, "SYSTEM")
 
     def test_abrupt_move_from_talk_state(self):
-        # 1. Poner al jugador en estado TALK
-        npc_targets = self.session.get_available_actions().npcs
-        target_npc = npc_targets[0] if npc_targets else "npc_tabernero"
-        self.session.execute_action("TALK", target_npc)
+        # 1. Mover a Calle Pobre y poner al jugador en estado TALK con el mendigo
+        self.session.post_action("MOVE", "Calle Pobre")
+        self.session.wait_idle()
+        self.session.post_action("TALK", "npc_mendigo")
+        self.session.wait_idle()
 
-        ui_before = self.session.get_ui_state()
+        ui_before = self._get_latest_ui_state()
         self.assertEqual(ui_before.game_state, "TALK")
 
-        # 2. El usuario ejecuta MOVE mientras conversa -> interrupción abrupta
-        res_move = self.session.execute_action("MOVE", "Calle Pobre")
-        self.assertIsInstance(res_move, TurnResultProjection)
-        self.assertEqual(res_move.author, "Dungeon Master")
-        self.assertIn("Has interrumpido la conversación abruptamente", res_move.info_msg or "")
+        # 2. El usuario ejecuta MOVE mientras conversa -> desenganche universal
+        self.session.post_action("MOVE", "Plaza Mayor")
+        self.session.wait_idle()
+        res_move = self._get_latest_turn_result()
+        self.assertEqual(res_move.output.author, "Dungeon Master")
 
-        # 3. Verificar que el estado volvió a EXPLORE y la conversación se limpió
-        ui_after = self.session.get_ui_state()
+        # 3. Verificar que el estado volvió a EXPLORE y la conversación se desenganchó
+        ui_after = self._get_latest_ui_state()
         self.assertEqual(ui_after.game_state, "EXPLORE")
         self.assertIsNone(ui_after.player_target)
         self.assertIsNone(ui_after.active_npc_affinity)
-        self.assertEqual(ui_after.current_location, "Calle Pobre")
+        self.assertEqual(ui_after.current_location, "Plaza Mayor")
 
     def test_context_manager_and_closed_session(self):
-        with AdventureSession.start_for_testing(self.aad_path) as s:
+        with AdventureSession.create(self.aad_path) as s:
             self.assertFalse(s.is_closed)
-            ui = s.get_ui_state()
-            self.assertEqual(ui.player_name, "Aventurero")
+            self.assertEqual(s.aad_path, self.aad_path)
 
         self.assertTrue(s.is_closed)
-        res = s.execute_action("MOVE", "Plaza Mayor")
-        self.assertEqual(res.author, "SYSTEM")
-        self.assertIn("cerrada", res.msg)
+
+        closed_listener = SyncCollectingEventListener()
+        s.add_listener(closed_listener)
+        s.post_action("MOVE", "Plaza Mayor")
+        s.wait_idle()
+
+        self.assertGreater(len(closed_listener.completed_tasks), 0)
+        res = TurnResultProjection.model_validate_json(closed_listener.completed_tasks[-1][1])
+        self.assertEqual(res.output.author, "SYSTEM")
+        self.assertIn("cerrada", res.output.msg)
+
+    def test_session_start_executes_turn_0(self):
+        """Verifica que session.start() encola y ejecuta el Turno 0 con texto inicial y popups."""
+        task_id = self.session.start()
+        self.assertTrue(task_id.startswith("task_"))
+        self.session.wait_idle()
+
+        res = self._get_latest_turn_result()
+        self.assertEqual(res.output.author, "Dungeon Master")
+        self.assertEqual(res.output.type, "msg")
+        self.assertIn("Villa Roca", res.output.msg)
+        self.assertIn("Tu gran aventura", res.output.msg)
+        self.assertEqual(res.output.popup_title, "Llegada a Villa Roca")
+        self.assertIn("Villa Roca", res.output.popup_message)
 
 
 if __name__ == "__main__":

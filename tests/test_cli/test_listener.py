@@ -5,7 +5,14 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from cli.listener import CLIEventListener
-from domains.projections import TurnResultProjection, UIStateProjection
+from domains.projections import (
+    InventoryProjection,
+    NotebookProjection,
+    TurnOutput,
+    TurnResultProjection,
+    UIStateProjection,
+    WorldMapProjection,
+)
 from engines.events import ThinkingEvent
 
 
@@ -25,17 +32,19 @@ class TestCLIEventListener(unittest.TestCase):
 
     def test_on_task_completed_normal_and_popup(self):
         res = TurnResultProjection(
-            author="Dungeon Master",
-            msg="El camino está despejado.",
-            popup_message="¡Has encontrado un cofre secreto!",
-            popup_title="Cofre Abierto",
+            output=TurnOutput(
+                author="Dungeon Master",
+                type="popup",
+                msg="¡Has encontrado un cofre secreto!",
+            ),
+            map=WorldMapProjection(),
+            inventory=InventoryProjection(),
+            notebook=NotebookProjection(),
         )
         captured = io.StringIO()
         with patch("sys.stdout", captured):
             self.listener.on_task_completed("t1", res.model_dump_json())
         output = captured.getvalue()
-        self.assertIn("El camino está despejado.", output)
-        self.assertIn("COFRE ABIERTO", output)
         self.assertIn("¡Has encontrado un cofre secreto!", output)
         self.assertEqual(self.listener.latest_turn_result, res)
 

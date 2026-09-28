@@ -41,51 +41,14 @@ class RuntimeState(BaseModel):
     active_npc_affinity: Optional[float] = None
 
 
-class GameState(BaseModel):
-    """Estado activo simplificado del jugador y de la partida."""
-
-    # Recursos e inventario
-    gold: int = 0
-    inventory: List[str] = Field(default_factory=list)
-
-    # Percepción y lugares
-    current_location: str = ""
-    visited_places: List[str] = Field(default_factory=list)
-    known_places: List[str] = Field(default_factory=list)
-
-    # Entidades conocidas (nombradas o descubiertas)
-    known_npcs: List[str] = Field(default_factory=list)
-    known_objs: List[str] = Field(default_factory=list)
-
-    # Entidades en el lugar actual (en tiempo real)
-    visible_npcs: List[str] = Field(default_factory=list)
-    visible_objs: List[str] = Field(default_factory=list)
-
-    # Máquina de estados jerárquica de Lore (HSM)
-    active_lore_blocks: List[str] = Field(default_factory=list)
-    done_lore_blocks: List[str] = Field(default_factory=list)
-
-    # Runtime de interacción y simulación
-    player_state: str = "EXPLORE"
-    player_target: str = ""
-    active_npc_affinity: Optional[float] = None
-    elapsed_time: int = 0
-    travel_speed: float = 4.5
-    current_place: Optional[PlaceProjection] = None
-    prev_place: Optional[PlaceProjection] = None
-
-    @property
-    def state(self) -> "GameState":
-        return self
-
-    @property
-    def data(self) -> "GameState":
-        return self
-
-
-from domains.projections.game import ActionCommandProjection
-
-ActionCommand = ActionCommandProjection
+from domains.game_state import (
+    GameState,
+    EntityMapItem,
+    EntityMapNPC,
+    EntityMapPlace,
+    LoreBlockHierarchy,
+    NotebookEntry,
+)
 
 
 class MoveNarratorCtx(ContextType):

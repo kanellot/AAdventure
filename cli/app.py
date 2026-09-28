@@ -1,5 +1,6 @@
 """Aplicación principal de consola interactiva (CLI) para AAdventure."""
 
+import os
 from typing import Optional, Tuple
 from domains.projections import TurnResultProjection
 from engines import AdventureSession
@@ -65,7 +66,8 @@ class CLIApp:
             return None
 
         if cmd_type == "STATUS":
-            CLIFormatter.print_status(self.session.get_ui_state())
+            if self.listener.latest_ui_state:
+                CLIFormatter.print_status(self.listener.latest_ui_state)
             return None
 
         if cmd_type == "ACTIONS":
@@ -80,12 +82,12 @@ class CLIApp:
             if not arg:
                 print(f"{Colors.FAIL}[SYSTEM] > Debes especificar un objetivo para /{cmd_type}. Ejemplo: /{cmd_type} <destino_o_personaje>{Colors.ENDC}")
                 return None
-            task_id = self.session.post_action(cmd_type, arg)
+            task_id = self.session.post_action(action=cmd_type, target=arg)
             self.session.wait_idle()
             return task_id
 
         if cmd_type == "MESSAGE":
-            task_id = self.session.post_message(arg)
+            task_id = self.session.post_action(action="", target="", player_input=arg)
             self.session.wait_idle()
             return task_id
 
@@ -93,38 +95,67 @@ class CLIApp:
 
     def _print_available_actions(self) -> None:
         """Muestra los movimientos y objetivos accesibles en el turno actual."""
-        actions = self.session.get_available_actions()
-        print(f"\n{Colors.OKCYAN}{Colors.BOLD}--- OPCIONES DISPONIBLES EN ESTE TURNO ---{Colors.ENDC}")
-        if actions.moves:
-            print(f"  {Colors.BOLD}Desplazamientos disponibles (/MOVE <destino>):{Colors.ENDC}")
-            for m in actions.moves:
-                print(f"    • {m.direction.capitalize()}: {m.target} ({m.distance}m, terreno: {m.terrain})")
+        res = self.listener.latest_turn_result
+        curr_loc = self.listener.latest_ui_state.current_location if self.listener.latest_ui_state else None
+        curr_place = None
+        if res and res.map and curr_loc:
+            for loc in res.map.locations:
+                for p in loc.places:
+                    if p.name == curr_loc or p.id == curr_loc:
+                        curr_place = p
+                        break
+
+        if curr_place:
+            print(f"\n{Colors.OKCYAN}{Colors.BOLD}--- OPCIONES DISPONIBLES EN ESTE TURNO ---{Colors.ENDC}")
+            if curr_place.connections:
+                print(f"  {Colors.BOLD}Desplazamientos disponibles (/MOVE <destino>):{Colors.ENDC}")
+                for d, c in curr_place.connections.items():
+                    print(f"    • {d.capitalize()}: {c.target} ({c.distance}m, terreno: {c.terrain_type})")
+            else:
+                print(f"  {Colors.DIM}No hay salidas visibles inmediatas.{Colors.ENDC}")
+
+            if curr_place.npcs:
+                print(f"  {Colors.BOLD}Personajes presentes (/TALK <npc>):{Colors.ENDC}")
+                for npc in curr_place.npcs:
+                    print(f"    • {npc.name}")
+
+            if curr_place.items:
+                print(f"  {Colors.BOLD}Inspeccionar (/LOOK <objetivo>):{Colors.ENDC}")
+                for it in curr_place.items:
+                    if it.visible:
+                        print(f"    • {it.name}")
+            print(f"{Colors.OKCYAN}------------------------------------------{Colors.ENDC}\n")
+            return
+
+        ui_state = self.listener.latest_ui_state
+        if ui_state and ui_state.allowed_actions:
+            print(f"\n{Colors.OKCYAN}Acciones disponibles: {', '.join(ui_state.allowed_actions)}{Colors.ENDC}\n")
         else:
-            print(f"  {Colors.DIM}No hay salidas visibles inmediatas.{Colors.ENDC}")
-
-        if actions.npcs:
-            print(f"  {Colors.BOLD}Personajes presentes (/TALK <npc>):{Colors.ENDC}")
-            for npc in actions.npcs:
-                print(f"    • {npc}")
-
-        if actions.look_targets:
-            print(f"  {Colors.BOLD}Inspeccionar (/LOOK <objetivo>):{Colors.ENDC}")
-            for tgt in actions.look_targets:
-                print(f"    • {tgt}")
-        print(f"{Colors.OKCYAN}------------------------------------------{Colors.ENDC}\n")
+            print(f"\n{Colors.OKCYAN}Escribe /MOVE <destino>, /LOOK <objetivo> o /TALK <npc>{Colors.ENDC}\n")
 
     def run(self) -> None:
         """Ejecuta el bucle de juego interactivo en consola."""
-        world_name = self.session.get_world_name()
-        CLIFormatter.print_banner(world_name=world_name, aad_file=self.session.aad_path or "")
-        CLIFormatter.print_status(self.session.get_ui_state())
+        aad_file = self.session.aad_path or ""
+        world_name = os.path.splitext(os.path.basename(aad_file))[0] if aad_file else "Aventura"
+        CLIFormatter.print_banner(world_name=world_name, aad_file=aad_file)
+        if self.listener.latest_ui_state:
+            CLIFormatter.print_status(self.listener.latest_ui_state)
+
+        # Iniciar formalmente la partida (Turno 0)
+        self.session.start()
+        self.session.wait_idle()
+
         print(f"{Colors.DIM}Escribe /HELP para ver la lista de comandos o /EXIT para salir.{Colors.ENDC}")
 
         while self.is_running:
             try:
-                ui_state = self.listener.latest_ui_state or self.session.get_ui_state()
-                time_str = ui_state.formatted_time
-                player_name = self.session.get_player_name()
+                ui_state = self.listener.latest_ui_state
+                if ui_state:
+                    time_str = ui_state.formatted_time
+                    player_name = ui_state.player_name
+                else:
+                    time_str = "00:00"
+                    player_name = "Aventurero"
 
                 prompt_str = f"\n{Colors.BOLD}[{time_str}] [{player_name}] > {Colors.ENDC}"
                 raw_input = input(prompt_str).strip()

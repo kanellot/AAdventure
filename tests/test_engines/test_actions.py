@@ -1,81 +1,146 @@
-"""Pruebas unitarias para las acciones del motor: MoveAction, LookAction y DialogueAction."""
+"""Pruebas unitarias para las acciones narrativas: MoveAction, LookAction y DialogueAction."""
 
-import unittest
 import os
-from domains import ExplainLookResponse, MoveNarratorResponse
-from engines.game.engine import GameEngine
-from engines.game.actions import MoveAction, LookAction, DialogueAction
-from engines.game.actions.dialogue_action import DialogueNarratorResponse
+import shutil
+import tempfile
+import unittest
+from domains.game_state import LoreBlockHierarchy
+from domains.items import Item
+from domains.npcs import NPC, NPCMotivations
+from domains.player import Player
+from domains.world import Connection, Location, Place, World
+from engines.game.actions import DialogueAction, LookAction, MoveAction
+from engines.game.state_controller import GameStateController
+from engines.transformer.base_adapter import BaseLLMAdapter
+from engines.transformer.engine import TransformerEngine
 
 
-class TestActions(unittest.TestCase):
-    """Verifica la ejecución determinista y mutación de estado de las acciones."""
+class MockLLMAdapter(BaseLLMAdapter):
+    """Adaptador mock para simular respuestas JSON estructuradas del LLM."""
 
-    @classmethod
-    def setUpClass(cls):
-        cls.aad_path = os.path.join("Resources", "adventure_data", "Adventure.aad")
-        if not os.path.exists(cls.aad_path):
-            raise unittest.SkipTest("Adventure.aad no existe en Resources/adventure_data")
+    def __init__(self, canned_response: dict):
+        self.canned_response = canned_response
+        self.last_prompt = None
+
+    def generate(self, prompt: str, profile_name: str = "narrator", response_schema=None, schema_name=None):
+        self.last_prompt = prompt
+        return self.canned_response
+
+
+class TestNarrativeActions(unittest.TestCase):
+    """Verifica la generación de contextos y narrativa de las acciones del juego."""
 
     def setUp(self):
-        self.engine = GameEngine(world_json_path=self.aad_path)
-        self.ctrl = self.engine.game_state_controller
+        self.temp_dir = tempfile.mkdtemp()
+
+        self.p1 = Place(
+            id="p1",
+            name="Plaza Mayor",
+            description="La plaza central del pueblo.",
+            connections={"p2": Connection(target="p2", distance=100, terrain_type="village")},
+        )
+        self.p2 = Place(
+            id="p2",
+            name="Taberna",
+            description="Una taberna acogedora.",
+            connections={"p1": Connection(target="p1", distance=100, terrain_type="village")},
+        )
+
+        self.loc = Location(id="loc1", name="Aldea", description="Una aldea", places=[self.p1, self.p2])
+        self.world = World(id="w1", name="Mundo", description="Un mundo", locations=[self.loc])
+
+        self.player = Player(
+            id="player1",
+            name="Héroe",
+            description="El protagonista",
+            gold=10,
+            inventory=["item_key"],
+            initial_location="p1",
+        )
+
+        self.npc = NPC(
+            id="npc_tabernero",
+            name="Tabernero",
+            description="El dueño de la taberna.",
+            initial_location="p1",
+            motivations=NPCMotivations(likes=["cerveza"], dislikes=["alborotadores"]),
+        )
+        self.item = Item(id="item_key", name="Llave Antigua", description="Una llave oxidada.", initial_location="p1")
+
+        self.hierarchy = LoreBlockHierarchy(active=[], done=[], unknown=[])
+
+        self.ctrl = GameStateController.create_initial(
+            world=self.world,
+            player=self.player,
+            npcs=[self.npc],
+            items=[self.item],
+            loreblocks_hierarchy=self.hierarchy,
+            adventure_path=self.temp_dir,
+            elapsed_time_enabled=True,
+        )
 
     def tearDown(self):
-        if hasattr(self.engine, "cleanup"):
-            self.engine.cleanup()
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def test_move_action_lifecycle(self):
-        self.assertEqual(self.ctrl.place.id, "p_00")
+    def test_move_action_fallback_and_llm(self):
+        """MoveAction genera contexto y narra tanto en fallback como con TransformerEngine."""
+        action = MoveAction(
+            origin_place=self.p1,
+            destination_place=self.p2,
+            path_taken=[],
+            travel_time=2,
+        )
+        ctx = action.build_context(self.ctrl, "caminar hacia la taberna")
+        self.assertEqual(ctx.origin_place.id, "p1")
+        self.assertEqual(ctx.destination_place.id, "p2")
+        self.assertEqual(ctx.estimated_travel_time, 2)
 
-        # Mover a Calle Pobre (p_01)
-        move_action = MoveAction("p_01")
-        response = MoveNarratorResponse(msg="Caminas hacia la Calle Pobre.")
-        res = move_action.execute(self.ctrl, "ir a calle pobre", response)
+        # Fallback sin LLM
+        msg_fb, extra_fb = action.generate_narrative(self.ctrl, "caminar hacia la taberna", transformer_engine=None)
+        self.assertIn("Llegas a Taberna", msg_fb)
+        self.assertIsNone(extra_fb)
 
-        self.assertTrue(res.success)
-        self.assertEqual(self.ctrl.place.id, "p_01")
-        self.assertEqual(self.ctrl.data.prev_place.id, "p_00")
-        self.assertEqual(self.ctrl.data.current_place.id, "p_01")
+        # Con LLM Mock
+        mock_adapter = MockLLMAdapter({"msg": "Cruzas el umbral de madera crujiente y entras en la Taberna."})
+        transformer = TransformerEngine(llm_adapter=mock_adapter)
+        msg_llm, _ = action.generate_narrative(self.ctrl, "caminar hacia la taberna", transformer_engine=transformer)
+        self.assertEqual(msg_llm, "Cruzas el umbral de madera crujiente y entras en la Taberna.")
+        self.assertIn("Taberna", mock_adapter.last_prompt)
 
-    def test_look_action_npc_and_place(self):
-        # Mirar al tabernero
-        look_npc = LookAction("npc_tabernero")
-        ctx = look_npc.build_context(self.ctrl, "mirar al tabernero")
-        self.assertEqual(ctx.entity.id, "npc_tabernero")
+    def test_dialogue_action_fallback_and_llm_affinity(self):
+        """DialogueAction genera contexto y procesa respuesta y afinidad de LLM."""
+        action = DialogueAction(target_npc="npc_tabernero")
+        ctx = action.build_context(self.ctrl, "Hola tabernero, ¿tienes cerveza?")
+        self.assertEqual(ctx.npc.name, "Tabernero")
+        self.assertEqual(ctx.player_input, "Hola tabernero, ¿tienes cerveza?")
 
-        res_npc = look_npc.execute(self.ctrl, "mirar al tabernero", ExplainLookResponse(msg="Lleva un delantal manchado."))
-        self.assertTrue(res_npc.success)
-        self.assertIn("Lleva un delantal manchado.", self.ctrl.world_state.npcs["npc_tabernero"].description)
+        # Fallback sin LLM
+        msg_fb, _ = action.generate_narrative(self.ctrl, "Hola tabernero", transformer_engine=None)
+        self.assertIn("He escuchado lo que dices", msg_fb)
 
-        # Mirar la taberna (p_03)
-        look_place = LookAction("p_03")
-        res_place = look_place.execute(self.ctrl, "mirar taberna", ExplainLookResponse(msg="Se escucha música de laúd."))
-        self.assertTrue(res_place.success)
-        self.assertIn("Se escucha música de laúd.", self.ctrl.world_state.places_by_id["p_03"].description)
+        # Con LLM Mock con afinidad
+        mock_adapter = MockLLMAdapter({"msg": "¡Por supuesto viajero! Toma una bien fría.", "affinity": 0.9})
+        transformer = TransformerEngine(llm_adapter=mock_adapter)
+        msg_llm, affinity = action.generate_narrative(self.ctrl, "cerveza por favor", transformer_engine=transformer)
+        self.assertEqual(msg_llm, "¡Por supuesto viajero! Toma una bien fría.")
+        self.assertEqual(affinity, 0.9)
 
-    def test_dialogue_action_affinity_and_history(self):
-        init_aff = self.ctrl.world_state.npcs["npc_tabernero"].affinity
-        dialogue = DialogueAction("npc_tabernero")
-        resp = DialogueNarratorResponse(msg="¡Bienvenido a mi taberna!", affinity="GOOD")
+    def test_look_action_fallback_and_llm(self):
+        """LookAction resuelve entidad objetivo y narra con o sin LLM."""
+        # Mirar entidad Item
+        action = LookAction(target="item_key")
+        ctx = action.build_context(self.ctrl, "examinar llave")
+        self.assertIsNotNone(ctx.entity)
+        self.assertEqual(ctx.entity.id, "item_key")
 
-        res = dialogue.execute(self.ctrl, "Saludos buen hombre", resp)
-        self.assertTrue(res.success)
-        self.assertEqual(res.message, "¡Bienvenido a mi taberna!")
+        msg_fb, _ = action.generate_narrative(self.ctrl, "examinar llave", transformer_engine=None)
+        self.assertIn("Examinas Llave Antigua", msg_fb)
 
-        new_aff = self.ctrl.world_state.npcs["npc_tabernero"].affinity
-        self.assertGreaterEqual(new_aff, init_aff)
-
-    def test_dialogue_action_affinity_disabled(self):
-        self.ctrl.world_state.story_config.affinity = False
-        init_aff = self.ctrl.world_state.npcs["npc_tabernero"].affinity
-        dialogue = DialogueAction("npc_tabernero")
-        resp = DialogueNarratorResponse(msg="¡Bienvenido a mi taberna!", affinity="GOOD")
-
-        res = dialogue.execute(self.ctrl, "Saludos buen hombre", resp)
-        self.assertTrue(res.success)
-        self.assertEqual(self.ctrl.world_state.npcs["npc_tabernero"].affinity, init_aff)
-        self.assertIsNone(self.ctrl.game_state.active_npc_affinity)
+        # Con LLM Mock
+        mock_adapter = MockLLMAdapter({"msg": "La llave muestra runas arcanas grabadas en el metal."})
+        transformer = TransformerEngine(llm_adapter=mock_adapter)
+        msg_llm, _ = action.generate_narrative(self.ctrl, "examinar llave", transformer_engine=transformer)
+        self.assertEqual(msg_llm, "La llave muestra runas arcanas grabadas en el metal.")
 
 
 if __name__ == "__main__":

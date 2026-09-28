@@ -14,13 +14,13 @@ class TestNPCModels(unittest.TestCase):
             name="Goran",
             description="El tabernero local.",
             occupation="Tabernero",
-            initial_place="Taberna",
+            initial_location="Taberna",
             affinity=0.6,
         )
         self.assertEqual(npc.id, "npc_tabernero")
         self.assertEqual(npc.name, "Goran")
         self.assertEqual(npc.affinity, 0.6)
-        self.assertEqual(npc.initial_place, "Taberna")
+        self.assertEqual(npc.initial_location, "Taberna")
         self.assertIsNotNone(npc.motivations)
         self.assertEqual(npc.motivations.likes, [])
         self.assertEqual(npc.motivations.dislikes, [])

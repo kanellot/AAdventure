@@ -12,7 +12,7 @@ class AdventurePackager:
     - world.json: Localizaciones y Lugares con conexiones.
     - npcs.json: NPCs, afinidad y motivaciones.
     - player.json: Datos de jugador, oro, inventario, active_block y lugar de inicio.
-    - objects.json: Objetos e items del mundo.
+    - items.json: Catálogo de ítems del mundo e inventario.
     - loreblocks.json: Catálogo centralizado de LoreBlocks (HSM).
     - story_config.json: Banderas de simulación (elapsed_time, fog_war, affinity).
     """
@@ -23,15 +23,16 @@ class AdventurePackager:
         world_data: dict,
         npcs_data: dict,
         player_data: dict,
-        objects_data: Optional[dict] = None,
+        items_data: Optional[dict] = None,
         lore_data: Optional[dict] = None,
         config_data: Optional[dict] = None,
+        **kwargs,
     ):
         """
         Empaqueta los datos de los 6 componentes en un archivo .aad.
         """
-        if objects_data is None:
-            objects_data = {"objects": []}
+        if items_data is None:
+            items_data = {"items": []}
         if lore_data is None:
             lore_data = {"lore_blocks": []}
         if config_data is None:
@@ -43,7 +44,7 @@ class AdventurePackager:
                 "world.json": world_data,
                 "npcs.json": npcs_data,
                 "player.json": player_data,
-                "objects.json": objects_data,
+                "items.json": items_data,
                 "loreblocks.json": lore_data,
                 "story_config.json": config_data,
             }

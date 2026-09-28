@@ -15,6 +15,7 @@ class RagAntennaScoreProjection(BaseModel):
     conditions_met: bool = True
     is_matched: bool = False
     is_injected: bool = False
+    affects_active_entity: bool = False
 
 
 class RagEvaluationProjection(BaseModel):
@@ -25,6 +26,8 @@ class RagEvaluationProjection(BaseModel):
     matched_lore_id: Optional[str] = None
     matched_antenna: Optional[str] = None
     injected_directive: Optional[str] = None
+    active_entity_id: Optional[str] = None
+    active_entity_name: Optional[str] = None
     antennas: List[RagAntennaScoreProjection] = Field(default_factory=list)
 
 
@@ -56,20 +59,22 @@ class LoreBlockDetailProjection(BaseModel):
     id: str
     name: str
     title: str
+    type: str = "Chapter"
+    description: Optional[str] = ""
     state: str = "unknown"  # "active", "done", "unknown"
     is_accessible: bool = True
     parent_id: Optional[str] = None
     trigger_mode: str = "proactive"
     rag_enabled: bool = False
     trigger_phrases: List[str] = Field(default_factory=list)
+    active_conditions: List[Dict[str, Any]] = Field(default_factory=list)
+    done_conditions: List[Dict[str, Any]] = Field(default_factory=list)
+    effects: List[Dict[str, Any]] = Field(default_factory=list)
     conditions: List[LoreConditionDetailProjection] = Field(default_factory=list)
     exit_conditions: List[LoreConditionDetailProjection] = Field(default_factory=list)
-    exit_rag_enabled: bool = False
-    exit_trigger_phrases: List[str] = Field(default_factory=list)
+    on_active_summary: Optional[str] = ""
+    on_done_summary: Optional[str] = ""
     directive: str = ""
-    force_action: bool = False
-    on_active_summary: str = ""
-    on_done_summary: str = ""
 
 
 class LoreGraphProjection(BaseModel):

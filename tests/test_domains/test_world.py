@@ -12,12 +12,13 @@ class TestWorldModels(unittest.TestCase):
         self.assertEqual(conn.target, "Plaza Menor")
         self.assertEqual(conn.distance, 120)
         self.assertEqual(conn.terrain_type, "village")
-        self.assertTrue(conn.passable)
 
-        # Conexión bloqueada
-        blocked = Connection(target="Cueva", distance=500, terrain_type="mountain", passable=False)
-        self.assertFalse(blocked.passable)
-        self.assertEqual(blocked.terrain_type, "mountain")
+    def test_place_blocked_status(self):
+        place_open = Place(id="p_01", name="Plaza", description="Plaza abierta")
+        self.assertFalse(place_open.blocked_place)
+
+        place_blocked = Place(id="p_02", name="Cueva Prohibida", description="Entrada sellada", blocked_place=True)
+        self.assertTrue(place_blocked.blocked_place)
 
     def test_place_creation_and_connections(self):
         place = Place(
@@ -42,10 +43,29 @@ class TestWorldModels(unittest.TestCase):
         self.assertEqual(len(loc.places), 2)
         self.assertEqual(loc.places[0].id, "p_01")
 
-        world = World(id="w_01", name="Mundo de Fantasía", description="El reino", locations=[loc])
+        world = World(
+            id="w_01",
+            name="Mundo de Fantasía",
+            description="El reino",
+            locations=[loc],
+            initial_text="Bienvenido viajero, la niebla se disipa sobre el reino...",
+        )
         self.assertEqual(world.name, "Mundo de Fantasía")
         self.assertEqual(len(world.locations), 1)
         self.assertEqual(world.locations[0].id, "loc_01")
+        self.assertEqual(world.initial_text, "Bienvenido viajero, la niebla se disipa sobre el reino...")
+
+    def test_world_initial_text_default_and_roundtrip(self):
+        default_world = World(id="w_def", name="Mundo Base", description="Descripción base")
+        self.assertEqual(default_world.initial_text, "")
+
+        serialized = default_world.model_dump_json()
+        deserialized = World.model_validate_json(serialized)
+        self.assertEqual(deserialized.initial_text, "")
+
+        custom_world = World(id="w_cust", name="Mundo Personalizado", description="Descripción cust", initial_text="Érase una vez...")
+        deserialized_custom = World.model_validate_json(custom_world.model_dump_json())
+        self.assertEqual(deserialized_custom.initial_text, "Érase una vez...")
 
 
 if __name__ == "__main__":

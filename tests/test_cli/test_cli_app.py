@@ -9,9 +9,14 @@ from unittest.mock import MagicMock, patch
 from cli.app import CLIApp
 from cli.formatter import CLIFormatter
 from domains.projections import (
+    InventoryProjection,
+    NotebookProjection,
     RagAntennaScoreProjection,
     RagEvaluationProjection,
+    TurnDebugProjection,
+    TurnOutput,
     TurnResultProjection,
+    WorldMapProjection,
 )
 from engines import AdventureSession
 
@@ -26,7 +31,7 @@ class TestCLIApp(unittest.TestCase):
             raise unittest.SkipTest("Adventure.aad no existe en Resources/adventure_data")
 
     def setUp(self):
-        self.session = AdventureSession.start_for_testing(self.aad_path)
+        self.session = AdventureSession.create(self.aad_path)
         self.app = CLIApp(self.session, verbose=False)
 
     def tearDown(self):
@@ -74,8 +79,8 @@ class TestCLIApp(unittest.TestCase):
         res = self.app.listener.latest_turn_result
         self.assertIsNotNone(res)
         self.assertIsInstance(res, TurnResultProjection)
-        self.assertEqual(res.author, "Dungeon Master")
-        self.assertEqual(self.session.get_ui_state().current_location, "Calle Pobre")
+        self.assertEqual(res.output.author, "Dungeon Master")
+        self.assertEqual(self.app.listener.latest_ui_state.current_location, "Calle Pobre")
 
     def test_handle_input_action_without_target(self):
         # No debe lanzar excepción, imprime advertencia y devuelve None
@@ -91,8 +96,8 @@ class TestCLIApp(unittest.TestCase):
         self.assertIsNotNone(task_id)
         res = self.app.listener.latest_turn_result
         self.assertIsNotNone(res)
-        self.assertEqual(res.author, "SYSTEM")
-        self.assertIn("EXPLORE", res.msg)
+        self.assertEqual(res.output.author, "SYSTEM")
+        self.assertIn("Debes seleccionar una acción", res.output.msg)
 
     def test_handle_input_exit(self):
         self.assertTrue(self.app.is_running)
@@ -102,29 +107,35 @@ class TestCLIApp(unittest.TestCase):
 
     def test_verbose_formatter_output(self):
         turn_res = TurnResultProjection(
-            author="Dungeon Master",
-            msg="El camino se estrecha entre las viejas casas.",
-            info_msg="Tiempo transcurrido: 2 min.",
-            debug_prompt="SYS: Eres el Dungeon Master...\nUSER: /MOVE Calle Pobre",
-            debug_structured_response='{"msg": "El camino se estrecha..."}',
-            rag_evaluation=RagEvaluationProjection(
-                player_input="ir hacia la taberna",
-                threshold=0.65,
-                matched_lore_id="lb_01",
-                matched_antenna="quiero cerveza",
-                injected_directive="El tabernero ofrece una jarra gratis.",
-                antennas=[
-                    RagAntennaScoreProjection(
-                        antenna="quiero cerveza",
-                        lore_id="lb_01",
-                        lore_title="Misión del Tabernero",
-                        score=0.82,
-                        threshold=0.65,
-                        conditions_met=True,
-                        is_matched=True,
-                        is_injected=True,
-                    )
-                ],
+            output=TurnOutput(
+                author="Dungeon Master",
+                msg="El camino se estrecha entre las viejas casas.",
+            ),
+            map=WorldMapProjection(),
+            inventory=InventoryProjection(),
+            notebook=NotebookProjection(),
+            debug=TurnDebugProjection(
+                prompt="SYS: Eres el Dungeon Master...\nUSER: /MOVE Calle Pobre",
+                structured_response='{"msg": "El camino se estrecha..."}',
+                rag_evaluation=RagEvaluationProjection(
+                    player_input="ir hacia la taberna",
+                    threshold=0.65,
+                    matched_lore_id="lb_01",
+                    matched_antenna="quiero cerveza",
+                    injected_directive="El tabernero ofrece una jarra gratis.",
+                    antennas=[
+                        RagAntennaScoreProjection(
+                            antenna="quiero cerveza",
+                            lore_id="lb_01",
+                            lore_title="Misión del Tabernero",
+                            score=0.82,
+                            threshold=0.65,
+                            conditions_met=True,
+                            is_matched=True,
+                            is_injected=True,
+                        )
+                    ],
+                ),
             ),
         )
 
@@ -133,8 +144,8 @@ class TestCLIApp(unittest.TestCase):
             CLIFormatter.print_turn_result(turn_res)
             CLIFormatter.print_verbose_debug(
                 turn_result=turn_res,
-                game_state=self.session.get_game_state(),
-                lore_graph=self.session.get_lore_graph(),
+                game_state=self.session._engine.get_game_state_projection(),
+                lore_graph=self.session._engine.get_lore_graph_projection(),
             )
 
         output = captured.getvalue()

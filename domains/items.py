@@ -1,15 +1,12 @@
-"""Modelo de dominio para Objetos/Items en el mundo de juego."""
+"""Modelo de dominio para ítems y objetos del juego."""
 
 from typing import Optional
 from domains.base import Entity
 
 
 class Item(Entity):
-    """Representa un objeto del mundo que puede estar ligado a un lugar o al inventario."""
+    """Representa un ítem u objeto del juego que puede estar ubicado en un lugar o en el inventario."""
 
     state: str = "default"
-    initial_place: Optional[str] = None
+    initial_location: Optional[str] = None
 
-
-# Alias canónico
-GameObject = Item
