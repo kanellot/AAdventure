@@ -1,6 +1,7 @@
 """Motor principal de juego (GameEngine): orquestador de ciclo de vida y turnos deterministas."""
 
 from __future__ import annotations
+
 import logging
 import os
 import queue
@@ -22,9 +23,11 @@ from domains.projections import (
     WorldHierarchyProjection,
     WorldMapProjection,
 )
-from engines.events import EngineEventListener, EngineTask
+from engines.embedding import EmbeddingEngine, EmbeddingFactory, MockEmbeddingBackend
+from engines.events import EngineEventListener, EngineTask, PopupEvent
 from engines.game.actions import DialogueAction, LookAction, MoveAction
 from engines.game.lore import (
+    AutonomousPushAction,
     HsmCycleResult,
     LoreConditionEvaluator,
     LoreEffectApplier,
@@ -37,9 +40,9 @@ from engines.game.state_controller import GameStateController
 from engines.game.utils import TimeCalculator
 from engines.game.worker import EngineWorker
 from engines.transformer import TransformerEngine
-from engines.embedding import EmbeddingEngine, EmbeddingFactory, MockEmbeddingBackend
 
 logger = logging.getLogger(__name__)
+
 
 
 class GameEngine:
@@ -51,13 +54,13 @@ class GameEngine:
     BASE_TRAVEL_SPEED: float = 4.5
 
     def __init__(
-        self,
-        game_state_controller: Optional[GameStateController] = None,
-        transformer_engine: Optional[TransformerEngine] = None,
-        embedding_engine: Optional[EmbeddingEngine] = None,
-        listeners: Optional[List[EngineEventListener]] = None,
-        aad_path: Optional[str] = None,
-        world_json_path: Optional[str] = None,
+            self,
+            game_state_controller: Optional[GameStateController] = None,
+            transformer_engine: Optional[TransformerEngine] = None,
+            embedding_engine: Optional[EmbeddingEngine] = None,
+            listeners: Optional[List[EngineEventListener]] = None,
+            aad_path: Optional[str] = None,
+            world_json_path: Optional[str] = None,
     ):
         path = aad_path or world_json_path
         if game_state_controller is None:
@@ -72,8 +75,8 @@ class GameEngine:
         is_test_mode = bool(
             os.environ.get("TESTING")
             or (
-                "unittest" in sys.modules
-                and not any(arg.endswith("main.py") or "main.py" in arg for arg in sys.argv)
+                    "unittest" in sys.modules
+                    and not any(arg.endswith("main.py") or "main.py" in arg for arg in sys.argv)
             )
         )
 
@@ -157,7 +160,8 @@ class GameEngine:
     def remove_listener(self, listener: EngineEventListener) -> None:
         self.worker.remove_listener(listener)
 
-    def notify_thinking(self, is_thinking: bool, task_id: str = "", action: str = "", target: str = "", source: str = "PLAYER") -> None:
+    def notify_thinking(self, is_thinking: bool, task_id: str = "", action: str = "", target: str = "",
+                        source: str = "PLAYER") -> None:
         self.worker.notify_thinking(is_thinking, task_id=task_id, action=action, target=target, source=source)
 
     def notify_turn_completed(self, turn_result: TurnResultProjection, task_id: str = "") -> None:
@@ -180,10 +184,13 @@ class GameEngine:
         self.worker.task_queue.put(
             EngineTask(
                 task_id=task_id,
+                author="Player",
                 action=action,
                 target=target,
                 player_input=player_input,
                 source="PLAYER",
+                directive="",
+                bypass_llm=False,
             )
         )
         return task_id
@@ -205,6 +212,7 @@ class GameEngine:
         self.worker.task_queue.put(
             EngineTask(
                 task_id=task_id,
+                author="Dungeon Master",
                 action="__START__",
                 target="",
                 player_input="",
@@ -221,6 +229,11 @@ class GameEngine:
             action=task.action,
             target=task.target,
             player_input=task.player_input,
+            autonomous_depth=task.autonomous_depth,
+            directive=task.directive,
+            bypass_llm=task.bypass_llm,
+            author=task.author,
+            source=task.source,
         )
 
     # =========================================================================
@@ -235,26 +248,15 @@ class GameEngine:
         ctrl.set_player_state("EXPLORE")
         ctrl.set_player_target(None)
 
-        # Evaluación de Pop-ups iniciales
-        popup_title: Optional[str] = None
-        popup_message: Optional[str] = None
+        # Ejecución del ciclo de Turno 0 en la máquina de estados de Lore
+        hsm_res = LoreStateMachine.execute_turn_0_cycle(ctrl)
 
-        for blk in list(ctrl.game_state.loreblocks.unknown):
-            if blk.get("type") == "popup":
-                active_conds = blk.get("active_conditions", [])
-                has_conds = LoreConditionEvaluator.has_effective_active_conditions(blk)
-                if not has_conds or LoreConditionEvaluator.are_condition_groups_met(active_conds, ctrl, eval_query=""):
-                    ctrl.game_state.loreblocks.unknown.remove(blk)
-                    blk["state"] = "done"
-                    ctrl.game_state.loreblocks.done.append(blk)
-                    popup_title = blk.get("title") or blk.get("name", "Aviso del Sistema")
-                    popup_message = (
-                        blk.get("description")
-                        or (blk.get("effects", [{}])[0].get("directive") if blk.get("effects") else "")
-                        or blk.get("name", "")
-                    )
+        # Emitir cada popup individualmente a los listeners de la UI
+        for p_title, p_msg in hsm_res.popups:
+            self.worker.notify_popup(PopupEvent(title=p_title, message=p_msg).model_dump_json())
 
-        ctrl.sync_notebook()
+        popup_title = hsm_res.popup_title
+        popup_message = hsm_res.popup_message
 
         # Obtención del texto introductorio
         intro_text = (getattr(ctrl.world, "initial_text", "") or "").strip()
@@ -274,14 +276,45 @@ class GameEngine:
             popup_message=popup_message,
         )
 
-        return ProjectionAssembler.build_turn_result(output, ctrl)
+        turn_result = ProjectionAssembler.build_turn_result(output, ctrl)
+
+        if hsm_res.autonomous_push_actions:
+            for push in hsm_res.autonomous_push_actions:
+                push_task_id = f"task_{uuid.uuid4().hex[:8]}"
+                push_author = (
+                    ctrl.npcs_by_id[push.target].name
+                    if push.target in ctrl.npcs_by_id
+                    else (
+                        ctrl.npcs_by_name[push.target].name
+                        if hasattr(ctrl, "npcs_by_name") and push.target in ctrl.npcs_by_name
+                        else "Dungeon Master"
+                    )
+                )
+                self.worker.task_queue.put(
+                    EngineTask(
+                        task_id=push_task_id,
+                        author=push_author,
+                        action=push.action,
+                        target=push.target,
+                        source="LORE",
+                        autonomous_depth=1,
+                        directive=push.directive,
+                        bypass_llm=push.bypass_llm,
+                    )
+                )
+
+        return turn_result
 
     def execute_turn(
-        self,
-        action: str,
-        target: Optional[str] = None,
-        player_input: str = "",
-        autonomous_depth: int = 0,
+            self,
+            action: str,
+            target: Optional[str] = None,
+            player_input: str = "",
+            autonomous_depth: int = 0,
+            directive: Optional[str] = None,
+            bypass_llm: bool = False,
+            author: Optional[str] = None,
+            source: str = "PLAYER",
     ) -> TurnResultProjection:
         """Ejecuta de forma síncrona el pipeline completo de 5 fases deterministas."""
         ctrl = self.game_state_controller
@@ -289,12 +322,22 @@ class GameEngine:
         # ---------------------------------------------------------------------
         # FASE 1: Verificación de Acción e Input Físico
         # ---------------------------------------------------------------------
-        val_res = RulesValidator.validate(action, target, player_input, ctrl)
-        if not val_res.is_valid:
-            return ProjectionAssembler.build_turn_result(val_res.error_output, ctrl)
+        if source == "LORE":
+            # Acción autónoma Push: validada directamente por el motor (solo LOOK o TALK)
+            action_name = action.strip().upper()
+            resolved_target = target or ""
+            val_res = ActionValidationResult(
+                is_valid=True,
+                action_name=action_name,
+                resolved_target=resolved_target,
+            )
+        else:
+            val_res = RulesValidator.validate(action, target, player_input, ctrl)
+            if not val_res.is_valid:
+                return ProjectionAssembler.build_turn_result(val_res.error_output, ctrl)
 
-        action_name = val_res.action_name
-        resolved_target = val_res.resolved_target
+            action_name = val_res.action_name
+            resolved_target = val_res.resolved_target
 
         # ---------------------------------------------------------------------
         # FASE 2: Mutación Canónica de Estado
@@ -323,25 +366,30 @@ class GameEngine:
         active_entity_id = (
             resolved_target
             if action_name in ("TALK", "LOOK")
-            else (val_res.traversed_places[-1].id if action_name == "MOVE" and val_res.traversed_places else ctrl.game_state.current_location)
+            else (val_res.traversed_places[
+                      -1].id if action_name == "MOVE" and val_res.traversed_places else ctrl.game_state.current_location)
         )
         active_entity_name = (
             ctrl.npcs_by_id[active_entity_id].name
             if active_entity_id in ctrl.npcs_by_id
-            else (ctrl.places_by_id[active_entity_id].name if active_entity_id in ctrl.places_by_id else active_entity_id)
+            else (
+                ctrl.places_by_id[active_entity_id].name if active_entity_id in ctrl.places_by_id else active_entity_id)
         )
 
         # ---------------------------------------------------------------------
         # Evaluación Semántica RAG (Deduplicada)
         # ---------------------------------------------------------------------
-        eval_query = player_input.strip() if player_input else ""
-        rag_evaluation, injected_directive, precomputed_scores = RagAntennaEvaluator.evaluate_antennas(
-            eval_query=eval_query,
-            ctrl=ctrl,
-            embedding_engine=self.embedding_engine,
-            active_entity_id=active_entity_id,
-            active_entity_name=active_entity_name,
-        )
+        eval_query = player_input.strip() if player_input and source == "PLAYER" else ""
+        rag_evaluation = None
+        precomputed_scores = {}
+        if eval_query:
+            rag_evaluation, _, precomputed_scores = RagAntennaEvaluator.evaluate_antennas(
+                eval_query=eval_query,
+                ctrl=ctrl,
+                embedding_engine=self.embedding_engine,
+                active_entity_id=active_entity_id,
+                active_entity_name=active_entity_name,
+            )
 
         # ---------------------------------------------------------------------
         # FASE 3: Máquina de Estados HSM y Ciclo en Cascada
@@ -352,32 +400,72 @@ class GameEngine:
             precomputed_scores=precomputed_scores,
             embedding_engine=self.embedding_engine,
             active_entity_id=active_entity_id,
-            current_injected_directive=injected_directive,
+            action_name=action_name,
+            source=source,
         )
+
+        # Emitir cada popup individualmente a los listeners de UI
+        for p_title, p_msg in hsm_res.popups:
+            self.worker.notify_popup(PopupEvent(title=p_title, message=p_msg).model_dump_json())
+
+        if rag_evaluation and hsm_res.injected_directive:
+            rag_evaluation.injected_directive = hsm_res.injected_directive
 
         # ---------------------------------------------------------------------
         # FASE 4: Orquestación Narrativa
         # ---------------------------------------------------------------------
-        if hsm_res.bypass_llm and hsm_res.bypass_text:
-            output = TurnOutput(
-                author=hsm_res.bypass_author or (
-                    ctrl.npcs_by_id[resolved_target].name
-                    if action_name == "TALK" and resolved_target in ctrl.npcs_by_id
-                    else "Dungeon Master"
-                ),
-                type="msg",
-                msg=hsm_res.bypass_text,
-                player_state=ctrl.game_state.player_state,
+        if source == "LORE":
+            # Turno autónomo push: usa directive y bypass_llm propios de la tarea
+            effective_bypass = bypass_llm and bool(directive)
+            default_author = (
+                ctrl.npcs_by_id[resolved_target].name
+                if action_name == "TALK" and resolved_target in ctrl.npcs_by_id
+                else "Dungeon Master"
             )
-            prompt_text = None
+            push_author = author or default_author
+
+            if effective_bypass:
+                output = TurnOutput(
+                    author=push_author,
+                    type="msg",
+                    msg=directive or "",
+                    player_state=ctrl.game_state.player_state,
+                )
+                prompt_text = None
+            else:
+                output, prompt_text = self._generate_narrative_output(
+                    action_name=action_name,
+                    target=resolved_target,
+                    player_input="",
+                    val_res=val_res,
+                    directive=directive,
+                )
+                output.author = push_author
         else:
-            output, prompt_text = self._generate_narrative_output(
-                action_name=action_name,
-                target=resolved_target if action_name in ("TALK", "LOOK") else (target or ""),
-                player_input=player_input,
-                val_res=val_res,
-                directive=hsm_res.injected_directive,
-            )
+            # Turno del jugador: evalúa bypass y directiva inyectada por hooks
+            effective_bypass = hsm_res.bypass_llm or (bypass_llm and bool(directive))
+            effective_bypass_text = hsm_res.bypass_text or directive
+
+            if effective_bypass and effective_bypass_text:
+                output = TurnOutput(
+                    author=hsm_res.bypass_author or (
+                        ctrl.npcs_by_id[resolved_target].name
+                        if action_name == "TALK" and resolved_target in ctrl.npcs_by_id
+                        else "Dungeon Master"
+                    ),
+                    type="msg",
+                    msg=effective_bypass_text,
+                    player_state=ctrl.game_state.player_state,
+                )
+                prompt_text = None
+            else:
+                output, prompt_text = self._generate_narrative_output(
+                    action_name=action_name,
+                    target=resolved_target if action_name in ("TALK", "LOOK") else (target or ""),
+                    player_input=player_input,
+                    val_res=val_res,
+                    directive=hsm_res.injected_directive or directive,
+                )
 
         if hsm_res.popup_message:
             output.popup_message = hsm_res.popup_message
@@ -393,25 +481,46 @@ class GameEngine:
             rag_eval=rag_evaluation,
         )
 
-        if hsm_res.autonomous_push_actions and autonomous_depth < self.MAX_AUTONOMOUS_CHAIN_DEPTH:
-            for push_act, push_tgt in hsm_res.autonomous_push_actions:
-                self.execute_turn(
-                    action=push_act,
-                    target=push_tgt,
-                    autonomous_depth=autonomous_depth + 1,
+        if hsm_res.autonomous_push_actions:
+            if autonomous_depth < self.MAX_AUTONOMOUS_CHAIN_DEPTH:
+                for push in hsm_res.autonomous_push_actions:
+                    push_task_id = f"task_{uuid.uuid4().hex[:8]}"
+                    push_author = (
+                        ctrl.npcs_by_id[push.target].name
+                        if push.target in ctrl.npcs_by_id
+                        else (
+                            ctrl.npcs_by_name[push.target].name
+                            if hasattr(ctrl, "npcs_by_name") and push.target in ctrl.npcs_by_name
+                            else "Dungeon Master"
+                        )
+                    )
+                    self.worker.task_queue.put(
+                        EngineTask(
+                            task_id=push_task_id,
+                            author=push_author,
+                            action=push.action,
+                            target=push.target,
+                            source="LORE",
+                            autonomous_depth=autonomous_depth + 1,
+                            directive=push.directive,
+                            bypass_llm=push.bypass_llm,
+                        )
+                    )
+            else:
+                logger.warning(
+                    "Límite MAX_AUTONOMOUS_CHAIN_DEPTH (%d) alcanzado; bucle autónomo detenido de forma segura.",
+                    self.MAX_AUTONOMOUS_CHAIN_DEPTH,
                 )
-        elif autonomous_depth >= self.MAX_AUTONOMOUS_CHAIN_DEPTH:
-            logger.warning("Límite MAX_AUTONOMOUS_CHAIN_DEPTH alcanzado; bucle autónomo detenido de forma segura.")
 
         return turn_result
 
     def _generate_narrative_output(
-        self,
-        action_name: str,
-        target: str,
-        player_input: str,
-        val_res: ActionValidationResult,
-        directive: Optional[str] = None,
+            self,
+            action_name: str,
+            target: str,
+            player_input: str,
+            val_res: ActionValidationResult,
+            directive: Optional[str] = None,
     ) -> Tuple[TurnOutput, Optional[str]]:
         """Invoca a las acciones desacopladas (MoveAction, DialogueAction, LookAction)."""
         ctrl = self.game_state_controller
@@ -420,7 +529,8 @@ class GameEngine:
             origin = val_res.traversed_places[0] if val_res.traversed_places else ctrl.game_state.place
             dest = val_res.traversed_places[-1] if val_res.traversed_places else ctrl.game_state.place
             path_taken = val_res.traversed_places[1:-1] if len(val_res.traversed_places) > 2 else []
-            travel_time = TimeCalculator.calculate_travel_time(val_res.traversed_conns, travel_speed=self.BASE_TRAVEL_SPEED)
+            travel_time = TimeCalculator.calculate_travel_time(val_res.traversed_conns,
+                                                               travel_speed=self.BASE_TRAVEL_SPEED)
             move_act = MoveAction(
                 origin_place=origin,
                 destination_place=dest,
@@ -531,48 +641,4 @@ class GameEngine:
             names.add(it.id)
         return sorted(list(names))
 
-    # =========================================================================
-    # Shims Internos Limpios (Garantía de Cero Ruptura)
-    # =========================================================================
 
-    def _build_world_map_projection(self) -> WorldMapProjection:
-        return self.get_world_map_projection()
-
-    def _build_inventory_projection(self) -> InventoryProjection:
-        return self.get_inventory_projection()
-
-    def _assemble_turn_result(
-        self,
-        output: TurnOutput,
-        prompt_text: Optional[str] = None,
-        rag_eval: Optional[RagEvaluationProjection] = None,
-        engine_result: Optional[str] = None,
-    ) -> TurnResultProjection:
-        return ProjectionAssembler.build_turn_result(output, self.game_state_controller, prompt_text=prompt_text, rag_eval=rag_eval)
-
-    def _is_npc_at_location(self, npc_id: str, place_id: str) -> bool:
-        return RulesValidator.is_npc_at_location(npc_id, place_id, self.game_state_controller)
-
-    def _is_entity_reachable_to_look(self, entity_id: str, current_place_id: str) -> bool:
-        return RulesValidator.is_entity_reachable_to_look(entity_id, current_place_id, self.game_state_controller)
-
-    def _evaluate_rag_antennas(self, eval_query: str, ctrl: GameStateController, active_entity_id: Optional[str], active_entity_name: Optional[str]):
-        return RagAntennaEvaluator.evaluate_antennas(eval_query, ctrl, self.embedding_engine, active_entity_id, active_entity_name)
-
-    def _are_condition_groups_met(self, groups: List[Any], ctrl: GameStateController, eval_query: str = "", precomputed_scores: Optional[Dict[str, float]] = None) -> bool:
-        return LoreConditionEvaluator.are_condition_groups_met(groups, ctrl, eval_query, precomputed_scores, self.embedding_engine)
-
-    def _is_single_condition_met(self, c: Dict[str, Any], ctrl: GameStateController) -> bool:
-        return LoreConditionEvaluator.is_single_condition_met(c, ctrl)
-
-    def _apply_lore_effects(self, effects: List[Dict[str, Any]], ctrl: GameStateController, autonomous_push: List[Tuple[str, str]]) -> None:
-        LoreEffectApplier.apply_effects(effects, ctrl, autonomous_push)
-
-    def _has_effective_active_conditions(self, blk: Dict[str, Any]) -> bool:
-        return LoreConditionEvaluator.has_effective_active_conditions(blk)
-
-    def _has_effective_done_conditions(self, blk: Dict[str, Any]) -> bool:
-        return LoreConditionEvaluator.has_effective_done_conditions(blk)
-
-    def _block_affects_entity(self, blk: Dict[str, Any], entity_id: Optional[str]) -> bool:
-        return LoreStateMachine.block_affects_entity(blk, entity_id)

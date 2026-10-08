@@ -6,7 +6,6 @@ from PySide6.QtWidgets import QApplication
 
 from adventure_selector import (
     get_default_adventure_path,
-    set_default_adventure_path,
 )
 from editor_debugger.app import EditorDebuggerApp, SEPIA_STYLESHEET
 

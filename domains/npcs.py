@@ -1,7 +1,9 @@
 """Modelos de dominio para personajes no jugadores (NPCs)."""
 
 from typing import List, Optional
+
 from pydantic import BaseModel, Field
+
 from domains.base import Entity
 from domains.conversation import ConversationRecord
 
@@ -22,5 +24,3 @@ class NPC(Entity):
     conversation: Optional[ConversationRecord] = None
     affinity: float = 0.5
     motivations: NPCMotivations = Field(default_factory=NPCMotivations)
-
-

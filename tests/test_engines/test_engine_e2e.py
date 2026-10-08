@@ -1,9 +1,6 @@
 """Pruebas de integración End-to-End para la nueva arquitectura del motor AAdventure."""
 
-import json
 import os
-import shutil
-import tempfile
 import unittest
 
 from domains import TurnResultProjection, UIStateProjection

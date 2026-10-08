@@ -3,6 +3,7 @@ import sys
 from typing import Optional
 
 from PySide6.QtWidgets import QApplication
+
 from editor_debugger.editor.app import StoryEditorApp
 
 SEPIA_STYLESHEET = """
@@ -118,6 +119,7 @@ QTabBar::tab:selected {
 }
 """
 
+
 def start_editor(story_path: Optional[str] = None):
     """
     Punto de entrada de la aplicación PySide6.
@@ -139,8 +141,9 @@ def start_editor(story_path: Optional[str] = None):
         except Exception as e:
             print(f"[WARN] No se pudo cargar {story_path}: {e}")
     window.showMaximized()
-    
+
     sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     start_editor()

@@ -1,9 +1,9 @@
 """Pruebas unitarias para las acciones narrativas: MoveAction, LookAction y DialogueAction."""
 
-import os
 import shutil
 import tempfile
 import unittest
+
 from domains.game_state import LoreBlockHierarchy
 from domains.items import Item
 from domains.npcs import NPC, NPCMotivations
@@ -96,15 +96,15 @@ class TestNarrativeActions(unittest.TestCase):
         self.assertEqual(ctx.estimated_travel_time, 2)
 
         # Fallback sin LLM
-        msg_fb, extra_fb = action.generate_narrative(self.ctrl, "caminar hacia la taberna", transformer_engine=None)
-        self.assertIn("Llegas a Taberna", msg_fb)
-        self.assertIsNone(extra_fb)
+        res_fb = action.generate_narrative(self.ctrl, "caminar hacia la taberna", transformer_engine=None)
+        self.assertIn("Llegas a Taberna", res_fb.msg)
+        self.assertIsNone(res_fb.extra)
 
         # Con LLM Mock
         mock_adapter = MockLLMAdapter({"msg": "Cruzas el umbral de madera crujiente y entras en la Taberna."})
         transformer = TransformerEngine(llm_adapter=mock_adapter)
-        msg_llm, _ = action.generate_narrative(self.ctrl, "caminar hacia la taberna", transformer_engine=transformer)
-        self.assertEqual(msg_llm, "Cruzas el umbral de madera crujiente y entras en la Taberna.")
+        res_llm = action.generate_narrative(self.ctrl, "caminar hacia la taberna", transformer_engine=transformer)
+        self.assertEqual(res_llm.msg, "Cruzas el umbral de madera crujiente y entras en la Taberna.")
         self.assertIn("Taberna", mock_adapter.last_prompt)
 
     def test_dialogue_action_fallback_and_llm_affinity(self):
@@ -115,15 +115,15 @@ class TestNarrativeActions(unittest.TestCase):
         self.assertEqual(ctx.player_input, "Hola tabernero, ¿tienes cerveza?")
 
         # Fallback sin LLM
-        msg_fb, _ = action.generate_narrative(self.ctrl, "Hola tabernero", transformer_engine=None)
-        self.assertIn("He escuchado lo que dices", msg_fb)
+        res_fb = action.generate_narrative(self.ctrl, "Hola tabernero", transformer_engine=None)
+        self.assertIn("He escuchado lo que dices", res_fb.msg)
 
         # Con LLM Mock con afinidad
         mock_adapter = MockLLMAdapter({"msg": "¡Por supuesto viajero! Toma una bien fría.", "affinity": 0.9})
         transformer = TransformerEngine(llm_adapter=mock_adapter)
-        msg_llm, affinity = action.generate_narrative(self.ctrl, "cerveza por favor", transformer_engine=transformer)
-        self.assertEqual(msg_llm, "¡Por supuesto viajero! Toma una bien fría.")
-        self.assertEqual(affinity, 0.9)
+        res_llm = action.generate_narrative(self.ctrl, "cerveza por favor", transformer_engine=transformer)
+        self.assertEqual(res_llm.msg, "¡Por supuesto viajero! Toma una bien fría.")
+        self.assertEqual(res_llm.extra, 0.9)
 
     def test_look_action_fallback_and_llm(self):
         """LookAction resuelve entidad objetivo y narra con o sin LLM."""
@@ -133,14 +133,14 @@ class TestNarrativeActions(unittest.TestCase):
         self.assertIsNotNone(ctx.entity)
         self.assertEqual(ctx.entity.id, "item_key")
 
-        msg_fb, _ = action.generate_narrative(self.ctrl, "examinar llave", transformer_engine=None)
-        self.assertIn("Examinas Llave Antigua", msg_fb)
+        res_fb = action.generate_narrative(self.ctrl, "examinar llave", transformer_engine=None)
+        self.assertIn("Examinas Llave Antigua", res_fb.msg)
 
         # Con LLM Mock
         mock_adapter = MockLLMAdapter({"msg": "La llave muestra runas arcanas grabadas en el metal."})
         transformer = TransformerEngine(llm_adapter=mock_adapter)
-        msg_llm, _ = action.generate_narrative(self.ctrl, "examinar llave", transformer_engine=transformer)
-        self.assertEqual(msg_llm, "La llave muestra runas arcanas grabadas en el metal.")
+        res_llm = action.generate_narrative(self.ctrl, "examinar llave", transformer_engine=transformer)
+        self.assertEqual(res_llm.msg, "La llave muestra runas arcanas grabadas en el metal.")
 
 
 if __name__ == "__main__":

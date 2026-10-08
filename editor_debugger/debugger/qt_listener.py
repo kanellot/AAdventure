@@ -6,7 +6,6 @@ exclusivamente en el hilo gráfico principal.
 """
 
 from PySide6.QtCore import QObject, Signal
-from engines.events import EngineEventListener
 
 
 class QtEngineListener(QObject):
@@ -25,6 +24,8 @@ class QtEngineListener(QObject):
     state_updated = Signal(str)
     # task_error: task_id, error_message, error_code
     task_error = Signal(str, str, str)
+    # popup_triggered: popup_json
+    popup_triggered = Signal(str)
 
     def __init__(self, parent: QObject = None):
         super().__init__(parent)
@@ -44,3 +45,8 @@ class QtEngineListener(QObject):
     def on_error(self, task_id: str, error_message: str, error_code: str) -> None:
         """Despacha la notificación de error a la cola de eventos de Qt."""
         self.task_error.emit(task_id, error_message, error_code)
+
+    def on_popup(self, popup_json: str) -> None:
+        """Despacha el evento popup individual a la cola de eventos de Qt."""
+        self.popup_triggered.emit(popup_json)
+

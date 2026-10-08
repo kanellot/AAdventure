@@ -1,19 +1,20 @@
 """Pruebas unitarias para GameDebuggerApp."""
 
-import unittest
 import os
+import unittest
+
 from PySide6.QtWidgets import QApplication
+
 from domains.projections import (
     InventoryProjection,
     NotebookProjection,
     TurnDebugProjection,
     TurnOutput,
     TurnResultProjection,
-    UIStateProjection,
     WorldMapProjection,
 )
-from engines import AdventureSession
 from editor_debugger.debugger.app import GameDebuggerApp
+from engines import AdventureSession
 
 
 class TestGameDebuggerApp(unittest.TestCase):

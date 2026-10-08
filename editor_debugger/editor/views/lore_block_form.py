@@ -13,15 +13,19 @@ Estructura canónica:
 """
 
 from __future__ import annotations
+
 from typing import Optional, List
+
+from PySide6.QtCore import Qt, Signal, QPoint
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit,
     QTextEdit, QLabel, QComboBox, QCheckBox, QSpinBox, QDoubleSpinBox,
     QGroupBox, QPushButton, QScrollArea, QFrame,
-    QDialog, QDialogButtonBox, QMenu
+    QDialog, QDialogButtonBox, QMenu, QMessageBox
 )
-from PySide6.QtCore import Qt, Signal, QPoint
+
 from domains.lore import LoreBlock, LoreEffects, ConditionGroup
+from editor_debugger.editor.constants import TYPE_METADATA
 from editor_debugger.editor.views.compact_widgets import CompactConditionListWidget, CompactEntityListWidget
 from editor_debugger.editor.views.entity_picker import EntityPickerDialog
 
@@ -30,11 +34,11 @@ class LoreEffectDialog(QDialog):
     """Diálogo modal para crear o editar un efecto sobre una entidad en estado active."""
 
     def __init__(
-        self,
-        effect: Optional[LoreEffects] = None,
-        controller=None,
-        parent=None,
-        is_popup: bool = False,
+            self,
+            effect: Optional[LoreEffects] = None,
+            controller=None,
+            parent=None,
+            is_popup: bool = False,
     ):
         super().__init__(parent)
         self.setWindowTitle("Configurar Efecto de Pop-up" if is_popup else "Configurar Efecto de Lore")
@@ -192,7 +196,8 @@ class LoreEffectDialog(QDialog):
         places_layout.addWidget(self.block_places_widget)
 
         self.unblock_places_widget = CompactEntityListWidget(
-            controller=self.controller, allowed_types=["place"], button_text="➕ Desbloquear Lugar...", parent=places_group
+            controller=self.controller, allowed_types=["place"], button_text="➕ Desbloquear Lugar...",
+            parent=places_group
         )
         places_layout.addWidget(QLabel("<b>🔓 Desbloquear Lugares (unblock_places):</b>"))
         places_layout.addWidget(self.unblock_places_widget)
@@ -312,6 +317,14 @@ class LoreEffectDialog(QDialog):
 
     def on_accept(self):
         self._update_effect_from_ui()
+        if self.effect.action == "hook" and not self.effect.target:
+            QMessageBox.warning(
+                self,
+                "Validación de Efecto",
+                "Las acciones de tipo Hook son pasivas y requieren obligatoriamente una Entidad Objetivo (target).\n\n"
+                "Por favor, selecciona una entidad objetivo o cambia el tipo de acción a Push.",
+            )
+            return
         self.accept()
 
     def get_effect(self) -> LoreEffects:
@@ -381,11 +394,8 @@ class LoreBlockForm(QWidget):
         info_form.setSpacing(6)
 
         self.type_combo = QComboBox()
-        self.type_combo.addItem("📖 Chapter (Capítulo - Contenedor Principal)", "Chapter")
-        self.type_combo.addItem("⚔️ Quest (Misión Principal)", "Quest")
-        self.type_combo.addItem("📌 Task (Tarea / Objetivo Concreto)", "Task")
-        self.type_combo.addItem("⚡ Event (Evento sobre Entidades)", "Event")
-        self.type_combo.addItem("📢 Pop-up Event (popup_event)", "popup")
+        for type_key, meta in TYPE_METADATA.items():
+            self.type_combo.addItem(f"{meta['icon']} {meta['label']}", type_key)
         self.type_combo.currentIndexChanged.connect(self.on_type_changed)
         info_form.addRow("Tipo de Bloque (Type):", self.type_combo)
 
@@ -494,60 +504,94 @@ class LoreBlockForm(QWidget):
         cond_main_vbox.addWidget(self.done_box)
         self.container_layout.addWidget(self.conditions_group)
 
-        # SECCIÓN 3: Efectos
-        # 3.A: Nota para Contenedores Puros (Chapter, Quest, Task)
-        self.container_note_group = QGroupBox("3. Efectos")
-        note_vbox = QVBoxLayout(self.container_note_group)
-        self.container_note_label = QLabel(
-            "ℹ️ <b>Contenedor Jerárquico Puro</b>: Los capítulos, quests y tareas no aplican efectos directos sobre entidades; "
-            "su progreso e impacto se rigen exclusivamente por las condiciones y efectos de sus tareas y eventos hijos."
-        )
-        self.container_note_label.setStyleSheet("color: #334e68; font-size: 11px; padding: 4px;")
-        self.container_note_label.setWordWrap(True)
-        note_vbox.addWidget(self.container_note_label)
-        self.container_layout.addWidget(self.container_note_group)
-
-        # 3.B: Lista de Efectos (Para Event)
-        self.effects_group = QGroupBox("3. Efectos sobre Entidades")
+        # SECCIÓN 3: Efectos sobre Entidades (Doble Effect: active_effects y done_effects)
+        self.effects_group = QGroupBox("3. Efectos sobre Entidades (Doble Effect)")
         eff_main_vbox = QVBoxLayout(self.effects_group)
-        eff_main_vbox.setSpacing(6)
+        eff_main_vbox.setSpacing(10)
 
-        eff_top_bar = QHBoxLayout()
-        self.effects_hint_lbl = QLabel(
-            "💡 <i>Haz doble clic sobre cualquier fila o pulsa '✏️' para editarla.</i>"
-        )
-        self.effects_hint_lbl.setStyleSheet("color: #555; font-size: 11px;")
-        eff_top_bar.addWidget(self.effects_hint_lbl, 1)
+        # 3.1: active_effects
+        self.active_effects_box = QGroupBox("🟢 Efectos al Activar (active_effects)")
+        active_eff_vbox = QVBoxLayout(self.active_effects_box)
+        active_eff_vbox.setSpacing(6)
 
-        self.add_effect_btn = QPushButton("➕ Añadir Efecto...")
-        self.add_effect_btn.setStyleSheet("""
+        active_top_bar = QHBoxLayout()
+        active_hint_lbl = QLabel("Se ejecutan cuando el bloque pasa de <b>unknown</b> a <b>active</b>.")
+        active_hint_lbl.setStyleSheet("color: #555; font-size: 11px;")
+        active_top_bar.addWidget(active_hint_lbl, 1)
+
+        self.add_active_eff_btn = QPushButton("➕ Añadir Efecto al Activar...")
+        self.add_active_eff_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2e7d32;
                 color: white;
                 font-weight: bold;
-                padding: 4px 10px;
+                padding: 3px 8px;
                 border-radius: 4px;
             }
             QPushButton:hover {
                 background-color: #1b5e20;
             }
         """)
-        self.add_effect_btn.clicked.connect(self.on_add_effect_clicked)
-        eff_top_bar.addWidget(self.add_effect_btn)
-        eff_main_vbox.addLayout(eff_top_bar)
+        self.add_active_eff_btn.clicked.connect(self.on_add_active_effect_clicked)
+        active_top_bar.addWidget(self.add_active_eff_btn)
+        active_eff_vbox.addLayout(active_top_bar)
 
-        self.effects_scroll = QScrollArea()
-        self.effects_scroll.setWidgetResizable(True)
-        self.effects_scroll.setMaximumHeight(220)
-        self.effects_scroll.setStyleSheet("QScrollArea { border: 1px solid #dcdcdc; border-radius: 4px; background: #fafafa; }")
+        self.active_effects_scroll = QScrollArea()
+        self.active_effects_scroll.setWidgetResizable(True)
+        self.active_effects_scroll.setMaximumHeight(180)
+        self.active_effects_scroll.setStyleSheet(
+            "QScrollArea { border: 1px solid #dcdcdc; border-radius: 4px; background: #fafafa; }")
+        self.active_effects_container = QWidget()
+        self.active_effects_container_layout = QVBoxLayout(self.active_effects_container)
+        self.active_effects_container_layout.setContentsMargins(4, 4, 4, 4)
+        self.active_effects_container_layout.setSpacing(4)
+        self.active_effects_container_layout.setAlignment(Qt.AlignTop)
+        self.active_effects_scroll.setWidget(self.active_effects_container)
+        active_eff_vbox.addWidget(self.active_effects_scroll)
 
-        self.effects_container = QWidget()
-        self.effects_container_layout = QVBoxLayout(self.effects_container)
-        self.effects_container_layout.setContentsMargins(4, 4, 4, 4)
-        self.effects_container_layout.setSpacing(4)
-        self.effects_container_layout.setAlignment(Qt.AlignTop)
-        self.effects_scroll.setWidget(self.effects_container)
-        eff_main_vbox.addWidget(self.effects_scroll)
+        eff_main_vbox.addWidget(self.active_effects_box)
+
+        # 3.2: done_effects
+        self.done_effects_box = QGroupBox("🔵 Efectos al Completar (done_effects)")
+        done_eff_vbox = QVBoxLayout(self.done_effects_box)
+        done_eff_vbox.setSpacing(6)
+
+        done_top_bar = QHBoxLayout()
+        done_hint_lbl = QLabel("Se ejecutan cuando el bloque pasa de <b>active</b> a <b>done</b>.")
+        done_hint_lbl.setStyleSheet("color: #555; font-size: 11px;")
+        done_top_bar.addWidget(done_hint_lbl, 1)
+
+        self.add_done_eff_btn = QPushButton("➕ Añadir Efecto al Completar...")
+        self.add_done_eff_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1565c0;
+                color: white;
+                font-weight: bold;
+                padding: 3px 8px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #0d47a1;
+            }
+        """)
+        self.add_done_eff_btn.clicked.connect(self.on_add_done_effect_clicked)
+        done_top_bar.addWidget(self.add_done_eff_btn)
+        done_eff_vbox.addLayout(done_top_bar)
+
+        self.done_effects_scroll = QScrollArea()
+        self.done_effects_scroll.setWidgetResizable(True)
+        self.done_effects_scroll.setMaximumHeight(180)
+        self.done_effects_scroll.setStyleSheet(
+            "QScrollArea { border: 1px solid #dcdcdc; border-radius: 4px; background: #fafafa; }")
+        self.done_effects_container = QWidget()
+        self.done_effects_container_layout = QVBoxLayout(self.done_effects_container)
+        self.done_effects_container_layout.setContentsMargins(4, 4, 4, 4)
+        self.done_effects_container_layout.setSpacing(4)
+        self.done_effects_container_layout.setAlignment(Qt.AlignTop)
+        self.done_effects_scroll.setWidget(self.done_effects_container)
+        done_eff_vbox.addWidget(self.done_effects_scroll)
+
+        eff_main_vbox.addWidget(self.done_effects_box)
 
         self.container_layout.addWidget(self.effects_group)
         self.container_layout.addStretch()
@@ -559,7 +603,8 @@ class LoreBlockForm(QWidget):
         if hasattr(self, "active_conditions_widget"):
             self.active_conditions_widget.set_controller(controller)
             self.done_conditions_widget.set_controller(controller)
-        self.refresh_effects_list()
+        self.refresh_active_effects_list()
+        self.refresh_done_effects_list()
 
     def set_lore_block(self, block: Optional[LoreBlock]):
         self._loading = True
@@ -586,7 +631,8 @@ class LoreBlockForm(QWidget):
             self._apply_type_layout("Event")
             self.active_conditions_widget.set_conditions([])
             self.done_conditions_widget.set_conditions([])
-            self.refresh_effects_list()
+            self.refresh_active_effects_list()
+            self.refresh_done_effects_list()
             return
 
         type_val = getattr(block, "type", "Event") or "Event"
@@ -632,48 +678,27 @@ class LoreBlockForm(QWidget):
         self.phrases_done_edit.setPlainText("\n".join(done_group.trigger_phrases))
         self.phrases_done_edit.setVisible(done_group.rag_enabled)
 
-        self.refresh_effects_list()
+        # Doble Effect
+        if block.active_effects is None:
+            block.active_effects = []
+        if block.done_effects is None:
+            block.done_effects = []
+        self.refresh_active_effects_list()
+        self.refresh_done_effects_list()
 
     def _apply_type_styling(self, type_name: str):
-        TYPE_HEADERS = {
-            "Chapter": ("📖", "Capítulo (Contenedor)", "#2b6cb0"),
-            "Quest": ("⚔️", "Quest (Misión)", "#b7791f"),
-            "Task": ("📌", "Tarea (Objetivo)", "#2c7a7b"),
-            "Event": ("⚡", "Evento", "#5c6bc0"),
-            "popup": ("📢", "Evento Pop-up (popup_event)", "#d97706"),
-        }
-        icon, label, color = TYPE_HEADERS.get(type_name, ("📜", "Bloque de Lore", "#5c6bc0"))
+        meta = TYPE_METADATA.get(type_name, {"icon": "📜", "label": type_name, "color": "#5c6bc0"})
+        icon = meta.get("icon", "📜")
+        label = meta.get("label", type_name)
+        color = meta.get("color", "#5c6bc0")
         self.header_title.setText(f"<b>{icon} {label} (HSM)</b>")
         self.header_title.setStyleSheet(f"font-size: 14px; color: {color};")
 
     def _apply_type_layout(self, type_name: str):
-        is_container = type_name in ("Chapter", "Quest", "Task")
-        is_popup = type_name == "popup"
-
-        if is_popup:
-            self.container_note_group.setVisible(True)
-            self.container_note_label.setText(
-                "📢 <b>Aviso Emergente (Pop-up)</b>: Los eventos pop-up son notificaciones modales directas. "
-                "Se disparan cuando se cumplen sus requisitos previos (<b>active_conditions</b>), mostrando el "
-                "<b>Título</b> y la <b>Descripción</b> al jugador y pasando automáticamente a estado completado (<b>done</b>). "
-                "No admiten efectos sobre entidades ni condiciones de salida."
-            )
-            self.effects_group.setVisible(False)
-            self.done_box.setVisible(False)
+        # Todos los tipos muestran el formulario base completo
+        if type_name == "popup":
             self.desc_edit.setPlaceholderText("Mensaje o contenido del aviso emergente a mostrar al jugador...")
-        elif is_container:
-            self.container_note_group.setVisible(True)
-            self.container_note_label.setText(
-                "ℹ️ <b>Contenedor Jerárquico Puro</b>: Los capítulos, quests y tareas no aplican efectos directos sobre entidades; "
-                "su progreso e impacto se rigen exclusivamente por las condiciones y efectos de sus tareas y eventos hijos."
-            )
-            self.effects_group.setVisible(False)
-            self.done_box.setVisible(True)
-            self.desc_edit.setPlaceholderText("Descripción interna o contexto del bloque...")
         else:
-            self.container_note_group.setVisible(False)
-            self.effects_group.setVisible(True)
-            self.done_box.setVisible(True)
             self.desc_edit.setPlaceholderText("Descripción interna o contexto del bloque...")
 
     def on_type_changed(self):
@@ -681,11 +706,6 @@ class LoreBlockForm(QWidget):
             return
         type_val = self.type_combo.currentData() or "Event"
         self.lore_block.type = type_val
-        if type_val == "popup":
-            self.lore_block.effects = []
-            self.lore_block.done_conditions = []
-            self.refresh_effects_list()
-            self.done_conditions_widget.set_conditions([])
         self._apply_type_styling(type_val)
         self._apply_type_layout(type_val)
 
@@ -777,24 +797,43 @@ class LoreBlockForm(QWidget):
         if self.lore_block and self.parent_app and hasattr(self.parent_app, "delete_lore_block"):
             self.parent_app.delete_lore_block(self.lore_block)
 
-    def refresh_effects_list(self):
-        while self.effects_container_layout.count():
-            item = self.effects_container_layout.takeAt(0)
+    def refresh_active_effects_list(self):
+        while self.active_effects_container_layout.count():
+            item = self.active_effects_container_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
-        if not self.lore_block or not self.lore_block.effects:
-            empty_lbl = QLabel("No hay efectos definidos.\nHaz clic en '➕ Añadir Efecto...' para configurar uno.")
+        if not self.lore_block or not self.lore_block.active_effects:
+            empty_lbl = QLabel(
+                "Sin efectos al activar (active_effects).\nHaz clic en '➕ Añadir Efecto al Activar...' para configurar uno.")
             empty_lbl.setAlignment(Qt.AlignCenter)
-            empty_lbl.setStyleSheet("color: #888; font-style: italic; padding: 16px; font-size: 11px;")
-            self.effects_container_layout.addWidget(empty_lbl)
+            empty_lbl.setStyleSheet("color: #888; font-style: italic; padding: 10px; font-size: 11px;")
+            self.active_effects_container_layout.addWidget(empty_lbl)
             return
 
-        for idx, eff in enumerate(self.lore_block.effects):
-            card = self._create_effect_card(idx, eff)
-            self.effects_container_layout.addWidget(card)
+        for idx, eff in enumerate(self.lore_block.active_effects):
+            card = self._create_effect_card(idx, eff, is_active=True)
+            self.active_effects_container_layout.addWidget(card)
 
-    def _create_effect_card(self, index: int, eff: LoreEffects) -> QFrame:
+    def refresh_done_effects_list(self):
+        while self.done_effects_container_layout.count():
+            item = self.done_effects_container_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if not self.lore_block or not self.lore_block.done_effects:
+            empty_lbl = QLabel(
+                "Sin efectos al completar (done_effects).\nHaz clic en '➕ Añadir Efecto al Completar...' para configurar uno.")
+            empty_lbl.setAlignment(Qt.AlignCenter)
+            empty_lbl.setStyleSheet("color: #888; font-style: italic; padding: 10px; font-size: 11px;")
+            self.done_effects_container_layout.addWidget(empty_lbl)
+            return
+
+        for idx, eff in enumerate(self.lore_block.done_effects):
+            card = self._create_effect_card(idx, eff, is_active=False)
+            self.done_effects_container_layout.addWidget(card)
+
+    def _create_effect_card(self, index: int, eff: LoreEffects, is_active: bool = True) -> QFrame:
         card = QFrame()
         card.setCursor(Qt.PointingHandCursor)
         card.setStyleSheet("""
@@ -819,17 +858,20 @@ class LoreBlockForm(QWidget):
         action_badge.setStyleSheet("padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: bold;")
         if eff.action == "push":
             action_badge.setText("⚡ Push")
-            action_badge.setStyleSheet(action_badge.styleSheet() + "background: #fff3e0; color: #e65100; border: 1px solid #ffe0b2;")
+            action_badge.setStyleSheet(
+                action_badge.styleSheet() + "background: #fff3e0; color: #e65100; border: 1px solid #ffe0b2;")
             action_badge.setToolTip("Acción forzada inmediata del loreblock")
         else:
             action_badge.setText("🎧 Hook")
-            action_badge.setStyleSheet(action_badge.styleSheet() + "background: #ede7f6; color: #512da8; border: 1px solid #d1c4e9;")
+            action_badge.setStyleSheet(
+                action_badge.styleSheet() + "background: #ede7f6; color: #512da8; border: 1px solid #d1c4e9;")
             action_badge.setToolTip("Acción pasiva al interactuar con la entidad")
         layout.addWidget(action_badge)
 
         # 2. Entidad Objetivo
         target_badge = QLabel()
-        target_badge.setStyleSheet("padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: bold; background: #f5f5f5; color: #333; border: 1px solid #e0e0e0;")
+        target_badge.setStyleSheet(
+            "padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: bold; background: #f5f5f5; color: #333; border: 1px solid #e0e0e0;")
         badge_text = self._resolve_entity_badge(eff.target)
         target_badge.setText(badge_text)
         layout.addWidget(target_badge)
@@ -848,7 +890,8 @@ class LoreBlockForm(QWidget):
         # 4. Badge de Tiempo Transcurrido (si > 00:00)
         if eff.elapsed_time and eff.elapsed_time != "00:00":
             time_badge = QLabel(f"⏳ {eff.elapsed_time}")
-            time_badge.setStyleSheet("padding: 2px 5px; border-radius: 3px; font-size: 10px; font-weight: bold; background: #e0f2f1; color: #00695c; border: 1px solid #b2dfdb;")
+            time_badge.setStyleSheet(
+                "padding: 2px 5px; border-radius: 3px; font-size: 10px; font-weight: bold; background: #e0f2f1; color: #00695c; border: 1px solid #b2dfdb;")
             time_badge.setToolTip("Tiempo de juego sumado")
             layout.addWidget(time_badge)
 
@@ -863,16 +906,26 @@ class LoreBlockForm(QWidget):
         edit_btn = QPushButton("✏️")
         edit_btn.setToolTip("Editar efecto (o doble clic)")
         edit_btn.setStyleSheet("border: none; background: transparent; padding: 2px 4px; font-size: 12px;")
-        edit_btn.clicked.connect(lambda _, i=index: self.on_edit_effect_clicked(i))
+        if is_active:
+            edit_btn.clicked.connect(lambda _, i=index: self.on_edit_active_effect_clicked(i))
+        else:
+            edit_btn.clicked.connect(lambda _, i=index: self.on_edit_done_effect_clicked(i))
         layout.addWidget(edit_btn)
 
         del_btn = QPushButton("✕")
         del_btn.setToolTip("Eliminar efecto")
-        del_btn.setStyleSheet("border: none; background: transparent; color: #cc0000; font-weight: bold; padding: 2px 4px; font-size: 12px;")
-        del_btn.clicked.connect(lambda _, i=index: self.on_delete_effect_clicked(i))
+        del_btn.setStyleSheet(
+            "border: none; background: transparent; color: #cc0000; font-weight: bold; padding: 2px 4px; font-size: 12px;")
+        if is_active:
+            del_btn.clicked.connect(lambda _, i=index: self.on_delete_active_effect_clicked(i))
+        else:
+            del_btn.clicked.connect(lambda _, i=index: self.on_delete_done_effect_clicked(i))
         layout.addWidget(del_btn)
 
-        card.mouseDoubleClickEvent = lambda event, i=index: self.on_edit_effect_clicked(i)
+        if is_active:
+            card.mouseDoubleClickEvent = lambda event, i=index: self.on_edit_active_effect_clicked(i)
+        else:
+            card.mouseDoubleClickEvent = lambda event, i=index: self.on_edit_done_effect_clicked(i)
         return card
 
     def _resolve_entity_badge(self, target_id: Optional[str]) -> str:
@@ -911,38 +964,82 @@ class LoreBlockForm(QWidget):
             tags.append("⚡ Bypass LLM")
         return tags
 
-    def on_add_effect_clicked(self):
+    def on_add_active_effect_clicked(self):
         if not self.lore_block:
             return
         is_pop = bool(getattr(self.lore_block, "type", "") == "popup")
         dialog = LoreEffectDialog(controller=self.controller, parent=self, is_popup=is_pop)
+        dialog.setWindowTitle("Configurar Efecto al Activar (active_effects)")
         if dialog.exec() == QDialog.DialogCode.Accepted:
             new_eff = dialog.get_effect()
-            self.lore_block.effects.append(new_eff)
-            self.refresh_effects_list()
+            if self.lore_block.active_effects is None:
+                self.lore_block.active_effects = []
+            self.lore_block.active_effects.append(new_eff)
+            self.refresh_active_effects_list()
             self.lore_changed.emit()
 
-    def on_edit_effect_clicked(self, index: int):
-        if not self.lore_block or index < 0 or index >= len(self.lore_block.effects):
+    def on_edit_active_effect_clicked(self, index: int):
+        if not self.lore_block or not self.lore_block.active_effects or index < 0 or index >= len(
+                self.lore_block.active_effects):
             return
         is_pop = bool(getattr(self.lore_block, "type", "") == "popup")
         dialog = LoreEffectDialog(
-            effect=self.lore_block.effects[index],
+            effect=self.lore_block.active_effects[index],
             controller=self.controller,
             parent=self,
             is_popup=is_pop,
         )
+        dialog.setWindowTitle("Configurar Efecto al Activar (active_effects)")
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            updated_eff = dialog.get_effect()
-            self.lore_block.effects[index] = updated_eff
-            self.refresh_effects_list()
+            self.lore_block.active_effects[index] = dialog.get_effect()
+            self.refresh_active_effects_list()
             self.lore_changed.emit()
 
-    def on_delete_effect_clicked(self, index: int):
-        if not self.lore_block or index < 0 or index >= len(self.lore_block.effects):
+    def on_delete_active_effect_clicked(self, index: int):
+        if not self.lore_block or not self.lore_block.active_effects or index < 0 or index >= len(
+                self.lore_block.active_effects):
             return
-        self.lore_block.effects.pop(index)
-        self.refresh_effects_list()
+        self.lore_block.active_effects.pop(index)
+        self.refresh_active_effects_list()
+        self.lore_changed.emit()
+
+    def on_add_done_effect_clicked(self):
+        if not self.lore_block:
+            return
+        is_pop = bool(getattr(self.lore_block, "type", "") == "popup")
+        dialog = LoreEffectDialog(controller=self.controller, parent=self, is_popup=is_pop)
+        dialog.setWindowTitle("Configurar Efecto al Completar (done_effects)")
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            new_eff = dialog.get_effect()
+            if self.lore_block.done_effects is None:
+                self.lore_block.done_effects = []
+            self.lore_block.done_effects.append(new_eff)
+            self.refresh_done_effects_list()
+            self.lore_changed.emit()
+
+    def on_edit_done_effect_clicked(self, index: int):
+        if not self.lore_block or not self.lore_block.done_effects or index < 0 or index >= len(
+                self.lore_block.done_effects):
+            return
+        is_pop = bool(getattr(self.lore_block, "type", "") == "popup")
+        dialog = LoreEffectDialog(
+            effect=self.lore_block.done_effects[index],
+            controller=self.controller,
+            parent=self,
+            is_popup=is_pop,
+        )
+        dialog.setWindowTitle("Configurar Efecto al Completar (done_effects)")
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.lore_block.done_effects[index] = dialog.get_effect()
+            self.refresh_done_effects_list()
+            self.lore_changed.emit()
+
+    def on_delete_done_effect_clicked(self, index: int):
+        if not self.lore_block or not self.lore_block.done_effects or index < 0 or index >= len(
+                self.lore_block.done_effects):
+            return
+        self.lore_block.done_effects.pop(index)
+        self.refresh_done_effects_list()
         self.lore_changed.emit()
 
     def populate_parent_combo(self, current_id: Optional[str]):

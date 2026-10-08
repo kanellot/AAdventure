@@ -1,19 +1,58 @@
 """Aplicador atómico de efectos argumentales (LoreEffects)."""
 
 from __future__ import annotations
-from typing import Any, Dict, List, Tuple
+
+import logging
+from typing import Any, Dict, List, NamedTuple, Tuple
+
+logger = logging.getLogger(__name__)
+
 from engines.game.state_controller import GameStateController
+
+
+class AutonomousPushAction(NamedTuple):
+    """Acción autónoma proactiva ('push') generada por un efecto de Lore."""
+
+    action: str
+    target: str
+    directive: str = ""
+    bypass_llm: bool = False
 
 
 class LoreEffectApplier:
     """Aplica de forma atómica y pura las mutaciones declaradas en los efectos de un LoreBlock."""
 
     @classmethod
+    def apply_block_effects(
+            cls,
+            blocks: List[Dict[str, Any]],
+            phase: str,  # "active" | "done"
+            ctrl: GameStateController,
+            autonomous_push: Optional[List[AutonomousPushAction]] = None,
+    ) -> List[AutonomousPushAction]:
+        """Aplica de forma parametrizada los efectos correspondientes a la fase ('active' o 'done').
+
+        Retorna la lista acumulada de acciones push autónomas generadas.
+        """
+        push_actions = autonomous_push if autonomous_push is not None else []
+        for blk in blocks:
+            if phase == "active":
+                effects = blk.get("active_effects", []) or blk.get("effects", [])
+            else:
+                effects = blk.get("done_effects", [])
+
+            if effects:
+                cls.apply_effects(effects, ctrl, push_actions)
+
+
+        return push_actions
+
+    @classmethod
     def apply_effects(
-        cls,
-        effects: List[Dict[str, Any]],
-        ctrl: GameStateController,
-        autonomous_push: List[Tuple[str, str]],
+            cls,
+            effects: List[Dict[str, Any]],
+            ctrl: GameStateController,
+            autonomous_push: List[AutonomousPushAction],
     ) -> None:
         """Ejecuta la lista de efectos sobre el estado canónico y detecta acciones autónomas 'push'."""
         for eff in effects:
@@ -73,11 +112,45 @@ class LoreEffectApplier:
                     mins = int(parts[0]) * 60 + int(parts[1])
                     if mins > 0:
                         ctrl.add_elapsed_minutes(mins)
-                except Exception:
-                    pass
+                except (ValueError, IndexError) as e:
+                    logger.debug("Error al parsear elapsed_time '%s': %s", t_str, e)
 
             # 6. Acciones Autónomas 'push'
-            if eff.get("action") == "push" and eff.get("target"):
+            if eff.get("action") == "push":
                 tgt = eff.get("target")
-                push_act = "TALK" if tgt in ctrl.npcs_by_id else "MOVE"
-                autonomous_push.append((push_act, tgt))
+                directive = str(eff.get("directive") or "")
+                bypass_llm = bool(eff.get("bypass_llm", False))
+
+                if not tgt:
+                    act = "LOOK"
+                    resolved_tgt = ctrl.game_state.current_location
+                elif tgt in ctrl.npcs_by_id:
+                    act = "TALK"
+                    resolved_tgt = tgt
+                elif hasattr(ctrl, "npcs_by_name") and tgt in ctrl.npcs_by_name:
+                    act = "TALK"
+                    resolved_tgt = ctrl.npcs_by_name[tgt].id
+                elif tgt in ctrl.items_by_id:
+                    act = "LOOK"
+                    resolved_tgt = tgt
+                elif hasattr(ctrl, "items_by_name") and tgt in ctrl.items_by_name:
+                    act = "LOOK"
+                    resolved_tgt = ctrl.items_by_name[tgt].id
+                elif tgt in ctrl.places_by_id:
+                    act = "LOOK"
+                    resolved_tgt = tgt
+                elif hasattr(ctrl, "places_by_name") and tgt in ctrl.places_by_name:
+                    act = "LOOK"
+                    resolved_tgt = ctrl.places_by_name[tgt].id
+                else:
+                    act = "LOOK"
+                    resolved_tgt = ctrl.game_state.current_location
+
+                autonomous_push.append(
+                    AutonomousPushAction(
+                        action=act,
+                        target=resolved_tgt,
+                        directive=directive,
+                        bypass_llm=bypass_llm,
+                    )
+                )

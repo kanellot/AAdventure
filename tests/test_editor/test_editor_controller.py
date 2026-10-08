@@ -1,10 +1,11 @@
 """Pruebas unitarias para EditorController: carga, mutación y guardado en .aad."""
 
-import unittest
 import os
 import tempfile
-from editor_debugger.editor.controller import EditorController
+import unittest
+
 from domains import LoreBlock
+from editor_debugger.editor.controller import EditorController
 
 
 class TestEditorController(unittest.TestCase):
@@ -49,14 +50,16 @@ class TestEditorController(unittest.TestCase):
         self.controller.add_connection("Parque", "Claro del Bosque", "South", "North", 150, "forest")
 
         # 2. Agregar nuevo NPC
-        new_npc = self.controller.add_npc("Druida Silvano", "Un anciano protector del bosque.", initial_location=new_place.id)
+        new_npc = self.controller.add_npc("Druida Silvano", "Un anciano protector del bosque.",
+                                          initial_location=new_place.id)
         self.assertIn(new_npc, self.controller.npcs)
 
         # 3. Agregar nuevo LoreBlock
         new_lb = LoreBlock(
             id="lb_bosque_secreto",
             title="El Secreto del Bosque",
-            directive="Revela pistas del bosque.",
+            parent_id="t_misterios_villa",
+            type="Event",
         )
         self.controller.add_lore_block(new_lb)
 
@@ -110,4 +113,3 @@ class TestEditorController(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

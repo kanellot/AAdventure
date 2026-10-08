@@ -3,8 +3,10 @@
 import os
 import tempfile
 import unittest
+
+from domains import Connection
+from domains.lore import LoreBlock, LoreEffects
 from editor_debugger.editor.controller import EditorController
-from domains import Player, World, Location, Place, NPC, Item, Connection
 
 
 class TestStoryValidation(unittest.TestCase):
@@ -142,7 +144,8 @@ class TestStoryValidation(unittest.TestCase):
         p4 = self.controller.add_place(loc.id, "Isla B", "Isla B")
 
         # Conectar p1 <-> p2
-        self.controller.add_connection(self.controller.get_all_places()[0].name, "Plaza Norte", "North", "South", 100, "road")
+        self.controller.add_connection(self.controller.get_all_places()[0].name, "Plaza Norte", "North", "South", 100,
+                                       "road")
         # Conectar p3 <-> p4 de forma aislada
         self.controller.add_connection("Isla A", "Isla B", "East", "West", 100, "road")
 
@@ -185,6 +188,47 @@ class TestStoryValidation(unittest.TestCase):
             self.assertEqual(loaded.player.initial_location, place.id)
             self.assertEqual(loaded.npcs[0].initial_location, place.id)
             self.assertEqual(loaded.items[0].initial_location, place.name)
+
+    # 7. Reglas de Validación de Acciones Hook
+    def test_hook_without_target_fails(self):
+        """Un bloque con acción hook sin target debe fallar la validación."""
+        blk = LoreBlock(
+            id="lb_test",
+            name="Bloque Inválido",
+            type="Chapter",
+            active_effects=[LoreEffects(action="hook", target=None, directive="Pista")],
+        )
+        self.controller.lore_blocks = [blk]
+        valid, err = self.controller.validate_story()
+        self.assertFalse(valid)
+        self.assertIn("requieren obligatoriamente un target", err)
+
+    def test_hook_with_target_passes(self):
+        """Un bloque con acción hook con target debe pasar la validación."""
+        place = self.controller.get_all_places()[0]
+        blk = LoreBlock(
+            id="lb_test",
+            name="Bloque Válido",
+            type="Chapter",
+            active_effects=[LoreEffects(action="hook", target=place.id, directive="Pista")],
+        )
+        self.controller.lore_blocks = [blk]
+        valid, err = self.controller.validate_story()
+        self.assertTrue(valid)
+        self.assertIsNone(err)
+
+    def test_push_without_target_passes(self):
+        """Una acción push sin target está permitida."""
+        blk = LoreBlock(
+            id="lb_test",
+            name="Bloque Push",
+            type="Chapter",
+            active_effects=[LoreEffects(action="push", target=None, directive="Aviso")],
+        )
+        self.controller.lore_blocks = [blk]
+        valid, err = self.controller.validate_story()
+        self.assertTrue(valid)
+        self.assertIsNone(err)
 
 
 if __name__ == "__main__":

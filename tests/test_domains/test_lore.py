@@ -1,6 +1,7 @@
 """Pruebas unitarias para modelos de Lore y Condiciones HSM (domains.lore)."""
 
 import unittest
+
 from domains.lore import EntityCondition, ConditionGroup, LoreEffects, LoreBlock, LoreBlockState
 
 
@@ -81,7 +82,8 @@ class TestLoreModels(unittest.TestCase):
             done_conditions=[
                 ConditionGroup(conditions=[cond_done], rag_enabled=False, trigger_phrases=[])
             ],
-            effects=[eff_active],
+            active_effects=[eff_active],
+            done_effects=[],
         )
 
         self.assertEqual(block.id, "lb_mision_principal")
@@ -94,9 +96,10 @@ class TestLoreModels(unittest.TestCase):
         self.assertEqual(len(block.done_conditions), 1)
         self.assertEqual(len(block.done_conditions[0].conditions), 1)
         self.assertFalse(block.done_conditions[0].rag_enabled)
-        self.assertEqual(len(block.effects), 1)
-        self.assertEqual(block.effects[0].elapsed_time, "00:30")
-        self.assertEqual(block.effects[0].action, "hook")
+        self.assertEqual(len(block.active_effects), 1)
+        self.assertEqual(block.active_effects[0].elapsed_time, "00:30")
+        self.assertEqual(block.active_effects[0].action, "hook")
+        self.assertEqual(len(block.done_effects), 0)
 
 
 if __name__ == "__main__":

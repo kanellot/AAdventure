@@ -1,7 +1,9 @@
 """Modelos de proyección (DTOs) para la interfaz de usuario de juego (Game UI)."""
 
 from typing import List, Literal, Optional, Union
+
 from pydantic import BaseModel, Field
+
 from domains.game_state import NotebookEntry
 from domains.projections.debug import TurnDebugProjection
 

@@ -2,7 +2,9 @@
 
 import unittest
 from typing import Optional
+
 from pydantic import BaseModel, Field, ValidationError
+
 from engines.transformer import SchemaValidator, TransformerEngine, LLMFactory
 from engines.transformer.base_adapter import BaseLLMAdapter
 from engines.transformer.lm_studio_adapter import LMStudioAdapter
@@ -21,11 +23,11 @@ class MockLLMAdapter(BaseLLMAdapter):
         self.last_prompt = None
 
     def generate(
-        self,
-        prompt: str,
-        profile_name: str = "narrator",
-        response_schema: Optional[dict] = None,
-        schema_name: Optional[str] = None,
+            self,
+            prompt: str,
+            profile_name: str = "narrator",
+            response_schema: Optional[dict] = None,
+            schema_name: Optional[str] = None,
     ) -> dict:
         self.last_prompt = prompt
         return self.payload

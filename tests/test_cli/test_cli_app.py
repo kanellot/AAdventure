@@ -2,9 +2,8 @@
 
 import io
 import os
-import sys
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from cli.app import CLIApp
 from cli.formatter import CLIFormatter

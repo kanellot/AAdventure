@@ -2,18 +2,13 @@
 
 import json
 import os
-import threading
-import time
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from domains.projections import TurnResultProjection, UIStateProjection
 from engines import AdventureSession
-from engines.embedding.mock_backend import MockEmbeddingBackend
 from engines.events import ThinkingEvent
 from engines.listeners import SyncCollectingEventListener
-from engines.transformer.mock_adapter import MockLLMAdapter
-
 
 EventCollectorListener = SyncCollectingEventListener
 
@@ -155,6 +150,118 @@ class TestAsyncAdventureSession(unittest.TestCase):
             # Verificar que el thinking finalizó con False
             last_event = ThinkingEvent.model_validate_json(self.listener.thinking_events[-1])
             self.assertFalse(last_event.is_thinking)
+
+    def test_push_action_sequential_delivery_and_thinking(self):
+        """Verifica que una acción push se encola y entrega como segundo turno consecutivo e independiente."""
+        ctrl = self.session._engine.game_state_controller
+        push_block = {
+            "id": "block_mendigo_push",
+            "name": "Mendigo Intercept",
+            "type": "Event",
+            "parent_id": None,
+            "state": "unknown",
+            "active_conditions": [
+                {
+                    "conditions": [
+                        {
+                            "entity_type": "place",
+                            "entity_id": "p_01",
+                            "sub_condition": "current_location",
+                        }
+                    ]
+                }
+            ],
+            "active_effects": [
+                {
+                    "action": "push",
+                    "target": "npc_mendigo",
+                    "directive": "¡Una moneda por favor!",
+                    "bypass_llm": True,
+                }
+            ],
+            "done_conditions": [],
+            "done_effects": [],
+        }
+        ctrl.game_state.loreblocks.unknown.append(push_block)
+
+        # Disparar MOVE
+        self.session.post_action("MOVE", "Calle Pobre")
+        finished = self.session.wait_idle(timeout=4.0)
+        self.assertTrue(finished)
+
+        # Deben haberse completado exactamente 2 tareas: 1 (MOVE de PLAYER) y 2 (TALK de LORE)
+        self.assertEqual(len(self.listener.completed_tasks), 2)
+        task1_id, res1_json = self.listener.completed_tasks[0]
+        task2_id, res2_json = self.listener.completed_tasks[1]
+
+        res1 = TurnResultProjection.model_validate_json(res1_json)
+        res2 = TurnResultProjection.model_validate_json(res2_json)
+
+        # Turno 1 es la narrativa de MOVE
+        self.assertEqual(res1.output.author, "Dungeon Master")
+        self.assertIn("Avanzas con precaución", res1.output.msg)
+
+        # Turno 2 es la narrativa del push autónomo (Mendigo con bypass)
+        self.assertIn("moneda", res2.output.msg)
+        self.assertEqual(res2.output.author, "Mendigo")
+
+        # Comprobar que hubo eventos Thinking tanto para PLAYER como para LORE
+        lore_thinking = [
+            ThinkingEvent.model_validate_json(e)
+            for e in self.listener.thinking_events
+            if ThinkingEvent.model_validate_json(e).source == "LORE"
+        ]
+        self.assertGreater(len(lore_thinking), 0)
+        self.assertEqual(lore_thinking[0].action, "TALK")
+        self.assertEqual(lore_thinking[0].target, "npc_mendigo")
+
+    def test_push_action_depth_limit(self):
+        """Verifica que un encadenamiento que alcanza MAX_AUTONOMOUS_CHAIN_DEPTH no encola más tareas."""
+        ctrl = self.session._engine.game_state_controller
+        loop_block = {
+            "id": "block_loop_push",
+            "name": "Loop Push",
+            "type": "Event",
+            "parent_id": None,
+            "state": "unknown",
+            "active_conditions": [
+                {
+                    "conditions": [
+                        {
+                            "entity_type": "place",
+                            "entity_id": "p_01",
+                            "sub_condition": "current_location",
+                        }
+                    ]
+                }
+            ],
+            "active_effects": [
+                {
+                    "action": "push",
+                    "target": "npc_mendigo",
+                    "directive": "Bucle",
+                    "bypass_llm": True,
+                }
+            ],
+            "done_conditions": [],
+            "done_effects": [],
+        }
+        ctrl.game_state.loreblocks.unknown.append(loop_block)
+
+        max_depth = self.session._engine.MAX_AUTONOMOUS_CHAIN_DEPTH
+        self.assertEqual(max_depth, 3)
+
+        # Al ejecutar con depth >= MAX_AUTONOMOUS_CHAIN_DEPTH, no se encola nada en task_queue
+        # Limpiar cola primero
+        while not self.session._engine.worker.task_queue.empty():
+            self.session._engine.worker.task_queue.get_nowait()
+
+        self.session._engine.execute_turn(
+            action="MOVE",
+            target="Calle Pobre",
+            autonomous_depth=max_depth,
+        )
+        self.assertEqual(self.session._engine.worker.task_queue.qsize(), 0)
 
 
 if __name__ == "__main__":

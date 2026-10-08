@@ -369,855 +369,735 @@ def build_adventure_data():
     # 5. LOREBLOCKS DATA (Árbol HSM Benchmark Integral)
     # -------------------------------------------------------------------------
     lore_data = {
-        "lore_blocks": [
-            # Popup inicial al entrar
-            {
-                "id": "popup_bienvenida",
-                "name": "Llegada a Villa Roca",
-                "title": "Llegada a Villa Roca",
-                "description": "¡Bienvenido a Villa Roca! Tu objetivo es lograr una audiencia con el Rey Arturo en su castillo.",
-                "type": "popup",
-                "parent_id": None,
-                "state": "unknown",
-                "active_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "place",
-                                "entity_id": "p_00",
-                                "sub_condition": "current_location",
-                                "value": None,
-                                "is_negated": False,
-                            }
-                        ],
-                    }
-                ],
-                "done_conditions": [],
-                "effects": [],
-            },
-            # Capítulo 1: Contenedor raíz
-            {
-                "id": "c1_villa_roca",
-                "name": "Capítulo 1: Los Secretos de Villa Roca",
-                "title": "Capítulo 1: Los Secretos de Villa Roca",
-                "description": "Explora la villa, asiste a sus gentes y descubre cómo franquear las defensas del castillo real.",
-                "type": "Chapter",
-                "parent_id": None,
-                "state": "active",
-                "active_conditions": [],
-                "done_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "loreblock",
-                                "entity_id": "c1_villa_roca",
-                                "sub_condition": "all_children_done",
-                                "value": None,
-                                "is_negated": False,
-                            }
-                        ],
-                    }
-                ],
-                "effects": [
-                    {
-                        "target": None,
-                        "action": "hook",
-                        "elapsed_time": "00:00",
-                        "directive": "Has llegado a Villa Roca. Debes explorar el entorno para abrirte paso hasta el castillo.",
-                        "bypass_llm": False,
-                        "gold_delta": 0,
-                        "affinity_delta": 0.0,
-                        "give_items": [],
-                        "take_items": [],
-                        "unlock_places": [],
-                        "unlock_npcs": [],
-                        "unlock_items": [],
-                        "block_places": [],
-                        "unblock_places": [],
-                    }
-                ],
-            },
-            # Quest 1: El Favor del Mendigo
-            {
-                "id": "q_favor_mendigo",
-                "name": "Misión: El Favor del Mendigo",
-                "title": "Misión: El Favor del Mendigo",
-                "description": "Ayuda al mendigo de la Calle Pobre para ganarte su confianza y obtener pistas sobre la villa.",
-                "type": "Quest",
-                "parent_id": "c1_villa_roca",
-                "state": "active",
-                "active_conditions": [],
-                "done_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "loreblock",
-                                "entity_id": "q_favor_mendigo",
-                                "sub_condition": "all_children_done",
-                                "value": None,
-                                "is_negated": False,
-                            }
-                        ],
-                    }
-                ],
-                "effects": [
-                    {
-                        "target": "npc_mendigo",
-                        "action": "hook",
-                        "elapsed_time": "00:00",
-                        "directive": "El mendigo parece hambriento y desamparado. Una buena acción podría recompensarte.",
-                        "bypass_llm": False,
-                        "gold_delta": 0,
-                        "affinity_delta": 0.0,
-                        "give_items": [],
-                        "take_items": [],
-                        "unlock_places": [],
-                        "unlock_npcs": [],
-                        "unlock_items": [],
-                        "block_places": [],
-                        "unblock_places": [],
-                    }
-                ],
-            },
-            # Tarea 1.1: Hablar con el mendigo
-            {
-                "id": "t_hablar_mendigo",
-                "name": "Escuchar al mendigo",
-                "title": "Escuchar al mendigo",
-                "description": "Conversa con el mendigo en la Calle Pobre para conocer sus pesares.",
-                "type": "Task",
-                "parent_id": "q_favor_mendigo",
-                "state": "active",
-                "active_conditions": [],
-                "done_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "npc",
-                                "entity_id": "npc_mendigo",
-                                "sub_condition": "talk",
-                                "value": None,
-                                "is_negated": False,
-                            }
-                        ],
-                    }
-                ],
-                "effects": [
-                    {
-                        "target": "npc_mendigo",
-                        "action": "hook",
-                        "elapsed_time": "00:05",
-                        "directive": "El mendigo te mira con timidez y te agradece que te detengas a escucharle.",
-                        "bypass_llm": False,
-                        "gold_delta": 0,
-                        "affinity_delta": 0.1,
-                        "give_items": [],
-                        "take_items": [],
-                        "unlock_places": [],
-                        "unlock_npcs": [],
-                        "unlock_items": [],
-                        "block_places": [],
-                        "unblock_places": [],
-                    }
-                ],
-            },
-            # Tarea 1.2: Dar pan al mendigo
-            {
-                "id": "t_dar_pan_mendigo",
-                "name": "Entregar comida al mendigo",
-                "title": "Entregar comida al mendigo",
-                "description": "Ofrécele una hogaza de pan al mendigo para saciar su apetito.",
-                "type": "Task",
-                "parent_id": "q_favor_mendigo",
-                "state": "unknown",
-                "active_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "loreblock",
-                                "entity_id": "t_hablar_mendigo",
-                                "sub_condition": "done",
-                                "value": None,
-                                "is_negated": False,
-                            }
-                        ],
-                    }
-                ],
-                "done_conditions": [
-                    {
-                        "rag_enabled": True,
-                        "trigger_phrases": ["dar pan", "ofrecer comida", "tomar un trozo de pan", "aquí tienes pan"],
-                        "conditions": [
-                            {
-                                "entity_type": "npc",
-                                "entity_id": "npc_mendigo",
-                                "sub_condition": "talk",
-                                "value": None,
-                                "is_negated": False,
-                            },
-                            {
-                                "entity_type": "item",
-                                "entity_id": "item_pan",
-                                "sub_condition": "have",
-                                "value": None,
-                                "is_negated": False,
-                            },
-                        ],
-                    }
-                ],
-                "effects": [
-                    {
-                        "target": "npc_mendigo",
-                        "action": "hook",
-                        "elapsed_time": "00:05",
-                        "directive": "El mendigo devora el pan con infinita gratitud y a cambio te entrega una rara moneda antigua.",
-                        "bypass_llm": True,
-                        "gold_delta": 0,
-                        "affinity_delta": 0.3,
-                        "give_items": ["item_moneda_antigua"],
-                        "take_items": ["item_pan"],
-                        "unlock_places": [],
-                        "unlock_npcs": [],
-                        "unlock_items": [],
-                        "block_places": [],
-                        "unblock_places": [],
-                    }
-                ],
-            },
-            # Quest 2: El Secreto del Mago
-            {
-                "id": "q_secreto_mago",
-                "name": "Misión: El Secreto del Mago",
-                "title": "Misión: El Secreto del Mago",
-                "description": "Investiga el misterio del sótano sellado en la mansión del mago y recupera su grimorio.",
-                "type": "Quest",
-                "parent_id": "c1_villa_roca",
-                "state": "active",
-                "active_conditions": [],
-                "done_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "loreblock",
-                                "entity_id": "q_secreto_mago",
-                                "sub_condition": "all_children_done",
-                                "value": None,
-                                "is_negated": False,
-                            }
-                        ],
-                    }
-                ],
-                "effects": [
-                    {
-                        "target": "npc_mago",
-                        "action": "hook",
-                        "elapsed_time": "00:00",
-                        "directive": "El mago busca un aventurero valiente dispuesto a descender a su sótano arcano.",
-                        "bypass_llm": False,
-                        "gold_delta": 0,
-                        "affinity_delta": 0.0,
-                        "give_items": [],
-                        "take_items": [],
-                        "unlock_places": [],
-                        "unlock_npcs": [],
-                        "unlock_items": [],
-                        "block_places": [],
-                        "unblock_places": [],
-                    }
-                ],
-            },
-            # Tarea 2.1: Encontrar la Llave Arcana
-            {
-                "id": "t_llave_arcana",
-                "name": "Localizar la Llave Arcana",
-                "title": "Localizar la Llave Arcana",
-                "description": "Encuentra la llave mágica en la Casa del Mago.",
-                "type": "Task",
-                "parent_id": "q_secreto_mago",
-                "state": "active",
-                "active_conditions": [],
-                "done_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "place",
-                                "entity_id": "p_07",
-                                "sub_condition": "current_location",
-                                "value": None,
-                                "is_negated": False,
-                            },
-                            {
-                                "entity_type": "item",
-                                "entity_id": "item_llave_arcana",
-                                "sub_condition": "visible",
-                                "value": None,
-                                "is_negated": False,
-                            },
-                        ],
-                    }
-                ],
-                "effects": [
-                    {
-                        "target": None,
-                        "action": "hook",
-                        "elapsed_time": "00:05",
-                        "directive": "Descubres la Llave Arcana reluciendo sobre la mesa de pergaminos.",
-                        "bypass_llm": False,
-                        "gold_delta": 0,
-                        "affinity_delta": 0.0,
-                        "give_items": ["item_llave_arcana"],
-                        "take_items": [],
-                        "unlock_places": [],
-                        "unlock_npcs": [],
-                        "unlock_items": [],
-                        "block_places": [],
-                        "unblock_places": [],
-                    }
-                ],
-            },
-            # Tarea 2.2: Desbloquear el sótano
-            {
-                "id": "t_abrir_sotano",
-                "name": "Abrir el Sótano del Mago",
-                "title": "Abrir el Sótano del Mago",
-                "description": "Usa la Llave Arcana para abrir la trampilla sellada que desciende al sótano.",
-                "type": "Task",
-                "parent_id": "q_secreto_mago",
-                "state": "unknown",
-                "active_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "item",
-                                "entity_id": "item_llave_arcana",
-                                "sub_condition": "have",
-                                "value": None,
-                                "is_negated": False,
-                            }
-                        ],
-                    }
-                ],
-                "done_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "place",
-                                "entity_id": "p_07",
-                                "sub_condition": "current_location",
-                                "value": None,
-                                "is_negated": False,
-                            },
-                            {
-                                "entity_type": "item",
-                                "entity_id": "item_llave_arcana",
-                                "sub_condition": "have",
-                                "value": None,
-                                "is_negated": False,
-                            },
-                        ],
-                    }
-                ],
-                "effects": [
-                    {
-                        "target": None,
-                        "action": "hook",
-                        "elapsed_time": "00:05",
-                        "directive": "Introduces la Llave Arcana en la trampilla; con un chasquido resplandeciente, el sótano queda desbloqueado.",
-                        "bypass_llm": False,
-                        "gold_delta": 0,
-                        "affinity_delta": 0.0,
-                        "give_items": [],
-                        "take_items": [],
-                        "unlock_places": ["p_10"],
-                        "unlock_npcs": [],
-                        "unlock_items": ["item_grimorio_antiguo"],
-                        "block_places": [],
-                        "unblock_places": ["p_10"],
-                    }
-                ],
-            },
-            # Tarea 2.3: Recuperar el grimorio
-            {
-                "id": "t_recuperar_grimorio",
-                "name": "Recuperar el Grimorio Arcano",
-                "title": "Recuperar el Grimorio Arcano",
-                "description": "Desciende al sótano y toma posesión del tomo arcano.",
-                "type": "Task",
-                "parent_id": "q_secreto_mago",
-                "state": "unknown",
-                "active_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "loreblock",
-                                "entity_id": "t_abrir_sotano",
-                                "sub_condition": "done",
-                                "value": None,
-                                "is_negated": False,
-                            }
-                        ],
-                    }
-                ],
-                "done_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "place",
-                                "entity_id": "p_10",
-                                "sub_condition": "current_location",
-                                "value": None,
-                                "is_negated": False,
-                            }
-                        ],
-                    }
-                ],
-                "effects": [
-                    {
-                        "target": None,
-                        "action": "hook",
-                        "elapsed_time": "00:10",
-                        "directive": "Tomas el Grimorio Arcano del pedestal. Un poder misterioso palpita en tus manos.",
-                        "bypass_llm": False,
-                        "gold_delta": 0,
-                        "affinity_delta": 0.0,
-                        "give_items": ["item_grimorio_antiguo"],
-                        "take_items": [],
-                        "unlock_places": [],
-                        "unlock_npcs": [],
-                        "unlock_items": [],
-                        "block_places": [],
-                        "unblock_places": [],
-                    }
-                ],
-            },
-            # Quest 3: Conseguir el Salvoconducto
-            {
-                "id": "q_salvoconducto",
-                "name": "Misión: Conseguir el Salvoconducto",
-                "title": "Misión: Conseguir el Salvoconducto",
-                "description": "Adquiere el pase real para que la guardia te permita el acceso al castillo.",
-                "type": "Quest",
-                "parent_id": "c1_villa_roca",
-                "state": "active",
-                "active_conditions": [],
-                "done_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "item",
-                                "entity_id": "item_salvoconducto",
-                                "sub_condition": "have",
-                                "value": None,
-                                "is_negated": False,
-                            }
-                        ],
-                    }
-                ],
-                "effects": [
-                    {
-                        "target": "npc_guardia",
-                        "action": "hook",
-                        "elapsed_time": "00:00",
-                        "directive": "El centinela real no te permitirá pasar sin un salvoconducto sellado.",
-                        "bypass_llm": False,
-                        "gold_delta": 0,
-                        "affinity_delta": 0.0,
-                        "give_items": [],
-                        "take_items": [],
-                        "unlock_places": [],
-                        "unlock_npcs": [],
-                        "unlock_items": [],
-                        "block_places": [],
-                        "unblock_places": [],
-                    }
-                ],
-            },
-            # Tarea 3.1: Comprar el salvoconducto en la tienda
-            {
-                "id": "t_comprar_salvoconducto",
-                "name": "Comprar pase y provisiones en la tienda",
-                "title": "Comprar pase y provisiones en la tienda",
-                "description": "Paga 10 monedas de oro en el bazar para obtener el salvoconducto y una hogaza de pan.",
-                "type": "Task",
-                "parent_id": "q_salvoconducto",
-                "state": "active",
-                "active_conditions": [],
-                "done_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "place",
-                                "entity_id": "p_04",
-                                "sub_condition": "current_location",
-                                "value": None,
-                                "is_negated": False,
-                            },
-                            {
-                                "entity_type": "gold",
-                                "entity_id": "gold",
-                                "sub_condition": "have",
-                                "value": 10,
-                                "is_negated": False,
-                            },
-                        ],
-                    }
-                ],
-                "effects": [
-                    {
-                        "target": "npc_comerciante",
-                        "action": "hook",
-                        "elapsed_time": "00:10",
-                        "directive": "Pagas 10 monedas de oro al comerciante y recibes el Salvoconducto Real junto a una hogaza de pan.",
-                        "bypass_llm": False,
-                        "gold_delta": -10,
-                        "affinity_delta": 0.1,
-                        "give_items": ["item_salvoconducto", "item_pan"],
-                        "take_items": [],
-                        "unlock_places": [],
-                        "unlock_npcs": [],
-                        "unlock_items": [],
-                        "block_places": [],
-                        "unblock_places": [],
-                    }
-                ],
-            },
-            # Evento Semántico RAG: Secreto de la taberna
-            {
-                "id": "ev_taberna_secreto",
-                "name": "Secreto bajo la mesa de la Taberna",
-                "title": "Secreto bajo la mesa de la Taberna",
-                "description": "Una discreta búsqueda táctil revela un compartimento oculto bajo una mesa del mesón.",
-                "type": "Event",
-                "parent_id": "c1_villa_roca",
-                "state": "active",
-                "active_conditions": [],
-                "done_conditions": [
-                    {
-                        "rag_enabled": True,
-                        "trigger_phrases": ["mirar bajo la mesa", "buscar bajo la mesa", "agacharme a inspeccionar el suelo", "inspeccionar las tablas"],
-                        "conditions": [
-                            {
-                                "entity_type": "place",
-                                "entity_id": "p_03",
-                                "sub_condition": "current_location",
-                                "value": None,
-                                "is_negated": False,
-                            }
-                        ],
-                    }
-                ],
-                "effects": [
-                    {
-                        "target": None,
-                        "action": "hook",
-                        "elapsed_time": "00:05",
-                        "directive": "¡Tus dedos palpan un objeto metálico fijado con cera! Extraes una antigua Llave de Bronce.",
-                        "bypass_llm": True,
-                        "gold_delta": 0,
-                        "affinity_delta": 0.0,
-                        "give_items": ["item_llave_bodega"],
-                        "take_items": [],
-                        "unlock_places": [],
-                        "unlock_npcs": [],
-                        "unlock_items": [],
-                        "block_places": [],
-                        "unblock_places": [],
-                    }
-                ],
-            },
-            # Evento Temporal y de Afinidad: Bendición en la iglesia
-            {
-                "id": "ev_iglesia_bendicion",
-                "name": "Bendición Matutina del Cura",
-                "title": "Bendición Matutina del Cura",
-                "description": "Durante las horas del día, el párroco imparte su bendición a los piadosos que conversan con él.",
-                "type": "Event",
-                "parent_id": "c1_villa_roca",
-                "state": "active",
-                "active_conditions": [],
-                "done_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "place",
-                                "entity_id": "p_08",
-                                "sub_condition": "visited",
-                                "value": None,
-                                "is_negated": False,
-                            },
-                            {
-                                "entity_type": "time",
-                                "entity_id": "time",
-                                "sub_condition": "time_range",
-                                "value": "08:00-18:00",
-                                "is_negated": False,
-                            },
-                            {
-                                "entity_type": "npc",
-                                "entity_id": "npc_cura",
-                                "sub_condition": "talk",
-                                "value": None,
-                                "is_negated": False,
-                            },
-                        ],
-                    }
-                ],
-                "effects": [
-                    {
-                        "target": "npc_cura",
-                        "action": "hook",
-                        "elapsed_time": "00:05",
-                        "directive": "El párroco traza una bendición en tu frente, deseándote fortuna y rectitud en tu periplo.",
-                        "bypass_llm": False,
-                        "gold_delta": 0,
-                        "affinity_delta": 0.2,
-                        "give_items": [],
-                        "take_items": [],
-                        "unlock_places": [],
-                        "unlock_npcs": [],
-                        "unlock_items": [],
-                        "block_places": [],
-                        "unblock_places": [],
-                    }
-                ],
-            },
-            # Evento de Parque y Visibilidad de Entidades
-            {
-                "id": "ev_parque_juegos",
-                "name": "La Alegría del Parque",
-                "title": "La Alegría del Parque",
-                "description": "Encuentro con los niños del parque en sus juegos cotidianos.",
-                "type": "Event",
-                "parent_id": "c1_villa_roca",
-                "state": "active",
-                "active_conditions": [],
-                "done_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "place",
-                                "entity_id": "p_09",
-                                "sub_condition": "current_location",
-                                "value": None,
-                                "is_negated": False,
-                            },
-                            {
-                                "entity_type": "npc",
-                                "entity_id": "npc_nino_01",
-                                "sub_condition": "visible",
-                                "value": None,
-                                "is_negated": False,
-                            },
-                        ],
-                    }
-                ],
-                "effects": [
-                    {
-                        "target": None,
-                        "action": "hook",
-                        "elapsed_time": "00:05",
-                        "directive": "Los niños corretean alegremente a tu alrededor, llenando el parque de risas.",
-                        "bypass_llm": False,
-                        "gold_delta": 0,
-                        "affinity_delta": 0.0,
-                        "give_items": [],
-                        "take_items": [],
-                        "unlock_places": [],
-                        "unlock_npcs": [],
-                        "unlock_items": [],
-                        "block_places": [],
-                        "unblock_places": [],
-                    }
-                ],
-            },
-            # Capítulo 2: La Corona y el Arcano (Se activa al completar Capítulo 1)
-            {
-                "id": "c2_el_castillo",
-                "name": "Capítulo 2: La Corona y el Arcano",
-                "title": "Capítulo 2: La Corona y el Arcano",
-                "description": "Franquea la guardia real y obtén tu ansiada audiencia en el salón del trono del Rey Arturo.",
-                "type": "Chapter",
-                "parent_id": None,
-                "state": "unknown",
-                "active_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "loreblock",
-                                "entity_id": "c1_villa_roca",
-                                "sub_condition": "done",
-                                "value": None,
-                                "is_negated": False,
-                            }
-                        ],
-                    }
-                ],
-                "done_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "loreblock",
-                                "entity_id": "q_audiencia_real",
-                                "sub_condition": "done",
-                                "value": None,
-                                "is_negated": False,
-                            }
-                        ],
-                    }
-                ],
-                "effects": [
-                    {
-                        "target": None,
-                        "action": "hook",
-                        "elapsed_time": "00:05",
-                        "directive": "Has completado todas las hazañas de la villa. El puente del castillo se abre solemnemente.",
-                        "bypass_llm": False,
-                        "gold_delta": 0,
-                        "affinity_delta": 0.0,
-                        "give_items": [],
-                        "take_items": [],
-                        "unlock_places": ["p_06"],
-                        "unlock_npcs": ["npc_rey_arturo"],
-                        "unlock_items": [],
-                        "block_places": [],
-                        "unblock_places": ["p_06"],  # Desbloquea la Sala del Rey
-                    }
-                ],
-            },
-            # Quest 4: Audiencia con el Rey Arturo
-            {
-                "id": "q_audiencia_real",
-                "name": "Misión: Audiencia con el Rey Arturo",
-                "title": "Misión: Audiencia con el Rey Arturo",
-                "description": "Entra en la Sala del Trono y entrega el Grimorio Arcano al soberano.",
-                "type": "Quest",
-                "parent_id": "c2_el_castillo",
-                "state": "unknown",
-                "active_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "loreblock",
-                                "entity_id": "c2_el_castillo",
-                                "sub_condition": "active",
-                                "value": None,
-                                "is_negated": False,
-                            }
-                        ],
-                    }
-                ],
-                "done_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "place",
-                                "entity_id": "p_06",
-                                "sub_condition": "current_location",
-                                "value": None,
-                                "is_negated": False,
-                            },
-                            {
-                                "entity_type": "item",
-                                "entity_id": "item_grimorio_antiguo",
-                                "sub_condition": "have",
-                                "value": None,
-                                "is_negated": False,
-                            },
-                            {
-                                "entity_type": "npc",
-                                "entity_id": "npc_rey_arturo",
-                                "sub_condition": "talk",
-                                "value": None,
-                                "is_negated": False,
-                            },
-                        ],
-                    }
-                ],
-                "effects": [
-                    {
-                        "target": "npc_rey_arturo",
-                        "action": "hook",
-                        "elapsed_time": "00:15",
-                        "directive": "El Rey Arturo admira el Grimorio Arcano, te condecora como Campeón de Amoen y te recompensa con 100 monedas de oro.",
-                        "bypass_llm": False,
-                        "gold_delta": 100,
-                        "affinity_delta": 0.5,
-                        "give_items": [],
-                        "take_items": ["item_grimorio_antiguo"],
-                        "unlock_places": [],
-                        "unlock_npcs": [],
-                        "unlock_items": [],
-                        "block_places": [],
-                        "unblock_places": [],
-                    }
-                ],
-            },
-            # Popup de Victoria Final
-            {
-                "id": "popup_victoria",
-                "name": "¡Victoria en Villa Roca!",
-                "title": "¡Victoria en Villa Roca!",
-                "description": "¡Felicidades! Has completado con éxito la aventura benchmark de AAdventure con la bendición del Rey Arturo.",
-                "type": "popup",
-                "parent_id": "c2_el_castillo",
-                "state": "unknown",
-                "active_conditions": [
-                    {
-                        "rag_enabled": False,
-                        "trigger_phrases": [],
-                        "conditions": [
-                            {
-                                "entity_type": "loreblock",
-                                "entity_id": "q_audiencia_real",
-                                "sub_condition": "done",
-                                "value": None,
-                                "is_negated": False,
-                            }
-                        ],
-                    }
-                ],
-                "done_conditions": [],
-                "effects": [],
-            },
-        ]
+        "lore_blocks": [       {       'active_conditions': [],
+                'active_effects': [       {       'action': 'hook',
+                                                  'affinity_delta': 0.0,
+                                                  'block_places': [],
+                                                  'bypass_llm': False,
+                                                  'directive': 'Has llegado a '
+                                                               'Villa Roca. '
+                                                               'Debes explorar '
+                                                               'el entorno '
+                                                               'para abrirte '
+                                                               'paso hasta el '
+                                                               'castillo.',
+                                                  'elapsed_time': '00:00',
+                                                  'give_items': [],
+                                                  'gold_delta': 0,
+                                                  'take_items': [],
+                                                  'target': 'p_00',
+                                                  'unblock_places': [],
+                                                  'unlock_items': [],
+                                                  'unlock_npcs': [],
+                                                  'unlock_places': []}],
+                'description': 'Explora la villa, asiste a sus gentes y '
+                               'descubre cómo franquear las defensas del '
+                               'castillo real.',
+                'done_conditions': [       {       'conditions': [       {       'entity_id': 'c1_villa_roca',
+                                                                                 'entity_type': 'loreblock',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'all_children_done',
+                                                                                 'value': None}],
+                                                   'rag_enabled': False,
+                                                   'trigger_phrases': []}],
+                'done_effects': [],
+                'id': 'c1_villa_roca',
+                'name': 'Capítulo 1: Los Secretos de Villa Roca',
+                'parent_id': None,
+                'state': 'active',
+                'title': 'Capítulo 1: Los Secretos de Villa Roca',
+                'type': 'Chapter'},
+        {       'active_conditions': [       {       'conditions': [       {       'entity_id': 'p_00',
+                                                                                   'entity_type': 'place',
+                                                                                   'is_negated': False,
+                                                                                   'sub_condition': 'current_location',
+                                                                                   'value': None}],
+                                                     'rag_enabled': False,
+                                                     'trigger_phrases': []}],
+                'active_effects': [],
+                'description': '¡Bienvenido a Villa Roca! Tu objetivo es '
+                               'lograr una audiencia con el Rey Arturo en su '
+                               'castillo.',
+                'done_conditions': [],
+                'done_effects': [],
+                'id': 'popup_bienvenida',
+                'name': 'Llegada a Villa Roca',
+                'parent_id': 'c1_villa_roca',
+                'state': 'unknown',
+                'title': 'Llegada a Villa Roca',
+                'type': 'popup'},
+        {       'active_conditions': [],
+                'active_effects': [       {       'action': 'hook',
+                                                  'affinity_delta': 0.0,
+                                                  'block_places': [],
+                                                  'bypass_llm': False,
+                                                  'directive': 'El mendigo '
+                                                               'parece '
+                                                               'hambriento y '
+                                                               'desamparado. '
+                                                               'Una buena '
+                                                               'acción podría '
+                                                               'recompensarte.',
+                                                  'elapsed_time': '00:00',
+                                                  'give_items': [],
+                                                  'gold_delta': 0,
+                                                  'take_items': [],
+                                                  'target': 'npc_mendigo',
+                                                  'unblock_places': [],
+                                                  'unlock_items': [],
+                                                  'unlock_npcs': [],
+                                                  'unlock_places': []}],
+                'description': 'Ayuda al mendigo de la Calle Pobre para '
+                               'ganarte su confianza y obtener pistas sobre la '
+                               'villa.',
+                'done_conditions': [       {       'conditions': [       {       'entity_id': 'q_favor_mendigo',
+                                                                                 'entity_type': 'loreblock',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'all_children_done',
+                                                                                 'value': None}],
+                                                   'rag_enabled': False,
+                                                   'trigger_phrases': []}],
+                'done_effects': [],
+                'id': 'q_favor_mendigo',
+                'name': 'Misión: El Favor del Mendigo',
+                'parent_id': 'c1_villa_roca',
+                'state': 'active',
+                'title': 'Misión: El Favor del Mendigo',
+                'type': 'Quest'},
+        {       'active_conditions': [],
+                'active_effects': [],
+                'description': 'Conversa con el mendigo en la Calle Pobre para '
+                               'conocer sus pesares.',
+                'done_conditions': [       {       'conditions': [       {       'entity_id': 'npc_mendigo',
+                                                                                 'entity_type': 'npc',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'talk',
+                                                                                 'value': None}],
+                                                   'rag_enabled': False,
+                                                   'trigger_phrases': []}],
+                'done_effects': [       {       'action': 'hook',
+                                                'affinity_delta': 0.1,
+                                                'block_places': [],
+                                                'bypass_llm': False,
+                                                'directive': 'El mendigo te '
+                                                             'mira con timidez '
+                                                             'y te agradece '
+                                                             'que te detengas '
+                                                             'a escucharle.',
+                                                'elapsed_time': '00:05',
+                                                'give_items': [],
+                                                'gold_delta': 0,
+                                                'take_items': [],
+                                                'target': 'npc_mendigo',
+                                                'unblock_places': [],
+                                                'unlock_items': [],
+                                                'unlock_npcs': [],
+                                                'unlock_places': []}],
+                'id': 't_hablar_mendigo',
+                'name': 'Escuchar al mendigo',
+                'parent_id': 'q_favor_mendigo',
+                'state': 'active',
+                'title': 'Escuchar al mendigo',
+                'type': 'Task'},
+        {       'active_conditions': [       {       'conditions': [       {       'entity_id': 't_hablar_mendigo',
+                                                                                   'entity_type': 'loreblock',
+                                                                                   'is_negated': False,
+                                                                                   'sub_condition': 'done',
+                                                                                   'value': None}],
+                                                     'rag_enabled': False,
+                                                     'trigger_phrases': []}],
+                'active_effects': [],
+                'description': 'Ofrécele una hogaza de pan al mendigo para '
+                               'saciar su apetito.',
+                'done_conditions': [       {       'conditions': [       {       'entity_id': 'npc_mendigo',
+                                                                                 'entity_type': 'npc',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'talk',
+                                                                                 'value': None},
+                                                                         {       'entity_id': 'item_pan',
+                                                                                 'entity_type': 'item',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'have',
+                                                                                 'value': None}],
+                                                   'rag_enabled': True,
+                                                   'trigger_phrases': [       'dar '
+                                                                              'pan',
+                                                                              'ofrecer '
+                                                                              'comida',
+                                                                              'tomar '
+                                                                              'un '
+                                                                              'trozo '
+                                                                              'de '
+                                                                              'pan',
+                                                                              'aquí '
+                                                                              'tienes '
+                                                                              'pan']}],
+                'done_effects': [       {       'action': 'hook',
+                                                'affinity_delta': 0.3,
+                                                'block_places': [],
+                                                'bypass_llm': True,
+                                                'directive': 'El mendigo '
+                                                             'devora el pan '
+                                                             'con infinita '
+                                                             'gratitud y a '
+                                                             'cambio te '
+                                                             'entrega una rara '
+                                                             'moneda antigua.',
+                                                'elapsed_time': '00:05',
+                                                'give_items': [       'item_moneda_antigua'],
+                                                'gold_delta': 0,
+                                                'take_items': ['item_pan'],
+                                                'target': 'npc_mendigo',
+                                                'unblock_places': [],
+                                                'unlock_items': [],
+                                                'unlock_npcs': [],
+                                                'unlock_places': []}],
+                'id': 't_dar_pan_mendigo',
+                'name': 'Entregar comida al mendigo',
+                'parent_id': 'q_favor_mendigo',
+                'state': 'unknown',
+                'title': 'Entregar comida al mendigo',
+                'type': 'Task'},
+        {       'active_conditions': [],
+                'active_effects': [       {       'action': 'hook',
+                                                  'affinity_delta': 0.0,
+                                                  'block_places': [],
+                                                  'bypass_llm': False,
+                                                  'directive': 'El mago busca '
+                                                               'un aventurero '
+                                                               'valiente '
+                                                               'dispuesto a '
+                                                               'descender a su '
+                                                               'sótano arcano.',
+                                                  'elapsed_time': '00:00',
+                                                  'give_items': [],
+                                                  'gold_delta': 0,
+                                                  'take_items': [],
+                                                  'target': 'npc_mago',
+                                                  'unblock_places': [],
+                                                  'unlock_items': [],
+                                                  'unlock_npcs': [],
+                                                  'unlock_places': []}],
+                'description': 'Investiga el misterio del sótano sellado en la '
+                               'mansión del mago y recupera su grimorio.',
+                'done_conditions': [       {       'conditions': [       {       'entity_id': 'q_secreto_mago',
+                                                                                 'entity_type': 'loreblock',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'all_children_done',
+                                                                                 'value': None}],
+                                                   'rag_enabled': False,
+                                                   'trigger_phrases': []}],
+                'done_effects': [],
+                'id': 'q_secreto_mago',
+                'name': 'Misión: El Secreto del Mago',
+                'parent_id': 'c1_villa_roca',
+                'state': 'active',
+                'title': 'Misión: El Secreto del Mago',
+                'type': 'Quest'},
+        {       'active_conditions': [],
+                'active_effects': [],
+                'description': 'Encuentra la llave mágica en la Casa del Mago.',
+                'done_conditions': [       {       'conditions': [       {       'entity_id': 'p_07',
+                                                                                 'entity_type': 'place',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'current_location',
+                                                                                 'value': None},
+                                                                         {       'entity_id': 'item_llave_arcana',
+                                                                                 'entity_type': 'item',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'visible',
+                                                                                 'value': None}],
+                                                   'rag_enabled': False,
+                                                   'trigger_phrases': []}],
+                'done_effects': [       {       'action': 'hook',
+                                                'affinity_delta': 0.0,
+                                                'block_places': [],
+                                                'bypass_llm': False,
+                                                'directive': 'Descubres la '
+                                                             'Llave Arcana '
+                                                             'reluciendo sobre '
+                                                             'la mesa de '
+                                                             'pergaminos.',
+                                                'elapsed_time': '00:05',
+                                                'give_items': [       'item_llave_arcana'],
+                                                'gold_delta': 0,
+                                                'take_items': [],
+                                                'target': None,
+                                                'unblock_places': [],
+                                                'unlock_items': [],
+                                                'unlock_npcs': [],
+                                                'unlock_places': []}],
+                'id': 't_llave_arcana',
+                'name': 'Localizar la Llave Arcana',
+                'parent_id': 'q_secreto_mago',
+                'state': 'active',
+                'title': 'Localizar la Llave Arcana',
+                'type': 'Task'},
+        {       'active_conditions': [       {       'conditions': [       {       'entity_id': 'item_llave_arcana',
+                                                                                   'entity_type': 'item',
+                                                                                   'is_negated': False,
+                                                                                   'sub_condition': 'have',
+                                                                                   'value': None}],
+                                                     'rag_enabled': False,
+                                                     'trigger_phrases': []}],
+                'active_effects': [],
+                'description': 'Usa la Llave Arcana para abrir la trampilla '
+                               'sellada que desciende al sótano.',
+                'done_conditions': [       {       'conditions': [       {       'entity_id': 'p_07',
+                                                                                 'entity_type': 'place',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'current_location',
+                                                                                 'value': None},
+                                                                         {       'entity_id': 'item_llave_arcana',
+                                                                                 'entity_type': 'item',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'have',
+                                                                                 'value': None}],
+                                                   'rag_enabled': False,
+                                                   'trigger_phrases': []}],
+                'done_effects': [       {       'action': 'hook',
+                                                'affinity_delta': 0.0,
+                                                'block_places': [],
+                                                'bypass_llm': False,
+                                                'directive': 'Introduces la '
+                                                             'Llave Arcana en '
+                                                             'la trampilla; '
+                                                             'con un chasquido '
+                                                             'resplandeciente, '
+                                                             'el sótano queda '
+                                                             'desbloqueado.',
+                                                'elapsed_time': '00:05',
+                                                'give_items': [],
+                                                'gold_delta': 0,
+                                                'take_items': [],
+                                                'target': None,
+                                                'unblock_places': ['p_10'],
+                                                'unlock_items': [       'item_grimorio_antiguo'],
+                                                'unlock_npcs': [],
+                                                'unlock_places': ['p_10']}],
+                'id': 't_abrir_sotano',
+                'name': 'Abrir el Sótano del Mago',
+                'parent_id': 'q_secreto_mago',
+                'state': 'unknown',
+                'title': 'Abrir el Sótano del Mago',
+                'type': 'Task'},
+        {       'active_conditions': [       {       'conditions': [       {       'entity_id': 't_abrir_sotano',
+                                                                                   'entity_type': 'loreblock',
+                                                                                   'is_negated': False,
+                                                                                   'sub_condition': 'done',
+                                                                                   'value': None}],
+                                                     'rag_enabled': False,
+                                                     'trigger_phrases': []}],
+                'active_effects': [],
+                'description': 'Desciende al sótano y toma posesión del tomo '
+                               'arcano.',
+                'done_conditions': [       {       'conditions': [       {       'entity_id': 'p_10',
+                                                                                 'entity_type': 'place',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'current_location',
+                                                                                 'value': None}],
+                                                   'rag_enabled': False,
+                                                   'trigger_phrases': []}],
+                'done_effects': [       {       'action': 'hook',
+                                                'affinity_delta': 0.0,
+                                                'block_places': [],
+                                                'bypass_llm': False,
+                                                'directive': 'Tomas el '
+                                                             'Grimorio Arcano '
+                                                             'del pedestal. Un '
+                                                             'poder misterioso '
+                                                             'palpita en tus '
+                                                             'manos.',
+                                                'elapsed_time': '00:10',
+                                                'give_items': [       'item_grimorio_antiguo'],
+                                                'gold_delta': 0,
+                                                'take_items': [],
+                                                'target': None,
+                                                'unblock_places': [],
+                                                'unlock_items': [],
+                                                'unlock_npcs': [],
+                                                'unlock_places': []}],
+                'id': 't_recuperar_grimorio',
+                'name': 'Recuperar el Grimorio Arcano',
+                'parent_id': 'q_secreto_mago',
+                'state': 'unknown',
+                'title': 'Recuperar el Grimorio Arcano',
+                'type': 'Task'},
+        {       'active_conditions': [],
+                'active_effects': [       {       'action': 'hook',
+                                                  'affinity_delta': 0.0,
+                                                  'block_places': [],
+                                                  'bypass_llm': False,
+                                                  'directive': 'El centinela '
+                                                               'real no te '
+                                                               'permitirá '
+                                                               'pasar sin un '
+                                                               'salvoconducto '
+                                                               'sellado.',
+                                                  'elapsed_time': '00:00',
+                                                  'give_items': [],
+                                                  'gold_delta': 0,
+                                                  'take_items': [],
+                                                  'target': 'npc_guardia',
+                                                  'unblock_places': [],
+                                                  'unlock_items': [],
+                                                  'unlock_npcs': [],
+                                                  'unlock_places': []}],
+                'description': 'Adquiere el pase real para que la guardia te '
+                               'permita el acceso al castillo.',
+                'done_conditions': [       {       'conditions': [       {       'entity_id': 'item_salvoconducto',
+                                                                                 'entity_type': 'item',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'have',
+                                                                                 'value': None}],
+                                                   'rag_enabled': False,
+                                                   'trigger_phrases': []}],
+                'done_effects': [],
+                'id': 'q_salvoconducto',
+                'name': 'Misión: Conseguir el Salvoconducto',
+                'parent_id': 'c1_villa_roca',
+                'state': 'active',
+                'title': 'Misión: Conseguir el Salvoconducto',
+                'type': 'Quest'},
+        {       'active_conditions': [],
+                'active_effects': [],
+                'description': 'Paga 10 monedas de oro en el bazar para '
+                               'obtener el salvoconducto y una hogaza de pan.',
+                'done_conditions': [       {       'conditions': [       {       'entity_id': 'p_04',
+                                                                                 'entity_type': 'place',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'current_location',
+                                                                                 'value': None},
+                                                                         {       'entity_id': 'gold',
+                                                                                 'entity_type': 'gold',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'have',
+                                                                                 'value': 10}],
+                                                   'rag_enabled': False,
+                                                   'trigger_phrases': []}],
+                'done_effects': [       {       'action': 'hook',
+                                                'affinity_delta': 0.1,
+                                                'block_places': [],
+                                                'bypass_llm': False,
+                                                'directive': 'Pagas 10 monedas '
+                                                             'de oro al '
+                                                             'comerciante y '
+                                                             'recibes el '
+                                                             'Salvoconducto '
+                                                             'Real junto a una '
+                                                             'hogaza de pan.',
+                                                'elapsed_time': '00:10',
+                                                'give_items': [       'item_salvoconducto',
+                                                                      'item_pan'],
+                                                'gold_delta': -10,
+                                                'take_items': [],
+                                                'target': 'npc_comerciante',
+                                                'unblock_places': [],
+                                                'unlock_items': [],
+                                                'unlock_npcs': [],
+                                                'unlock_places': []}],
+                'id': 't_comprar_salvoconducto',
+                'name': 'Comprar pase y provisiones en la tienda',
+                'parent_id': 'q_salvoconducto',
+                'state': 'active',
+                'title': 'Comprar pase y provisiones en la tienda',
+                'type': 'Task'},
+        {       'active_conditions': [],
+                'active_effects': [],
+                'description': 'Investiga los rincones más singulares de Villa '
+                               'Roca.',
+                'done_conditions': [       {       'conditions': [       {       'entity_id': 'q_misterios_villa',
+                                                                                 'entity_type': 'loreblock',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'all_children_done',
+                                                                                 'value': None}],
+                                                   'rag_enabled': False,
+                                                   'trigger_phrases': []}],
+                'done_effects': [],
+                'id': 'q_misterios_villa',
+                'name': 'Misión: Los Misterios de la Villa',
+                'parent_id': 'c1_villa_roca',
+                'state': 'active',
+                'title': 'Misión: Los Misterios de la Villa',
+                'type': 'Quest'},
+        {       'active_conditions': [],
+                'active_effects': [],
+                'description': 'Visita la taberna, la iglesia y el parque de '
+                               'la villa.',
+                'done_conditions': [       {       'conditions': [       {       'entity_id': 't_misterios_villa',
+                                                                                 'entity_type': 'loreblock',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'all_children_done',
+                                                                                 'value': None}],
+                                                   'rag_enabled': False,
+                                                   'trigger_phrases': []}],
+                'done_effects': [],
+                'id': 't_misterios_villa',
+                'name': 'Explorar los rincones de la Villa',
+                'parent_id': 'q_misterios_villa',
+                'state': 'active',
+                'title': 'Explorar los rincones de la Villa',
+                'type': 'Task'},
+        {       'active_conditions': [],
+                'active_effects': [],
+                'description': 'Una discreta búsqueda táctil revela un '
+                               'compartimento oculto bajo una mesa del mesón.',
+                'done_conditions': [       {       'conditions': [       {       'entity_id': 'p_03',
+                                                                                 'entity_type': 'place',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'current_location',
+                                                                                 'value': None}],
+                                                   'rag_enabled': True,
+                                                   'trigger_phrases': [       'mirar '
+                                                                              'bajo '
+                                                                              'la '
+                                                                              'mesa',
+                                                                              'buscar '
+                                                                              'bajo '
+                                                                              'la '
+                                                                              'mesa',
+                                                                              'agacharme '
+                                                                              'a '
+                                                                              'inspeccionar '
+                                                                              'el '
+                                                                              'suelo',
+                                                                              'inspeccionar '
+                                                                              'las '
+                                                                              'tablas']}],
+                'done_effects': [       {       'action': 'hook',
+                                                'affinity_delta': 0.0,
+                                                'block_places': [],
+                                                'bypass_llm': True,
+                                                'directive': '¡Tus dedos '
+                                                             'palpan un objeto '
+                                                             'metálico fijado '
+                                                             'con cera! '
+                                                             'Extraes una '
+                                                             'antigua Llave de '
+                                                             'Bronce.',
+                                                'elapsed_time': '00:05',
+                                                'give_items': [       'item_llave_bodega'],
+                                                'gold_delta': 0,
+                                                'take_items': [],
+                                                'target': None,
+                                                'unblock_places': [],
+                                                'unlock_items': [],
+                                                'unlock_npcs': [],
+                                                'unlock_places': []}],
+                'id': 'ev_taberna_secreto',
+                'name': 'Secreto bajo la mesa de la Taberna',
+                'parent_id': 't_misterios_villa',
+                'state': 'active',
+                'title': 'Secreto bajo la mesa de la Taberna',
+                'type': 'Event'},
+        {       'active_conditions': [],
+                'active_effects': [],
+                'description': 'Durante las horas del día, el párroco imparte '
+                               'su bendición a los piadosos que conversan con '
+                               'él.',
+                'done_conditions': [       {       'conditions': [       {       'entity_id': 'p_08',
+                                                                                 'entity_type': 'place',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'visited',
+                                                                                 'value': None},
+                                                                         {       'entity_id': 'time',
+                                                                                 'entity_type': 'time',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'time_range',
+                                                                                 'value': '08:00-18:00'},
+                                                                         {       'entity_id': 'npc_cura',
+                                                                                 'entity_type': 'npc',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'talk',
+                                                                                 'value': None}],
+                                                   'rag_enabled': False,
+                                                   'trigger_phrases': []}],
+                'done_effects': [       {       'action': 'hook',
+                                                'affinity_delta': 0.2,
+                                                'block_places': [],
+                                                'bypass_llm': False,
+                                                'directive': 'El párroco traza '
+                                                             'una bendición en '
+                                                             'tu frente, '
+                                                             'deseándote '
+                                                             'fortuna y '
+                                                             'rectitud en tu '
+                                                             'periplo.',
+                                                'elapsed_time': '00:05',
+                                                'give_items': [],
+                                                'gold_delta': 0,
+                                                'take_items': [],
+                                                'target': 'npc_cura',
+                                                'unblock_places': [],
+                                                'unlock_items': [],
+                                                'unlock_npcs': [],
+                                                'unlock_places': []}],
+                'id': 'ev_iglesia_bendicion',
+                'name': 'Bendición Matutina del Cura',
+                'parent_id': 't_misterios_villa',
+                'state': 'active',
+                'title': 'Bendición Matutina del Cura',
+                'type': 'Event'},
+        {       'active_conditions': [],
+                'active_effects': [],
+                'description': 'Encuentro con los niños del parque en sus '
+                               'juegos cotidianos.',
+                'done_conditions': [       {       'conditions': [       {       'entity_id': 'p_09',
+                                                                                 'entity_type': 'place',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'current_location',
+                                                                                 'value': None},
+                                                                         {       'entity_id': 'npc_nino_01',
+                                                                                 'entity_type': 'npc',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'visible',
+                                                                                 'value': None}],
+                                                   'rag_enabled': False,
+                                                   'trigger_phrases': []}],
+                'done_effects': [       {       'action': 'hook',
+                                                'affinity_delta': 0.0,
+                                                'block_places': [],
+                                                'bypass_llm': False,
+                                                'directive': 'Los niños '
+                                                             'corretean '
+                                                             'alegremente a tu '
+                                                             'alrededor, '
+                                                             'llenando el '
+                                                             'parque de risas.',
+                                                'elapsed_time': '00:05',
+                                                'give_items': [],
+                                                'gold_delta': 0,
+                                                'take_items': [],
+                                                'target': None,
+                                                'unblock_places': [],
+                                                'unlock_items': [],
+                                                'unlock_npcs': [],
+                                                'unlock_places': []}],
+                'id': 'ev_parque_juegos',
+                'name': 'La Alegría del Parque',
+                'parent_id': 't_misterios_villa',
+                'state': 'active',
+                'title': 'La Alegría del Parque',
+                'type': 'Event'},
+        {       'active_conditions': [       {       'conditions': [       {       'entity_id': 'c1_villa_roca',
+                                                                                   'entity_type': 'loreblock',
+                                                                                   'is_negated': False,
+                                                                                   'sub_condition': 'done',
+                                                                                   'value': None}],
+                                                     'rag_enabled': False,
+                                                     'trigger_phrases': []}],
+                'active_effects': [       {       'action': 'hook',
+                                                  'affinity_delta': 0.0,
+                                                  'block_places': [],
+                                                  'bypass_llm': False,
+                                                  'directive': 'Has completado '
+                                                               'todas las '
+                                                               'hazañas de la '
+                                                               'villa. El '
+                                                               'puente del '
+                                                               'castillo se '
+                                                               'abre '
+                                                               'solemnemente.',
+                                                  'elapsed_time': '00:05',
+                                                  'give_items': [],
+                                                  'gold_delta': 0,
+                                                  'take_items': [],
+                                                  'target': 'p_06',
+                                                  'unblock_places': ['p_06'],
+                                                  'unlock_items': [],
+                                                  'unlock_npcs': [       'npc_rey_arturo'],
+                                                  'unlock_places': ['p_06']}],
+                'description': 'Franquea la guardia real y obtén tu ansiada '
+                               'audiencia en el salón del trono del Rey '
+                               'Arturo.',
+                'done_conditions': [       {       'conditions': [       {       'entity_id': 'q_audiencia_real',
+                                                                                 'entity_type': 'loreblock',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'done',
+                                                                                 'value': None}],
+                                                   'rag_enabled': False,
+                                                   'trigger_phrases': []}],
+                'done_effects': [],
+                'id': 'c2_el_castillo',
+                'name': 'Capítulo 2: La Corona y el Arcano',
+                'parent_id': None,
+                'state': 'unknown',
+                'title': 'Capítulo 2: La Corona y el Arcano',
+                'type': 'Chapter'},
+        {       'active_conditions': [       {       'conditions': [       {       'entity_id': 'c2_el_castillo',
+                                                                                   'entity_type': 'loreblock',
+                                                                                   'is_negated': False,
+                                                                                   'sub_condition': 'active',
+                                                                                   'value': None}],
+                                                     'rag_enabled': False,
+                                                     'trigger_phrases': []}],
+                'active_effects': [],
+                'description': 'Entra en la Sala del Trono y entrega el '
+                               'Grimorio Arcano al soberano.',
+                'done_conditions': [       {       'conditions': [       {       'entity_id': 'p_06',
+                                                                                 'entity_type': 'place',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'current_location',
+                                                                                 'value': None},
+                                                                         {       'entity_id': 'item_grimorio_antiguo',
+                                                                                 'entity_type': 'item',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'have',
+                                                                                 'value': None},
+                                                                         {       'entity_id': 'npc_rey_arturo',
+                                                                                 'entity_type': 'npc',
+                                                                                 'is_negated': False,
+                                                                                 'sub_condition': 'talk',
+                                                                                 'value': None}],
+                                                   'rag_enabled': False,
+                                                   'trigger_phrases': []}],
+                'done_effects': [       {       'action': 'hook',
+                                                'affinity_delta': 0.5,
+                                                'block_places': [],
+                                                'bypass_llm': False,
+                                                'directive': 'El Rey Arturo '
+                                                             'admira el '
+                                                             'Grimorio Arcano, '
+                                                             'te condecora '
+                                                             'como Campeón de '
+                                                             'Amoen y te '
+                                                             'recompensa con '
+                                                             '100 monedas de '
+                                                             'oro.',
+                                                'elapsed_time': '00:15',
+                                                'give_items': [],
+                                                'gold_delta': 100,
+                                                'take_items': [       'item_grimorio_antiguo'],
+                                                'target': 'npc_rey_arturo',
+                                                'unblock_places': [],
+                                                'unlock_items': [],
+                                                'unlock_npcs': [],
+                                                'unlock_places': []}],
+                'id': 'q_audiencia_real',
+                'name': 'Misión: Audiencia con el Rey Arturo',
+                'parent_id': 'c2_el_castillo',
+                'state': 'unknown',
+                'title': 'Misión: Audiencia con el Rey Arturo',
+                'type': 'Quest'},
+        {       'active_conditions': [       {       'conditions': [       {       'entity_id': 'q_audiencia_real',
+                                                                                   'entity_type': 'loreblock',
+                                                                                   'is_negated': False,
+                                                                                   'sub_condition': 'done',
+                                                                                   'value': None}],
+                                                     'rag_enabled': False,
+                                                     'trigger_phrases': []}],
+                'active_effects': [],
+                'description': '¡Felicidades! Has completado con éxito la '
+                               'aventura benchmark de AAdventure con la '
+                               'bendición del Rey Arturo.',
+                'done_conditions': [],
+                'done_effects': [],
+                'id': 'popup_victoria',
+                'name': '¡Victoria en Villa Roca!',
+                'parent_id': 'c2_el_castillo',
+                'state': 'unknown',
+                'title': '¡Victoria en Villa Roca!',
+                'type': 'popup'}]
     }
 
     # -------------------------------------------------------------------------

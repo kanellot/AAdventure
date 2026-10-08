@@ -1,17 +1,16 @@
 """Pestaña de resultado narrativo y de motor para el depurador de juego."""
 
 from typing import Optional
+
 from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QSplitter,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtCore import Qt
 
 from domains.projections import TurnResultProjection
 
@@ -63,7 +62,8 @@ class ResultTab(QWidget):
         self.engine_result_edit = QTextEdit()
         self.engine_result_edit.setReadOnly(True)
         self.engine_result_edit.setFontFamily("Consolas")
-        self.engine_result_edit.setPlaceholderText("Resultado devuelto por el GameEngine (mutaciones, afinidad, inventario)...")
+        self.engine_result_edit.setPlaceholderText(
+            "Resultado devuelto por el GameEngine (mutaciones, afinidad, inventario)...")
         self.sub_tabs.addTab(self.engine_result_edit, "Resultado del Motor")
 
         # Sub-pestaña 2: Structured JSON

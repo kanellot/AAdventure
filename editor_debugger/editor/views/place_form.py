@@ -4,15 +4,17 @@
 """
 
 from typing import List, Optional
+
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit,
     QTextEdit, QLabel, QPushButton, QGroupBox, QTabWidget,
     QScrollArea, QFrame, QMessageBox, QDialog, QCheckBox
 )
-from PySide6.QtCore import Qt
+
 from domains import Place, NPC
-from editor_debugger.editor.views.dialogs import ConnectionDialog
 from editor_debugger.editor.views.compact_widgets import CompactEntityListWidget
+from editor_debugger.editor.views.dialogs import ConnectionDialog
 
 
 class PlaceForm(QWidget):
@@ -120,7 +122,8 @@ class PlaceForm(QWidget):
 
         self.conn_scroll = QScrollArea()
         self.conn_scroll.setWidgetResizable(True)
-        self.conn_scroll.setStyleSheet("QScrollArea { border: 1px solid #dcdcdc; border-radius: 4px; background: #fafafa; }")
+        self.conn_scroll.setStyleSheet(
+            "QScrollArea { border: 1px solid #dcdcdc; border-radius: 4px; background: #fafafa; }")
 
         self.conn_container = QWidget()
         self.conn_container_layout = QVBoxLayout(self.conn_container)
@@ -229,14 +232,16 @@ class PlaceForm(QWidget):
         target_lbl = QLabel(f"📍 <b>{target}</b>")
         layout.addWidget(target_lbl)
 
-        info_lbl = QLabel(f"<span style='color: #666;'>📏 {distance} m</span> | <span style='color: #444;'>🏞️ {terrain}</span>")
+        info_lbl = QLabel(
+            f"<span style='color: #666;'>📏 {distance} m</span> | <span style='color: #444;'>🏞️ {terrain}</span>")
         layout.addWidget(info_lbl)
 
         layout.addStretch()
 
         del_btn = QPushButton("✕")
         del_btn.setToolTip("Eliminar conexión bidireccional")
-        del_btn.setStyleSheet("border: none; background: transparent; color: #cc0000; font-weight: bold; font-size: 13px;")
+        del_btn.setStyleSheet(
+            "border: none; background: transparent; color: #cc0000; font-weight: bold; font-size: 13px;")
         del_btn.clicked.connect(lambda _, d=direction, t=target: self.on_delete_connection(d, t))
         layout.addWidget(del_btn)
 
@@ -260,7 +265,6 @@ class PlaceForm(QWidget):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"No se pudo crear la conexión: {e}")
 
-
     def on_delete_connection(self, direction: str, target: str):
         if not self.place:
             return
@@ -274,7 +278,6 @@ class PlaceForm(QWidget):
         if confirm == QMessageBox.Yes:
             self.controller.remove_connection(self.place.name, direction)
             self.refresh_connections()
-
 
     def on_delete_clicked(self):
         if self.place and self.parent_app and hasattr(self.parent_app, "delete_place"):

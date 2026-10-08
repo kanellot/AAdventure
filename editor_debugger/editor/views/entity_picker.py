@@ -8,12 +8,14 @@ Utiliza emojis visuales:
 """
 
 from typing import List, Optional
+
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit,
     QComboBox, QDoubleSpinBox, QCheckBox, QDialogButtonBox, QLabel,
     QListWidget, QListWidgetItem, QGroupBox, QMessageBox
 )
-from PySide6.QtCore import Qt
+
 from domains.lore import EntityCondition
 
 
@@ -44,13 +46,13 @@ class EntityPickerDialog(QDialog):
     }
 
     def __init__(
-        self,
-        controller,
-        allowed_types: Optional[List[str]] = None,
-        mode: str = "condition",
-        initial_condition: Optional[EntityCondition] = None,
-        initial_entity_id: Optional[str] = None,
-        parent=None,
+            self,
+            controller,
+            allowed_types: Optional[List[str]] = None,
+            mode: str = "condition",
+            initial_condition: Optional[EntityCondition] = None,
+            initial_entity_id: Optional[str] = None,
+            parent=None,
     ):
         super().__init__(parent)
         self.controller = controller
@@ -176,7 +178,8 @@ class EntityPickerDialog(QDialog):
                 self.entity_list.addItem(item)
 
         elif etype == "loreblock":
-            lore_blocks = getattr(self.controller, "get_lore_blocks", lambda: [])() or getattr(self.controller, "lore_blocks", [])
+            lore_blocks = getattr(self.controller, "get_lore_blocks", lambda: [])() or getattr(self.controller,
+                                                                                               "lore_blocks", [])
             for b in lore_blocks:
                 title = b.title or b.name or b.id
                 icon = "📁" if getattr(b, "parent_id", None) else emoji

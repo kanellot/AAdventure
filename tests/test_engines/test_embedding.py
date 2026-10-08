@@ -1,6 +1,7 @@
 """Pruebas unitarias para el motor y backends de embeddings semánticos."""
 
 import unittest
+
 from engines.embedding import EmbeddingEngine, EmbeddingFactory, MockEmbeddingBackend
 
 

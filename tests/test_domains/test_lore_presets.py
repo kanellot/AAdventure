@@ -1,6 +1,7 @@
 """Pruebas unitarias para los modelos de dominio canónicos de LoreBlock (type, action, conditions)."""
 
 import unittest
+
 from domains.lore import EntityCondition, LoreBlock, LoreEffects, ConditionGroup
 
 
@@ -13,20 +14,79 @@ class TestLoreCanonicalDomain(unittest.TestCase):
         self.assertEqual(lb.type, "Event")
 
     def test_explicit_types(self):
-        """Verifica la asignación de los tipos estructurales y de eventos (incluyendo popup)."""
-        types = ["Chapter", "Quest", "Task", "Event", "popup"]
+        """Verifica la asignación de los 7 tipos estructurales y de eventos."""
+        types = ["Chapter", "Quest", "Task", "Event", "popup", "Info", "ask_permission"]
         for t in types:
             lb = LoreBlock(id=f"lb_{t.lower()}", name=f"Bloque {t}", type=t)
             self.assertEqual(lb.type, t)
 
     def test_strict_type_validation(self):
-        """Verifica que el type 'popup' sea válido y que tipos obsoletos o no definidos sean rechazados."""
+        """Verifica que los 7 tipos sean válidos y que tipos obsoletos o no definidos sean rechazados."""
         from pydantic import ValidationError
-        lb = LoreBlock(id="lb_p3", name="Alerta 3", type="popup")
-        self.assertEqual(lb.type, "popup")
+        lb_info = LoreBlock(id="lb_i1", name="Pista 1", type="Info")
+        self.assertEqual(lb_info.type, "Info")
+        lb_ask = LoreBlock(id="lb_a1", name="Pregunta 1", type="ask_permission")
+        self.assertEqual(lb_ask.type, "ask_permission")
 
         with self.assertRaises(ValidationError):
             LoreBlock(id="lb_inv", name="Inválido", type="popup_event")
+
+    def test_doble_effect_and_no_repeat(self):
+        """Verifica que LoreBlock soporte active_effects y done_effects nativamente y no tenga atributo repeat."""
+        eff_act = LoreEffects(action="hook", directive="Contexto al entrar")
+        eff_done = LoreEffects(action="push", directive="Recompensa al salir", gold_delta=20)
+        lb = LoreBlock(
+            id="lb_de",
+            name="Doble Efecto",
+            active_effects=[eff_act],
+            done_effects=[eff_done],
+        )
+        self.assertEqual(len(lb.active_effects), 1)
+        self.assertEqual(len(lb.done_effects), 1)
+        self.assertFalse(hasattr(lb, "repeat"))
+
+    def test_init_preset_loreblock_factory(self):
+        """Verifica la inicialización canónica de los presets mediante init_preset_loreblock."""
+        from editor_debugger.editor.constants import init_preset_loreblock
+
+        # 1. Popup
+        pop = init_preset_loreblock("popup", "pop_1", "Aviso Test")
+        self.assertEqual(pop.type, "popup")
+        self.assertIn("aviso emergente", pop.description.lower())
+        self.assertEqual(pop.active_effects, [])
+        self.assertEqual(pop.done_effects, [])
+
+        # 2. Info
+        info = init_preset_loreblock("Info", "info_1", "Pista Test", parent_id="c_1")
+        self.assertEqual(info.type, "Info")
+        self.assertEqual(info.parent_id, "c_1")
+        self.assertEqual(len(info.active_effects), 1)
+        self.assertEqual(info.active_effects[0].action, "hook")
+        self.assertEqual(info.done_effects, [])
+
+        # 3. ask_permission
+        ask = init_preset_loreblock("ask_permission", "ask_1", "Pregunta Test", parent_id="t_1")
+        self.assertEqual(ask.type, "ask_permission")
+        self.assertEqual(ask.parent_id, "t_1")
+        self.assertEqual(len(ask.active_effects), 1)
+        self.assertEqual(len(ask.done_conditions), 1)
+        self.assertTrue(ask.done_conditions[0].rag_enabled)
+        self.assertIn("sí", ask.done_conditions[0].trigger_phrases)
+        self.assertEqual(len(ask.done_effects), 1)
+
+    def test_hierarchy_allowed_child_types_matrix(self):
+        """Verifica la matriz de jerarquía estricta según ALLOWED_CHILD_TYPES."""
+        from editor_debugger.editor.constants import get_allowed_child_types
+
+        self.assertEqual(get_allowed_child_types(None), ["Chapter", "popup"])
+        self.assertEqual(get_allowed_child_types(""), ["Chapter", "popup"])
+        self.assertEqual(get_allowed_child_types("Chapter"), ["Quest", "Info", "popup"])
+        self.assertEqual(get_allowed_child_types("Quest"), ["Task", "Info", "popup"])
+        self.assertEqual(get_allowed_child_types("Task"), ["Event", "ask_permission", "Info", "popup"])
+        self.assertEqual(get_allowed_child_types("Event"), ["Event", "ask_permission", "Info", "popup"])
+        self.assertEqual(get_allowed_child_types("Info"), ["popup"])
+        self.assertEqual(get_allowed_child_types("ask_permission"), ["popup"])
+        self.assertEqual(get_allowed_child_types("popup"), [])
 
     def test_effects_action_and_elapsed_time(self):
         """Verifica los atributos action ('push'/'hook'), elapsed_time y bypass_llm en LoreEffects."""
@@ -49,7 +109,8 @@ class TestLoreCanonicalDomain(unittest.TestCase):
         self.assertEqual(c_time.entity_type, "time")
         self.assertEqual(c_time.value, [100, 300])
 
-        c_aff = EntityCondition(entity_type="npc", entity_id="npc_guard", sub_condition="affinity_range", value=[0.4, 0.8])
+        c_aff = EntityCondition(entity_type="npc", entity_id="npc_guard", sub_condition="affinity_range",
+                                value=[0.4, 0.8])
         self.assertEqual(c_aff.sub_condition, "affinity_range")
 
         c_vis = EntityCondition(entity_type="place", entity_id="cueva", sub_condition="visible")

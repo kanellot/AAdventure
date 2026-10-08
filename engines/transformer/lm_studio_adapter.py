@@ -5,9 +5,9 @@ import os
 import re
 import shutil
 import subprocess
-import urllib.error
-import urllib.request
+import httpx
 from typing import Any, Dict, Optional, Union
+
 from engines.transformer.base_adapter import BaseLLMAdapter
 
 
@@ -42,11 +42,11 @@ class LMStudioAdapter(BaseLLMAdapter):
             self._check_server_connection()
 
     def reload_server_model(
-        self,
-        model_name: Optional[str] = None,
-        context_length: Optional[int] = None,
-        gpu_layers: Optional[int] = None,
-        threads: Optional[int] = None,
+            self,
+            model_name: Optional[str] = None,
+            context_length: Optional[int] = None,
+            gpu_layers: Optional[int] = None,
+            threads: Optional[int] = None,
     ) -> bool:
         """Recarga el modelo en el servidor de LM Studio aplicando los parámetros configurados."""
         target_model = model_name or self.model
@@ -67,7 +67,8 @@ class LMStudioAdapter(BaseLLMAdapter):
 
         try:
             subprocess.run([lms_path, "unload", target_model], capture_output=True, encoding="utf-8", errors="ignore")
-            subprocess.run([lms_path, "unload", f"{target_model}:2"], capture_output=True, encoding="utf-8", errors="ignore")
+            subprocess.run([lms_path, "unload", f"{target_model}:2"], capture_output=True, encoding="utf-8",
+                           errors="ignore")
 
             load_cmd = [lms_path, "load", target_model, "-c", str(target_ctx), "--gpu", gpu_arg, "-y"]
             if target_threads:
@@ -83,53 +84,46 @@ class LMStudioAdapter(BaseLLMAdapter):
 
         Retorna True si el modelo objetivo (o compatible) ya está cargado y listo.
         """
+        headers = {"Authorization": f"Bearer {self.api_key}"}
         # 1. Intentar endpoint nativo v0 (proporciona estado 'loaded')
         try:
             v0_url = f"{self.base_url.replace('/v1', '')}/api/v0/models"
-            req = urllib.request.Request(
-                v0_url,
-                headers={"Authorization": f"Bearer {self.api_key}"},
-            )
-            with urllib.request.urlopen(req, timeout=3) as resp:
-                if resp.status == 200:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    models_list = data.get("data", [])
-                    loaded_models = [m.get("id") for m in models_list if m.get("state") == "loaded" and "id" in m]
-                    if loaded_models:
-                        self.is_connected = True
-                        if self.model and self.model in loaded_models:
-                            return True
-                        matching = [m for m in loaded_models if self.model in m or m in self.model]
-                        if matching:
-                            self.model = matching[0]
-                            return True
-                        self.model = loaded_models[0]
+            resp = httpx.get(v0_url, headers=headers, timeout=3.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                models_list = data.get("data", [])
+                loaded_models = [m.get("id") for m in models_list if m.get("state") == "loaded" and "id" in m]
+                if loaded_models:
+                    self.is_connected = True
+                    if self.model and self.model in loaded_models:
                         return True
-                    elif models_list:
-                        self.is_connected = True
-                        return False
+                    matching = [m for m in loaded_models if self.model in m or m in self.model]
+                    if matching:
+                        self.model = matching[0]
+                        return True
+                    self.model = loaded_models[0]
+                    return True
+                elif models_list:
+                    self.is_connected = True
+                    return False
         except Exception:
             pass
 
         # 2. Intentar endpoint OpenAI /models estándar
         models_url = f"{self.base_url}/models"
         try:
-            req = urllib.request.Request(
-                models_url,
-                headers={"Authorization": f"Bearer {self.api_key}"},
-            )
-            with urllib.request.urlopen(req, timeout=3) as resp:
-                if resp.status == 200:
-                    self.is_connected = True
-                    data = json.loads(resp.read().decode("utf-8"))
-                    available_models = [m.get("id") for m in data.get("data", []) if "id" in m]
-                    if self.model and available_models and self.model not in available_models:
-                        matching = [m for m in available_models if self.model in m or m in self.model]
-                        if matching:
-                            self.model = matching[0]
-                        else:
-                            self.model = available_models[0]
-                    return bool(available_models)
+            resp = httpx.get(models_url, headers=headers, timeout=3.0)
+            if resp.status_code == 200:
+                self.is_connected = True
+                data = resp.json()
+                available_models = [m.get("id") for m in data.get("data", []) if "id" in m]
+                if self.model and available_models and self.model not in available_models:
+                    matching = [m for m in available_models if self.model in m or m in self.model]
+                    if matching:
+                        self.model = matching[0]
+                    else:
+                        self.model = available_models[0]
+                return bool(available_models)
         except Exception:
             pass
 
@@ -148,11 +142,11 @@ class LMStudioAdapter(BaseLLMAdapter):
         return text.strip()
 
     def generate(
-        self,
-        prompt: str,
-        profile_name: str = "narrator",
-        response_schema: Optional[dict] = None,
-        schema_name: Optional[str] = None,
+            self,
+            prompt: str,
+            profile_name: str = "narrator",
+            response_schema: Optional[dict] = None,
+            schema_name: Optional[str] = None,
     ) -> dict:
         """Envía el prompt a LM Studio y retorna la respuesta en formato diccionario."""
         profile = self.inference_profiles.get(profile_name)
@@ -205,9 +199,9 @@ class LMStudioAdapter(BaseLLMAdapter):
 
         content_text = ""
         try:
-            req = urllib.request.Request(chat_url, data=json_data, headers=headers, method="POST")
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                response_json = json.loads(resp.read().decode("utf-8"))
+            resp = httpx.post(chat_url, json=payload, headers=headers, timeout=float(self.timeout))
+            resp.raise_for_status()
+            response_json = resp.json()
 
             choices = response_json.get("choices", [])
             if not choices:
@@ -238,15 +232,16 @@ class LMStudioAdapter(BaseLLMAdapter):
             cleaned_text = self._clean_json_markdown(content_text)
             return json.loads(cleaned_text)
 
-        except urllib.error.HTTPError as he:
-            err_body = he.read().decode("utf-8", errors="ignore")
-            raise RuntimeError(f"Error HTTP {he.code} del servidor LM Studio en '{chat_url}': {err_body}")
-        except urllib.error.URLError as ue:
+        except httpx.HTTPStatusError as he:
+            err_body = he.response.text
+            raise RuntimeError(f"Error HTTP {he.response.status_code} del servidor LM Studio en '{chat_url}': {err_body}")
+        except httpx.RequestError as ue:
             raise RuntimeError(
-                f"No se pudo conectar con el servidor de LM Studio en '{self.base_url}': {ue.reason}.\n"
+                f"No se pudo conectar con el servidor de LM Studio en '{self.base_url}': {ue}.\n"
                 f"Asegúrate de que LM Studio esté en ejecución y con el servidor local activo."
             )
         except json.JSONDecodeError as jde:
-            raise ValueError(f"El modelo LM Studio generó un texto que no es un JSON válido:\n{content_text}\nDetalle: {jde}")
+            raise ValueError(
+                f"El modelo LM Studio generó un texto que no es un JSON válido:\n{content_text}\nDetalle: {jde}")
         except Exception as e:
             raise RuntimeError(f"Ocurrió un error inesperado durante la inferencia con LM Studio: {e}")

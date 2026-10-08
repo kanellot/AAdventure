@@ -1,14 +1,10 @@
 """Pruebas unitarias para PromptBuilder."""
 
-import unittest
 import os
 import tempfile
-from pydantic import BaseModel
+import unittest
+
 from engines.game.prompt_builder import PromptBuilder
-
-
-class DummyContext(BaseModel):
-    state: str = "exploring"
 
 
 class TestPromptBuilder(unittest.TestCase):
@@ -24,7 +20,6 @@ class TestPromptBuilder(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             PromptBuilder.build(
                 rules_path="non_existent_rules.txt",
-                gamecontext=DummyContext(),
                 game_context_str="{}",
                 user_input="hola",
             )
@@ -36,7 +31,6 @@ class TestPromptBuilder(unittest.TestCase):
 
         prompt = PromptBuilder.build(
             rules_path=rules_path,
-            gamecontext=DummyContext(),
             game_context_str="{}",
             user_input="mirar alrededor",
             template_tags={"role_directive": "Se breve."},
@@ -54,7 +48,6 @@ class TestPromptBuilder(unittest.TestCase):
 
         prompt = PromptBuilder.build(
             rules_path=rules_path,
-            gamecontext=DummyContext(),
             game_context_str='{"place": "Taberna"}',
             user_input="pedir sidra",
         )
@@ -69,7 +62,6 @@ class TestPromptBuilder(unittest.TestCase):
 
         prompt = PromptBuilder.build(
             rules_path=rules_path,
-            gamecontext=DummyContext(),
             game_context_str="Estado: OK",
             user_input="examinar cofre",
         )

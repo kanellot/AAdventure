@@ -2,7 +2,9 @@
 
 import os
 from typing import List, Optional
+
 from PySide6.QtCore import Qt, Signal, QSize
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -18,7 +20,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QMessageBox,
 )
-from PySide6.QtGui import QFont
 
 from adventure_selector.models import AdventureMetadata
 from adventure_selector.reader import read_adventure_metadata
@@ -326,10 +327,10 @@ class AdventureSelectorDialog(QDialog):
             filtered = [
                 m for m in self.adventures
                 if query in m.title.lower()
-                or query in m.file_name.lower()
-                or query in m.description.lower()
-                or query in m.player_name.lower()
-                or query in m.initial_place.lower()
+                   or query in m.file_name.lower()
+                   or query in m.description.lower()
+                   or query in m.player_name.lower()
+                   or query in m.initial_place.lower()
             ]
         self._populate_list(filtered)
 
@@ -363,7 +364,8 @@ class AdventureSelectorDialog(QDialog):
 
         abs_path = os.path.abspath(file_path)
         # Verificar si ya existe en la lista
-        existing = next((m for m in self.adventures if os.path.normcase(m.file_path) == os.path.normcase(abs_path)), None)
+        existing = next((m for m in self.adventures if os.path.normcase(m.file_path) == os.path.normcase(abs_path)),
+                        None)
         if not existing:
             meta = read_adventure_metadata(abs_path)
             self.adventures.insert(0, meta)

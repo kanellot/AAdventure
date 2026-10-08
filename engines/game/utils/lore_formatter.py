@@ -1,11 +1,6 @@
 """Utilidades de formateo y construcción de proyecciones para LoreBlocks."""
 
-from typing import Any, List, Optional
-from domains.projections.debug import (
-    LoreBlockDetailProjection,
-    LoreConditionDetailProjection,
-    LoreGraphProjection,
-)
+from typing import Any
 
 
 class LoreGraphFormatter:
@@ -52,10 +47,14 @@ class LoreGraphFormatter:
                 return f"{neg_prefix}Iniciar diálogo con {npc_name} (Actual: {curr_state} -> '{curr_tgt}')"
             elif sub == "affinity":
                 aff_val = float(val or 0.5)
-                curr_aff = game_state_controller.get_npc_affinity(eid) if hasattr(game_state_controller, "get_npc_affinity") else (npc.affinity if npc else 0.5)
+                curr_aff = game_state_controller.get_npc_affinity(eid) if hasattr(game_state_controller,
+                                                                                  "get_npc_affinity") else (
+                    npc.affinity if npc else 0.5)
                 return f"{neg_prefix}Afinidad con {npc_name} >= {aff_val:.2f} (Actual: {curr_aff:.2f})"
             elif sub == "affinity_range":
-                curr_aff = game_state_controller.get_npc_affinity(eid) if hasattr(game_state_controller, "get_npc_affinity") else (npc.affinity if npc else 0.5)
+                curr_aff = game_state_controller.get_npc_affinity(eid) if hasattr(game_state_controller,
+                                                                                  "get_npc_affinity") else (
+                    npc.affinity if npc else 0.5)
                 return f"{neg_prefix}Afinidad con {npc_name} en rango {val} (Actual: {curr_aff:.2f})"
             elif sub == "known":
                 return f"{neg_prefix}Conocer a {npc_name}"
@@ -103,27 +102,33 @@ class LoreGraphFormatter:
         if gold != 0:
             parts.append(f"{gold:+d} oro")
 
-        aff = getattr(effects, "affinity_delta", 0.0) or (effects.get("affinity_delta", 0.0) if isinstance(effects, dict) else 0.0)
+        aff = getattr(effects, "affinity_delta", 0.0) or (
+            effects.get("affinity_delta", 0.0) if isinstance(effects, dict) else 0.0)
         if aff != 0.0:
             parts.append(f"Afinidad {aff:+.2f}")
 
-        give_items = getattr(effects, "give_items", []) or (effects.get("give_items", []) if isinstance(effects, dict) else [])
+        give_items = getattr(effects, "give_items", []) or (
+            effects.get("give_items", []) if isinstance(effects, dict) else [])
         for it in give_items:
             parts.append(f"+Ítem: {it}")
 
-        take_items = getattr(effects, "take_items", []) or (effects.get("take_items", []) if isinstance(effects, dict) else [])
+        take_items = getattr(effects, "take_items", []) or (
+            effects.get("take_items", []) if isinstance(effects, dict) else [])
         for it in take_items:
             parts.append(f"-Ítem: {it}")
 
-        unlock_places = getattr(effects, "unlock_places", []) or (effects.get("unlock_places", []) if isinstance(effects, dict) else [])
+        unlock_places = getattr(effects, "unlock_places", []) or (
+            effects.get("unlock_places", []) if isinstance(effects, dict) else [])
         for p in unlock_places:
             parts.append(f"Lugar: {p}")
 
-        block_places = getattr(effects, "block_places", []) or (effects.get("block_places", []) if isinstance(effects, dict) else [])
+        block_places = getattr(effects, "block_places", []) or (
+            effects.get("block_places", []) if isinstance(effects, dict) else [])
         for p in block_places:
             parts.append(f"🚫 Bloquear: {p}")
 
-        unblock_places = getattr(effects, "unblock_places", []) or (effects.get("unblock_places", []) if isinstance(effects, dict) else [])
+        unblock_places = getattr(effects, "unblock_places", []) or (
+            effects.get("unblock_places", []) if isinstance(effects, dict) else [])
         for p in unblock_places:
             parts.append(f"🟢 Desbloquear: {p}")
 

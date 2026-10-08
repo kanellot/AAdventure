@@ -1,12 +1,16 @@
 """Listener de eventos para la interfaz de consola interactiva CLI."""
 
 from __future__ import annotations
+
+import logging
 from typing import Any, Optional
 
-from domains.projections import TurnResultProjection, UIStateProjection
-from engines.events import ThinkingEvent
-from engines.listeners import BaseEngineEventListener
 from cli.formatter import CLIFormatter, Colors
+from domains.projections import TurnResultProjection, UIStateProjection
+from engines.events import PopupEvent, ThinkingEvent
+from engines.listeners import BaseEngineEventListener
+
+logger = logging.getLogger(__name__)
 
 
 class CLIEventListener(BaseEngineEventListener):
@@ -24,19 +28,22 @@ class CLIEventListener(BaseEngineEventListener):
     def on_thinking_changed(self, event_json: str) -> None:
         event = ThinkingEvent.model_validate_json(event_json)
         if event.is_thinking and event.source == "LORE":
-            print(f"\n{Colors.DIM}⏳ [Simulación LoreBlock en curso: {event.action} -> {event.target}]...{Colors.ENDC}")
+            print(f"\n{Colors.DIM}[*] [Simulación LoreBlock en curso: {event.action} -> {event.target}]...{Colors.ENDC}")
+
+    def on_popup(self, popup_json: str) -> None:
+        event = PopupEvent.model_validate_json(popup_json)
+        title = event.title or "Aviso del Sistema"
+        msg = event.message
+        box_width = max(len(title) + 16, len(msg) + 4, 30)
+        print(f"\n{Colors.WARNING}{Colors.BOLD}+{'=' * box_width}+{Colors.ENDC}")
+        print(f"{Colors.WARNING}{Colors.BOLD}|  {title.upper()}  |{Colors.ENDC}")
+        print(f"{Colors.WARNING}   {msg}{Colors.ENDC}")
+        print(f"{Colors.WARNING}{Colors.BOLD}+{'=' * box_width}+{Colors.ENDC}\n")
 
     def on_task_completed(self, task_id: str, result_json: str) -> None:
         result = TurnResultProjection.model_validate_json(result_json)
         self.latest_turn_result = result
         CLIFormatter.print_turn_result(result)
-
-        if result.output.type == "popup" or result.output.popup_message:
-            title = result.output.popup_title or "Aviso del Sistema"
-            msg = result.output.popup_message or result.output.msg
-            print(f"\n{Colors.WARNING}{Colors.BOLD}╔══════ {title.upper()} ══════╗{Colors.ENDC}")
-            print(f"{Colors.WARNING}  {msg}{Colors.ENDC}")
-            print(f"{Colors.WARNING}{Colors.BOLD}╚{'═' * (len(title) + 16)}╝{Colors.ENDC}\n")
 
         if self.verbose and getattr(result, "debug", None):
             try:
@@ -45,8 +52,8 @@ class CLIEventListener(BaseEngineEventListener):
                     game_state=self.session.get_game_state(),
                     lore_graph=self.session.get_lore_graph(),
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Error al imprimir verbose debug: %s", e)
 
     def on_state_updated(self, ui_state_json: str) -> None:
         self.latest_ui_state = UIStateProjection.model_validate_json(ui_state_json)

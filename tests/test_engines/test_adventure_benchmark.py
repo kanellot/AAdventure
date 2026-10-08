@@ -13,6 +13,7 @@ Ejercita la historia canónica de principio a fin validando:
 
 import os
 import unittest
+
 from domains import TurnResultProjection, UIStateProjection
 from engines import AdventureSession
 from engines.game.engine import GameEngine
@@ -47,6 +48,9 @@ class TestAdventureBenchmark(unittest.TestCase):
 
     def test_01_initial_state_and_topology(self):
         """Verifica la carga canónica de entidades, lugares bloqueados y niebla de guerra inicial."""
+        self.session.start()
+        self.session.wait_idle()
+
         ctrl = self.engine.game_state_controller
         gs = ctrl.game_state
 
@@ -146,7 +150,8 @@ class TestAdventureBenchmark(unittest.TestCase):
         self.session.wait_idle()
 
         # Enviar mensaje que active la antena RAG "mirar bajo la mesa"
-        self.session.post_action(action="", target="", player_input="Voy a mirar bajo la mesa para ver si hay algo escondido.")
+        self.session.post_action(action="", target="",
+                                 player_input="Voy a mirar bajo la mesa para ver si hay algo escondido.")
         self.session.wait_idle()
 
         # ev_taberna_secreto debe completarse y otorgar item_llave_bodega
@@ -176,7 +181,8 @@ class TestAdventureBenchmark(unittest.TestCase):
         self.session.wait_idle()
         self.session.post_action("TALK", "npc_tabernero")
         self.session.wait_idle()
-        self.session.post_action(action="", target="", player_input="Voy a mirar bajo la mesa para ver si hay algo escondido.")
+        self.session.post_action(action="", target="",
+                                 player_input="Voy a mirar bajo la mesa para ver si hay algo escondido.")
         self.session.wait_idle()
         self.assertIn("item_llave_bodega", ctrl.game_state.inventory.items)
 
@@ -193,7 +199,8 @@ class TestAdventureBenchmark(unittest.TestCase):
         self.assertIn("t_hablar_mendigo", done_ids)
 
         # Dar pan al mendigo usando texto libre -> completa t_dar_pan_mendigo
-        self.session.post_action(action="", target="", player_input="Aquí tienes pan, buen hombre, toma este trozo de pan caliente.")
+        self.session.post_action(action="", target="",
+                                 player_input="Aquí tienes pan, buen hombre, toma este trozo de pan caliente.")
         self.session.wait_idle()
 
         # Pan retirado, moneda entregada, afinidad incrementada
@@ -236,7 +243,8 @@ class TestAdventureBenchmark(unittest.TestCase):
         self.assertIn("t_abrir_sotano", done_ids)
 
         # Verificar que el Sótano (p_10) se ha desbloqueado dinámicamente
-        self.assertFalse(ctrl.places_by_id["p_10"].blocked_place, "El sótano debe estar desbloqueado tras usar la llave.")
+        self.assertFalse(ctrl.places_by_id["p_10"].blocked_place,
+                         "El sótano debe estar desbloqueado tras usar la llave.")
 
         # Descender al Sótano del Mago y recoger el Grimorio
         self.session.post_action("MOVE", "Sótano del Mago")
@@ -251,7 +259,8 @@ class TestAdventureBenchmark(unittest.TestCase):
 
         active_ids = {b["id"] for b in ctrl.game_state.loreblocks.active}
         self.assertIn("c2_el_castillo", active_ids, "El Capítulo 2 debe activarse tras completar el Capítulo 1.")
-        self.assertFalse(ctrl.places_by_id["p_06"].blocked_place, "La Sala del Rey debe desbloquearse en el Capítulo 2.")
+        self.assertFalse(ctrl.places_by_id["p_06"].blocked_place,
+                         "La Sala del Rey debe desbloquearse en el Capítulo 2.")
 
         # --- Paso 7: Entrada al Castillo y Audiencia Real con el Rey Arturo ---
         self.session.post_action("MOVE", "Casa Mago")
@@ -334,4 +343,3 @@ class TestAdventureBenchmark(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

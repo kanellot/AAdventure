@@ -2,6 +2,7 @@
 
 import json
 from typing import Optional
+
 from engines.transformer.base_adapter import BaseLLMAdapter
 
 try:
@@ -41,11 +42,11 @@ class LlamaCppAdapter(BaseLLMAdapter):
             raise RuntimeError(f"Error al cargar el modelo GGUF en '{self.model_path}': {e}")
 
     def generate(
-        self,
-        prompt: str,
-        profile_name: str = "narrator",
-        response_schema: Optional[dict] = None,
-        schema_name: Optional[str] = None,
+            self,
+            prompt: str,
+            profile_name: str = "narrator",
+            response_schema: Optional[dict] = None,
+            schema_name: Optional[str] = None,
     ) -> dict:
         """Envía el prompt al modelo local configurando la salida para formato JSON."""
         if not hasattr(self, "llm") or self.llm is None:

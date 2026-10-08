@@ -1,6 +1,7 @@
 """Formateador de datos y entidades del juego a representaciones Markdown."""
 
 from typing import Any, Dict, List, Optional, Union
+
 from domains.base import Entity
 from domains.npcs import NPC
 from domains.world import Place
@@ -11,9 +12,9 @@ class MarkdownFormatter:
 
     @staticmethod
     def format_conversation(
-        history: List[Dict[str, str]],
-        current_input: Optional[str] = None,
-        default_speaker: str = "Player",
+            history: List[Dict[str, str]],
+            current_input: Optional[str] = None,
+            default_speaker: str = "Player",
     ) -> str:
         """Formatea el historial de conversación añadiendo la consulta actual."""
         lines = []
@@ -64,9 +65,9 @@ class MarkdownFormatter:
 
     @staticmethod
     def format_place(
-        place: Optional[Place],
-        include_connections: bool = False,
-        include_visible: bool = False,
+            place: Optional[Place],
+            include_connections: bool = False,
+            include_visible: bool = False,
     ) -> str:
         """Formatea la información de un lugar o entorno."""
         if not place:

@@ -1,3 +1,5 @@
+from typing import List
+
 from PySide6.QtWidgets import (
     QWidget,
     QFormLayout,
@@ -7,7 +9,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QComboBox,
 )
-from typing import List
+
 from domains import Player, Place
 
 

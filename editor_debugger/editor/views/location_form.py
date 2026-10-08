@@ -2,6 +2,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit,
     QTextEdit, QLabel, QPushButton
 )
+
 from domains import Location
 
 
@@ -10,6 +11,7 @@ class LocationForm(QWidget):
     Formulario para editar las propiedades de una Localización (Location).
     Incluye botón para eliminar la localización actual.
     """
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.location: Location = None
@@ -49,7 +51,7 @@ class LocationForm(QWidget):
 
         # Formulario
         form_layout = QFormLayout()
-        
+
         self.id_label = QLabel()
         self.id_label.setStyleSheet("font-weight: bold; color: #555;")
         form_layout.addRow("ID de la Localización:", self.id_label)

@@ -1,8 +1,13 @@
 """Controlador del estado activo de juego (GameState) y persistencia canónica."""
 
 from __future__ import annotations
+
+import logging
 import os
-from typing import Any, Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional
+
+logger = logging.getLogger(__name__)
+
 from domains.game_state import (
     EntityMapItem,
     EntityMapLocation,
@@ -23,13 +28,13 @@ class GameStateController:
     """Gestiona el estado activo de la partida (GameState), mutaciones y persistencia."""
 
     def __init__(
-        self,
-        game_state: GameState,
-        world: Optional[World] = None,
-        npcs: Optional[List[NPC]] = None,
-        items: Optional[List[Item]] = None,
-        adventure_path: Optional[str] = None,
-        fog_war_enabled: bool = True,
+            self,
+            game_state: GameState,
+            world: Optional[World] = None,
+            npcs: Optional[List[NPC]] = None,
+            items: Optional[List[Item]] = None,
+            adventure_path: Optional[str] = None,
+            fog_war_enabled: bool = True,
     ):
         self.game_state = game_state
         self.world = world
@@ -38,7 +43,9 @@ class GameStateController:
 
         # Catálogos de consulta O(1)
         self.npcs_by_id: Dict[str, NPC] = {n.id: n for n in (npcs or [])}
+        self.npcs_by_name: Dict[str, NPC] = {n.name: n for n in (npcs or [])}
         self.items_by_id: Dict[str, Item] = {i.id: i for i in (items or [])}
+        self.items_by_name: Dict[str, Item] = {i.name: i for i in (items or [])}
         self.places_by_id: Dict[str, Place] = {}
         self.places_by_name: Dict[str, Place] = {}
         if world:
@@ -51,17 +58,29 @@ class GameStateController:
         if self.world and not self.game_state.place and self.game_state.current_location:
             self.game_state.place = self.places_by_id.get(self.game_state.current_location)
 
+        # Biblioteca inmutable/estructural de LoreBlocks
+        from engines.game.lore.library import LoreLibrary
+        all_blocks = []
+        if self.game_state and self.game_state.loreblocks:
+            all_blocks = (
+                list(self.game_state.loreblocks.unknown)
+                + list(self.game_state.loreblocks.active)
+                + list(self.game_state.loreblocks.done)
+                + list(self.game_state.loreblocks.popups)
+            )
+        self.lore_library = LoreLibrary(all_blocks)
+
     @classmethod
     def create_initial(
-        cls,
-        world: World,
-        player: Player,
-        npcs: Optional[List[NPC]] = None,
-        items: Optional[List[Item]] = None,
-        loreblocks_hierarchy: Optional[LoreBlockHierarchy] = None,
-        adventure_path: Optional[str] = None,
-        elapsed_time_enabled: bool = True,
-        fog_war_enabled: bool = True,
+            cls,
+            world: World,
+            player: Player,
+            npcs: Optional[List[NPC]] = None,
+            items: Optional[List[Item]] = None,
+            loreblocks_hierarchy: Optional[LoreBlockHierarchy] = None,
+            adventure_path: Optional[str] = None,
+            elapsed_time_enabled: bool = True,
+            fog_war_enabled: bool = True,
     ) -> GameStateController:
         """Inicializa GameStateController a partir de las entidades de la historia."""
         all_npcs = npcs or []
@@ -92,7 +111,8 @@ class GameStateController:
         connected_ids = set()
         if initial_place:
             for k, conn in initial_place.connections.items():
-                target = getattr(conn, "target", k) if hasattr(conn, "target") else (conn.get("target", k) if isinstance(conn, dict) else k)
+                target = getattr(conn, "target", k) if hasattr(conn, "target") else (
+                    conn.get("target", k) if isinstance(conn, dict) else k)
                 if target in places_by_name:
                     connected_ids.add(places_by_name[target].id)
                 else:
@@ -158,7 +178,7 @@ class GameStateController:
         hierarchy = loreblocks_hierarchy or LoreBlockHierarchy()
         for cat in ("active", "done"):
             for blk in hierarchy.get(cat, []):
-                if blk.get("type") == "Quest":
+                if blk.get("type") in ("Chapter", "Quest", "Task"):
                     notebook.append(
                         NotebookEntry(
                             id=blk.get("id", ""),
@@ -200,7 +220,6 @@ class GameStateController:
         import json
         import shutil
         from adventure_packager import AdventurePackager
-        from domains.story_config import StoryConfig
 
         if not os.path.exists(aad_path):
             raise FileNotFoundError(f"No se encontró el archivo de aventura: {aad_path}")
@@ -243,36 +262,9 @@ class GameStateController:
                 with open(lore_file, "r", encoding="utf-8") as f:
                     raw_lore = json.load(f)
                 blocks = raw_lore.get("lore_blocks", [])
-                active_ids = {b.get("id") for b in blocks if b.get("state") == "active"}
-                changed = True
-                while changed:
-                    changed = False
-                    for b in blocks:
-                        bid = b.get("id")
-                        if bid in active_ids or b.get("type") == "popup":
-                            continue
-                        has_active_conds = any(
-                            bool(grp.get("conditions") or (grp.get("rag_enabled") and grp.get("trigger_phrases")))
-                            for grp in b.get("active_conditions", [])
-                            if isinstance(grp, dict)
-                        )
-                        if not has_active_conds:
-                            pid = b.get("parent_id")
-                            if not pid or pid in active_ids:
-                                active_ids.add(bid)
-                                changed = True
-
-                active_list = []
-                unknown_list = []
                 for b in blocks:
-                    if b.get("id") in active_ids:
-                        b["state"] = "active"
-                        active_list.append(b)
-                    else:
-                        b["state"] = "unknown"
-                        unknown_list.append(b)
-
-                hierarchy = LoreBlockHierarchy(active=active_list, done=[], unknown=unknown_list)
+                    b["state"] = "unknown"
+                hierarchy = LoreBlockHierarchy(unknown=blocks, active=[], done=[], popups=[])
 
             elapsed_time_enabled = True
             fog_war_enabled = True
@@ -323,7 +315,8 @@ class GameStateController:
         connected_ids = set()
         if target_place:
             for k, conn in target_place.connections.items():
-                target = getattr(conn, "target", k) if hasattr(conn, "target") else (conn.get("target", k) if isinstance(conn, dict) else k)
+                target = getattr(conn, "target", k) if hasattr(conn, "target") else (
+                    conn.get("target", k) if isinstance(conn, dict) else k)
                 if target in self.places_by_name:
                     connected_ids.add(self.places_by_name[target].id)
                 else:
@@ -405,12 +398,12 @@ class GameStateController:
         return self.game_state.conversations.get(target_id, [])
 
     def append_dialogue_exchange(
-        self,
-        target_id: str,
-        player_msg: str,
-        npc_name: str,
-        npc_msg: str,
-        max_messages: int = 16,
+            self,
+            target_id: str,
+            player_msg: str,
+            npc_name: str,
+            npc_msg: str,
+            max_messages: int = 16,
     ) -> None:
         """Registra un par de diálogo en el historial y mantiene la ventana deslizante."""
         if target_id not in self.game_state.conversations:
@@ -437,7 +430,7 @@ class GameStateController:
         quests: List[NotebookEntry] = []
         for cat in ("active", "done"):
             for blk in self.game_state.loreblocks.get(cat, []):
-                if blk.get("type") == "Quest":
+                if blk.get("type") in ("Chapter", "Quest", "Task"):
                     quests.append(
                         NotebookEntry(
                             id=blk.get("id", ""),
@@ -482,7 +475,8 @@ class GameStateController:
         """Carga y valida un GameState previamente guardado."""
         target_path = filepath
         if not os.path.exists(target_path):
-            alt_path = os.path.join(self.saves_directory, filepath if filepath.endswith(".json") else f"{filepath}.json")
+            alt_path = os.path.join(self.saves_directory,
+                                    filepath if filepath.endswith(".json") else f"{filepath}.json")
             if os.path.exists(alt_path):
                 target_path = alt_path
             else:
@@ -508,7 +502,8 @@ class GameStateController:
             day = int(parts[0].replace("Día", "").strip())
             h, m = map(int, parts[1].strip().split(":"))
             return (day - 1) * 1440 + h * 60 + m
-        except Exception:
+        except (ValueError, IndexError, AttributeError) as e:
+            logger.debug("Error al parsear tiempo formateado '%s': %s", formatted, e)
             return 0
 
     @staticmethod

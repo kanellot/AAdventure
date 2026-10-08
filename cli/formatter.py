@@ -1,10 +1,10 @@
 """Utilidades de presentación y formateo visual para la consola CLI de AAdventure."""
 
 from typing import Optional
+
 from domains.projections import (
     GameStateProjection,
     LoreGraphProjection,
-    RagEvaluationProjection,
     TurnResultProjection,
     UIStateProjection,
 )
@@ -40,8 +40,10 @@ class CLIFormatter:
     def print_help() -> None:
         """Muestra la guía de comandos disponibles en la consola."""
         print(f"\n{Colors.OKCYAN}{Colors.BOLD}--- COMANDOS DISPONIBLES EN CONSOLA ---{Colors.ENDC}")
-        print(f"  {Colors.BOLD}/MOVE <destino>{Colors.ENDC}    : Desplazarse a un lugar conectado (simula boton MOVE de la UI)")
-        print(f"  {Colors.BOLD}/LOOK <objetivo>{Colors.ENDC}   : Inspeccionar lugar, personaje u objeto (simula boton LOOK)")
+        print(
+            f"  {Colors.BOLD}/MOVE <destino>{Colors.ENDC}    : Desplazarse a un lugar conectado (simula boton MOVE de la UI)")
+        print(
+            f"  {Colors.BOLD}/LOOK <objetivo>{Colors.ENDC}   : Inspeccionar lugar, personaje u objeto (simula boton LOOK)")
         print(f"  {Colors.BOLD}/TALK <npc>{Colors.ENDC}        : Iniciar dialogo con un NPC (simula boton TALK)")
         print(f"  {Colors.BOLD}<texto libre>{Colors.ENDC}      : Hablar con el NPC en conversacion activa o responder")
         print(f"  {Colors.BOLD}/STATUS{Colors.ENDC}            : Ver estado consolidado del jugador (HUD)")
@@ -60,7 +62,8 @@ class CLIFormatter:
             else:
                 mode_str = f"TALK ({ui_state.player_target})"
 
-        print(f"\n{Colors.OKCYAN}{Colors.BOLD}[HUD] Jugador: {ui_state.player_name} | Lugar: {ui_state.current_location} | Oro: {ui_state.gold} | Tiempo: {ui_state.formatted_time} | Modo: {mode_str}{Colors.ENDC}")
+        print(
+            f"\n{Colors.OKCYAN}{Colors.BOLD}[HUD] Jugador: {ui_state.player_name} | Lugar: {ui_state.current_location} | Oro: {ui_state.gold} | Tiempo: {ui_state.formatted_time} | Modo: {mode_str}{Colors.ENDC}")
 
     @staticmethod
     def print_turn_result(turn_result: TurnResultProjection) -> None:
@@ -76,9 +79,9 @@ class CLIFormatter:
 
     @staticmethod
     def print_verbose_debug(
-        turn_result: TurnResultProjection,
-        game_state: Optional[GameStateProjection] = None,
-        lore_graph: Optional[LoreGraphProjection] = None,
+            turn_result: TurnResultProjection,
+            game_state: Optional[GameStateProjection] = None,
+            lore_graph: Optional[LoreGraphProjection] = None,
     ) -> None:
         """Muestra la información exhaustiva de depuración cuando el modo verbose (-v) está activo."""
         print(f"\n{Colors.DIM}" + "-" * 70)
@@ -99,7 +102,8 @@ class CLIFormatter:
             print(f"  * Input Evaluado   : \"{rag.player_input}\"")
             print(f"  * Umbral Minimo    : {rag.threshold}")
             if rag.matched_lore_id:
-                print(f"  * Lore Coincidente : {Colors.OKGREEN}{rag.matched_lore_id} (Antena: \"{rag.matched_antenna}\"){Colors.ENDC}")
+                print(
+                    f"  * Lore Coincidente : {Colors.OKGREEN}{rag.matched_lore_id} (Antena: \"{rag.matched_antenna}\"){Colors.ENDC}")
                 if rag.injected_directive:
                     print(f"  * Directiva Iny.   : \"{rag.injected_directive}\"")
             else:
@@ -110,13 +114,15 @@ class CLIFormatter:
                 for ant in rag.antennas:
                     matched_flag = f"{Colors.OKGREEN}[MATCH]{Colors.ENDC}" if ant.is_matched else f"{Colors.DIM}[--]{Colors.ENDC}"
                     cond_flag = "Cond: OK" if ant.conditions_met else "Cond: NO"
-                    print(f"    - [{ant.score:.4f}] \"{ant.antenna}\" (Lore: {ant.lore_id}) [{cond_flag}] {matched_flag}")
+                    print(
+                        f"    - [{ant.score:.4f}] \"{ant.antenna}\" (Lore: {ant.lore_id}) [{cond_flag}] {matched_flag}")
             print()
 
         # 3. LoreBlocks HSM (Activos / Completados)
         if lore_graph:
             print(f"{Colors.OKCYAN}{Colors.BOLD}[ESTADO HSM LOREBLOCKS]:{Colors.ENDC}")
-            print(f"  * Total: {lore_graph.total_count} | Activos: {lore_graph.active_count} | Done: {lore_graph.done_count} | Unknown: {lore_graph.unknown_count}")
+            print(
+                f"  * Total: {lore_graph.total_count} | Activos: {lore_graph.active_count} | Done: {lore_graph.done_count} | Unknown: {lore_graph.unknown_count}")
             active_names = [b.title or b.id for b in lore_graph.blocks if b.state == "active"]
             done_names = [b.title or b.id for b in lore_graph.blocks if b.state == "done"]
             if active_names:
@@ -135,8 +141,10 @@ class CLIFormatter:
         if game_state:
             print(f"{Colors.OKCYAN}{Colors.BOLD}[GAME STATE SNAPSHOT]:{Colors.ENDC}")
             print(f"  * Ubicacion: {game_state.current_place} (Previo: {game_state.prev_place})")
-            print(f"  * Jugador  : Estado={game_state.player_state}, Target='{game_state.player_target}', Afinidad={game_state.active_npc_affinity}")
+            print(
+                f"  * Jugador  : Estado={game_state.player_state}, Target='{game_state.player_target}', Afinidad={game_state.active_npc_affinity}")
             print(f"  * Tiempo   : {game_state.formatted_time} ({game_state.elapsed_time} min)")
-            print(f"  * Visitados: {len(game_state.discovered_places)} lugares | NPCs Visibles: {game_state.visible_npcs}")
+            print(
+                f"  * Visitados: {len(game_state.discovered_places)} lugares | NPCs Visibles: {game_state.visible_npcs}")
 
         print(f"{Colors.DIM}" + "-" * 70 + f"{Colors.ENDC}\n")

@@ -1,7 +1,9 @@
 """Modelos de dominio del mundo: localizaciones, lugares y conexiones."""
 
 from typing import Dict, List
+
 from pydantic import BaseModel, Field
+
 from domains.base import Entity
 
 

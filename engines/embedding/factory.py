@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from typing import Optional
+
 from engines.embedding.base_backend import BaseEmbeddingBackend
 from engines.embedding.mock_backend import MockEmbeddingBackend
 
@@ -22,10 +23,10 @@ class EmbeddingFactory:
 
     @classmethod
     def get_backend(
-        cls,
-        backend_type: Optional[str] = None,
-        config_path: Optional[str] = None,
-        force_new: bool = False,
+            cls,
+            backend_type: Optional[str] = None,
+            config_path: Optional[str] = None,
+            force_new: bool = False,
     ) -> BaseEmbeddingBackend:
         """Obtiene o instancia el backend de embeddings configurado."""
         if cls._instance is not None and not force_new and backend_type is None:
@@ -37,8 +38,8 @@ class EmbeddingFactory:
                 with open(config_path, "r", encoding="utf-8") as f:
                     conf = json.load(f)
                     selected_backend = conf.get("embedding_backend")
-            except Exception:
-                pass
+            except (json.JSONDecodeError, OSError) as e:
+                logger.debug("No se pudo leer la configuración de embeddings desde '%s': %s", config_path, e)
 
         if not selected_backend:
             selected_backend = os.environ.get("EMBEDDING_BACKEND", "pytorch")

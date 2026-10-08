@@ -21,12 +21,19 @@ DEFAULT_AAD_PATH = os.path.join("Resources", "adventure_data", "Adventure.aad")
 
 
 def main():
+    if sys.platform == "win32":
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except AttributeError:
+            pass
+
     parser = argparse.ArgumentParser(description="AAdventure - Motor Narrativo D&D")
     parser.add_argument("--editor", "-e", action="store_true", help="Lanza el editor gráfico de historias")
-    parser.add_argument("--debug", "--play-debug", "-d", dest="debug", action="store_true", help="Lanza el depurador gráfico interactivo")
     parser.add_argument("--select-adventure", "-s", action="store_true", help="Abre el selector gráfico de aventuras")
     parser.add_argument("--verbose", "-v", action="store_true", help="Activa el modo detallado/debug en la consola")
-    parser.add_argument("--test", "-t", action="store_true", help="Activa el modo de prueba usando backends mock para LLM y embeddings")
+    parser.add_argument("--test", "-t", action="store_true",
+                        help="Activa el modo de prueba usando backends mock para LLM y embeddings")
     args = parser.parse_args()
 
     if args.test:
@@ -54,16 +61,6 @@ def main():
             sys.exit(0)
         except ImportError as ie:
             print(f"[ERROR] No se pudo iniciar la suite gráfica: {ie}")
-            print("Asegúrate de tener instalado PySide6: pip install PySide6")
-            sys.exit(1)
-
-    if args.debug:
-        try:
-            from editor_debugger.main import start_editor_debugger
-            start_editor_debugger(mode="debugger", aad_path=aad_to_load)
-            sys.exit(0)
-        except ImportError as ie:
-            print(f"[ERROR] No se pudo iniciar el depurador gráfico: {ie}")
             print("Asegúrate de tener instalado PySide6: pip install PySide6")
             sys.exit(1)
 

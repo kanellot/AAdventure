@@ -1,10 +1,12 @@
 """Clase base para las acciones narrativas del juego."""
 
 from __future__ import annotations
-from abc import ABC, abstractmethod
+
 import logging
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, Generic, Optional, Tuple, Type, TypeVar
+
 from domains import ContextType, ResponseType
 from engines.game.prompt_builder import PromptBuilder
 from engines.game.state_controller import GameStateController
@@ -23,10 +25,6 @@ class NarrativeResult:
     msg: str
     extra: Any = None
     prompt: Optional[str] = None
-
-    def __iter__(self):
-        """Permite desempaquetar como tupla (msg, extra) para retrocompatibilidad total."""
-        return iter((self.msg, self.extra))
 
 
 class BaseAction(ABC, Generic[C, R]):
@@ -51,9 +49,9 @@ class BaseAction(ABC, Generic[C, R]):
 
     @abstractmethod
     def build_context(
-        self,
-        controller: GameStateController,
-        player_input: str = "",
+            self,
+            controller: GameStateController,
+            player_input: str = "",
     ) -> C:
         """Construye y retorna el modelo de contexto para el LLM."""
         pass
@@ -72,7 +70,6 @@ class BaseAction(ABC, Generic[C, R]):
         ctx_md = self.to_markdown(ctx)
         return PromptBuilder.build(
             rules_path=self.rules_path,
-            gamecontext=ctx,
             game_context_str=ctx_md,
             user_input=player_input,
             template_tags=tags,
@@ -84,10 +81,10 @@ class BaseAction(ABC, Generic[C, R]):
         pass
 
     def generate_narrative(
-        self,
-        controller: GameStateController,
-        player_input: str = "",
-        transformer_engine: Optional[TransformerEngine] = None,
+            self,
+            controller: GameStateController,
+            player_input: str = "",
+            transformer_engine: Optional[TransformerEngine] = None,
     ) -> NarrativeResult:
         """Genera la narrativa del turno invocando al TransformerEngine o usando el fallback determinista."""
         ctx = self.build_context(controller, player_input)

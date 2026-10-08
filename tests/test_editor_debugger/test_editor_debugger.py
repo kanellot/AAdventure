@@ -2,7 +2,7 @@
 
 import os
 import unittest
-from PySide6.QtCore import Qt
+
 from PySide6.QtWidgets import QApplication
 
 from editor_debugger.app import EditorDebuggerApp
@@ -24,7 +24,8 @@ class TestEditorDebuggerSuite(unittest.TestCase):
             try:
                 if self.suite.editor_app and self.suite.editor_app.controller:
                     self.suite.editor_app.controller.is_dirty = False
-                if self.suite.debugger_app and hasattr(self.suite.debugger_app, "session") and self.suite.debugger_app.session:
+                if self.suite.debugger_app and hasattr(self.suite.debugger_app,
+                                                       "session") and self.suite.debugger_app.session:
                     self.suite.debugger_app.session.close()
                 self.suite.close()
             except Exception:

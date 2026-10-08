@@ -6,14 +6,15 @@ Incluye:
 """
 
 from typing import List, Optional, Tuple
+
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QScrollArea, QDialog
 )
-from PySide6.QtCore import Qt, Signal
+
 from domains.lore import EntityCondition
 from editor_debugger.editor.views.entity_picker import EntityPickerDialog
-
 
 TYPE_EMOJIS = {
     "place": "📍",
@@ -216,7 +217,8 @@ class CompactEntityListWidget(QWidget):
 
     entities_changed = Signal()
 
-    def __init__(self, controller=None, allowed_types: Optional[List[str]] = None, button_text="➕ Añadir Entidad...", parent=None):
+    def __init__(self, controller=None, allowed_types: Optional[List[str]] = None, button_text="➕ Añadir Entidad...",
+                 parent=None):
         super().__init__(parent)
         self.controller = controller
         self.allowed_types = allowed_types or ["place", "npc", "item"]
@@ -301,7 +303,8 @@ class CompactEntityListWidget(QWidget):
 
             del_btn = QPushButton("✕")
             del_btn.setToolTip("Quitar entidad")
-            del_btn.setStyleSheet("border: none; background: transparent; color: #cc0000; font-weight: bold; padding: 2px;")
+            del_btn.setStyleSheet(
+                "border: none; background: transparent; color: #cc0000; font-weight: bold; padding: 2px;")
             del_btn.clicked.connect(lambda _, i=idx: self.on_remove_entity(i))
             layout.addWidget(del_btn)
 
@@ -326,4 +329,3 @@ class CompactEntityListWidget(QWidget):
             self.entity_ids.pop(index)
             self.refresh_chips()
             self.entities_changed.emit()
-

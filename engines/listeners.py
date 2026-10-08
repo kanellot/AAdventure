@@ -6,9 +6,13 @@ el estado de procesamiento ('Thinking') y la entrega de turnos.
 """
 
 from __future__ import annotations
+
 import json
+import logging
 import threading
-from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
+from typing import List, Optional, Protocol, Tuple, runtime_checkable
+
+logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -36,6 +40,10 @@ class EngineEventListener(Protocol):
         """Notifica errores durante el procesamiento de una tarea."""
         ...
 
+    def on_popup(self, popup_json: str) -> None:
+        """Entrega una notificación popup modal serializada en JSON (PopupEvent)."""
+        ...
+
 
 class BaseEngineEventListener:
     """Implementación base vacía del listener para conveniencia de subclases."""
@@ -52,6 +60,9 @@ class BaseEngineEventListener:
     def on_error(self, task_id: str, error_message: str, error_code: str) -> None:
         pass
 
+    def on_popup(self, popup_json: str) -> None:
+        pass
+
 
 class SyncCollectingEventListener(BaseEngineEventListener):
     """Observador thread-safe que recolecta eventos en orden y permite esperas síncronas.
@@ -65,6 +76,7 @@ class SyncCollectingEventListener(BaseEngineEventListener):
         self.completed_tasks: List[Tuple[str, str]] = []
         self.state_updates: List[str] = []
         self.errors: List[Tuple[str, str, str]] = []
+        self.popups: List[str] = []
         self.task_completed_event = threading.Event()
         self.thinking_done_event = threading.Event()
         self.last_task_id: Optional[str] = None
@@ -75,8 +87,8 @@ class SyncCollectingEventListener(BaseEngineEventListener):
             data = json.loads(event_json)
             if not data.get("is_thinking", False):
                 self.thinking_done_event.set()
-        except Exception:
-            pass
+        except (json.JSONDecodeError, AttributeError) as e:
+            logger.debug("Error al procesar evento thinking '%s': %s", event_json, e)
 
     def on_task_completed(self, task_id: str, result_json: str) -> None:
         self.completed_tasks.append((task_id, result_json))
@@ -88,6 +100,10 @@ class SyncCollectingEventListener(BaseEngineEventListener):
 
     def on_error(self, task_id: str, error_message: str, error_code: str) -> None:
         self.errors.append((task_id, error_message, error_code))
+
+    def on_popup(self, popup_json: str) -> None:
+        self.popups.append(popup_json)
+
 
     def wait_for_completion(self, timeout: float = 3.0) -> bool:
         """Espera a que se complete una tarea y se apague el indicador thinking."""

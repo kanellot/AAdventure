@@ -2,10 +2,10 @@
 
 import os
 from typing import Optional, Tuple
-from domains.projections import TurnResultProjection
-from engines import AdventureSession
+
 from cli.formatter import CLIFormatter, Colors
 from cli.listener import CLIEventListener
+from engines import AdventureSession
 
 
 class CLIApp:
@@ -75,12 +75,14 @@ class CLIApp:
             return None
 
         if cmd_type == "UNKNOWN":
-            print(f"{Colors.FAIL}[SYSTEM] > Comando '{arg}' no reconocido. Escribe /HELP para ver los comandos disponibles.{Colors.ENDC}")
+            print(
+                f"{Colors.FAIL}[SYSTEM] > Comando '{arg}' no reconocido. Escribe /HELP para ver los comandos disponibles.{Colors.ENDC}")
             return None
 
         if cmd_type in ["MOVE", "LOOK", "TALK"]:
             if not arg:
-                print(f"{Colors.FAIL}[SYSTEM] > Debes especificar un objetivo para /{cmd_type}. Ejemplo: /{cmd_type} <destino_o_personaje>{Colors.ENDC}")
+                print(
+                    f"{Colors.FAIL}[SYSTEM] > Debes especificar un objetivo para /{cmd_type}. Ejemplo: /{cmd_type} <destino_o_personaje>{Colors.ENDC}")
                 return None
             task_id = self.session.post_action(action=cmd_type, target=arg)
             self.session.wait_idle()

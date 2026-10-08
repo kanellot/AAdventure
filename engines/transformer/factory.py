@@ -3,6 +3,7 @@
 import json
 import os
 from typing import Any, Dict, Union
+
 from engines.transformer.base_adapter import BaseLLMAdapter
 from engines.transformer.llama_cpp_adapter import LlamaCppAdapter
 from engines.transformer.lm_studio_adapter import LMStudioAdapter
@@ -16,8 +17,8 @@ class LLMFactory:
 
     @classmethod
     def create_adapter(
-        cls,
-        config_or_path: Union[str, Dict[str, Any]] = "Resources/system_data/llm_config.json",
+            cls,
+            config_or_path: Union[str, Dict[str, Any]] = "Resources/system_data/llm_config.json",
     ) -> BaseLLMAdapter:
         """Crea e inicializa una instancia del adaptador LLM configurado."""
         if isinstance(config_or_path, str):
@@ -27,7 +28,8 @@ class LLMFactory:
                 if os.path.exists(candidate):
                     config_or_path = candidate
                 else:
-                    raise FileNotFoundError(f"No se encontró el archivo de configuración del LLM en '{config_or_path}'.")
+                    raise FileNotFoundError(
+                        f"No se encontró el archivo de configuración del LLM en '{config_or_path}'.")
             with open(config_or_path, "r", encoding="utf-8") as f:
                 config_data = json.load(f)
             config_path = config_or_path
@@ -55,7 +57,7 @@ class LLMFactory:
 
 
 def create_llm_adapter(
-    config_or_path: Union[str, Dict[str, Any]] = "Resources/system_data/llm_config.json",
+        config_or_path: Union[str, Dict[str, Any]] = "Resources/system_data/llm_config.json",
 ) -> BaseLLMAdapter:
     """Función de conveniencia para instanciar el adaptador LLM."""
     return LLMFactory.create_adapter(config_or_path)

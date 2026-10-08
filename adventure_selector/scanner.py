@@ -2,6 +2,7 @@
 
 import os
 from typing import List, Optional
+
 from adventure_selector.models import AdventureMetadata
 from adventure_selector.reader import read_adventure_metadata
 from adventure_selector.storage import (

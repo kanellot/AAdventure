@@ -1,7 +1,9 @@
 """Modelo de dominio canónico para GameState y sus componentes."""
 
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional
+
 from pydantic import BaseModel, Field, field_validator
+
 from domains.world import Place
 
 
@@ -46,11 +48,12 @@ class EntityMapLocation(BaseModel):
 
 
 class LoreBlockHierarchy(BaseModel):
-    """Estructura jerárquica de LoreBlocks organizada en 3 categorías: unknown, active, done."""
+    """Estructura jerárquica de LoreBlocks organizada en 4 categorías: unknown, active, done, popups."""
 
     unknown: List[Dict[str, Any]] = Field(default_factory=list)
     active: List[Dict[str, Any]] = Field(default_factory=list)
     done: List[Dict[str, Any]] = Field(default_factory=list)
+    popups: List[Dict[str, Any]] = Field(default_factory=list)
 
     def __getitem__(self, item: str) -> List[Dict[str, Any]]:
         if hasattr(self, item):
@@ -58,7 +61,7 @@ class LoreBlockHierarchy(BaseModel):
         raise KeyError(f"Categoría de loreblock no válida: {item}")
 
     def __setitem__(self, key: str, value: List[Dict[str, Any]]) -> None:
-        if key in ("unknown", "active", "done"):
+        if key in ("unknown", "active", "done", "popups"):
             setattr(self, key, value)
         else:
             raise KeyError(f"Categoría de loreblock no válida: {key}")
@@ -71,16 +74,17 @@ class LoreBlockHierarchy(BaseModel):
             ("unknown", self.unknown),
             ("active", self.active),
             ("done", self.done),
+            ("popups", self.popups),
         ]
 
     def keys(self):
-        return ["unknown", "active", "done"]
+        return ["unknown", "active", "done", "popups"]
 
     def values(self):
-        return [self.unknown, self.active, self.done]
+        return [self.unknown, self.active, self.done, self.popups]
 
     def __contains__(self, key: str) -> bool:
-        return key in ("unknown", "active", "done")
+        return key in ("unknown", "active", "done", "popups")
 
 
 class Inventory(BaseModel):

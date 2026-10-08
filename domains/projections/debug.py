@@ -1,6 +1,7 @@
 """Modelos de proyección (DTOs) para diagnóstico, depuración e inspección profunda."""
 
 from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -68,7 +69,9 @@ class LoreBlockDetailProjection(BaseModel):
     rag_enabled: bool = False
     trigger_phrases: List[str] = Field(default_factory=list)
     active_conditions: List[Dict[str, Any]] = Field(default_factory=list)
+    active_effects: List[Dict[str, Any]] = Field(default_factory=list)
     done_conditions: List[Dict[str, Any]] = Field(default_factory=list)
+    done_effects: List[Dict[str, Any]] = Field(default_factory=list)
     effects: List[Dict[str, Any]] = Field(default_factory=list)
     conditions: List[LoreConditionDetailProjection] = Field(default_factory=list)
     exit_conditions: List[LoreConditionDetailProjection] = Field(default_factory=list)
@@ -113,7 +116,7 @@ class PlayerSummaryProjection(BaseModel):
     name: str
     description: str = ""
     gold: int = 0
-    player_location: Optional[str] = None
+    current_location: Optional[str] = None
     state: str = "EXPLORE"
     active_quest: Optional[str] = None
     completed_quests: List[str] = Field(default_factory=list)

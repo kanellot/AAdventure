@@ -1,6 +1,7 @@
 """Pruebas unitarias para los modelos de mundo y geografía (domains.world)."""
 
 import unittest
+
 from domains.world import Connection, Place, Location, World
 
 
@@ -63,7 +64,8 @@ class TestWorldModels(unittest.TestCase):
         deserialized = World.model_validate_json(serialized)
         self.assertEqual(deserialized.initial_text, "")
 
-        custom_world = World(id="w_cust", name="Mundo Personalizado", description="Descripción cust", initial_text="Érase una vez...")
+        custom_world = World(id="w_cust", name="Mundo Personalizado", description="Descripción cust",
+                             initial_text="Érase una vez...")
         deserialized_custom = World.model_validate_json(custom_world.model_dump_json())
         self.assertEqual(deserialized_custom.initial_text, "Érase una vez...")
 

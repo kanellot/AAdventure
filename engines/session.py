@@ -5,16 +5,20 @@ mecánicas de juego, desacoplando los clientes UI de los subsistemas internos.
 """
 
 from __future__ import annotations
+
+import logging
 import os
 import uuid
-from typing import Optional
+from typing import Optional, Union
+
+logger = logging.getLogger(__name__)
 
 from domains.projections import (
     NotebookProjection,
     TurnOutput,
     TurnResultProjection,
 )
-from engines.events import EngineEventListener
+from engines.events import EngineEventListener, UIAction
 from engines.game.engine import GameEngine
 
 
@@ -26,9 +30,9 @@ class AdventureSession:
     """
 
     def __init__(
-        self,
-        game_engine: GameEngine,
-        aad_path: Optional[str] = None,
+            self,
+            game_engine: GameEngine,
+            aad_path: Optional[str] = None,
     ):
         self._engine: GameEngine = game_engine
         self.aad_path: Optional[str] = aad_path
@@ -57,15 +61,24 @@ class AdventureSession:
             try:
                 initial_state_json = self._engine.get_ui_state_projection().model_dump_json()
                 listener.on_state_updated(initial_state_json)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("No se pudo emitir estado inicial al listener: %s", e)
 
     def remove_listener(self, listener: EngineEventListener) -> None:
         """Elimina un observador registrado."""
         self._engine.remove_listener(listener)
 
-    def post_action(self, action: str = "", target: str = "", player_input: str = "") -> str:
+    def post_action(self, action: Union[str, UIAction] = "", target: str = "", player_input: str = "") -> str:
         """Único método de entrada de datos: encola una acción o input enviado por el jugador."""
+        if isinstance(action, UIAction):
+            act_str = action.action
+            tgt_str = action.target
+            inp_str = action.player_input
+        else:
+            act_str = action
+            tgt_str = target
+            inp_str = player_input
+
         if self.is_closed:
             task_id = f"task_{uuid.uuid4().hex[:8]}"
             res = TurnResultProjection(
@@ -78,14 +91,15 @@ class AdventureSession:
                 if hasattr(l, "on_task_completed"):
                     l.on_task_completed(task_id, res.model_dump_json())
             return task_id
-        return self._engine.enqueue_action(action=action, target=target, player_input=player_input)
+        return self._engine.enqueue_action(action=act_str, target=tgt_str, player_input=inp_str)
 
     def wait_idle(self, timeout: Optional[float] = None) -> bool:
         """Bloquea hasta que todas las tareas encoladas en el worker hayan finalizado."""
         try:
             self._engine.task_queue.join()
             return True
-        except Exception:
+        except (AttributeError, RuntimeError) as e:
+            logger.debug("Error al esperar finalización de tareas en worker: %s", e)
             return False
 
     def save(self, aad_path: Optional[str] = None) -> None:

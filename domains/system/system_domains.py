@@ -1,7 +1,9 @@
 """Modelos del sistema, contextos de ejecución y proyecciones de estado."""
 
 from typing import Any, Dict, List, Optional, Union
+
 from pydantic import BaseModel, Field
+
 from domains.base import Entity
 from domains.npcs import NPC
 from domains.projections import PlaceProjection
@@ -39,16 +41,6 @@ class RuntimeState(BaseModel):
     elapsed_time: int = 0
     inspection_history: List[Dict[str, str]] = Field(default_factory=list)
     active_npc_affinity: Optional[float] = None
-
-
-from domains.game_state import (
-    GameState,
-    EntityMapItem,
-    EntityMapNPC,
-    EntityMapPlace,
-    LoreBlockHierarchy,
-    NotebookEntry,
-)
 
 
 class MoveNarratorCtx(ContextType):

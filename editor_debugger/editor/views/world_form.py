@@ -1,16 +1,19 @@
 from PySide6.QtWidgets import QWidget, QFormLayout, QLineEdit, QTextEdit, QLabel
+
 from domains import World
+
 
 class WorldForm(QWidget):
     """
     Formulario para editar las propiedades del Mundo (World).
     """
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.world: World = None
 
         layout = QFormLayout(self)
-        
+
         self.id_label = QLabel()
         layout.addRow("ID del Mundo:", self.id_label)
 
@@ -23,7 +26,8 @@ class WorldForm(QWidget):
         layout.addRow("Descripción del Mundo:", self.desc_edit)
 
         self.initial_text_edit = QTextEdit()
-        self.initial_text_edit.setPlaceholderText("Texto que el Dungeon Master relatará al iniciar la partida (Turno 0)...")
+        self.initial_text_edit.setPlaceholderText(
+            "Texto que el Dungeon Master relatará al iniciar la partida (Turno 0)...")
         self.initial_text_edit.setMaximumHeight(80)
         self.initial_text_edit.textChanged.connect(self.on_initial_text_changed)
         layout.addRow("Texto Inicial (Dungeon Master):", self.initial_text_edit)

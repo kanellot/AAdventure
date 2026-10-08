@@ -1,6 +1,7 @@
 """Formulario para editar la configuración de simulación de historia (StoryConfig)."""
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QFormLayout, QCheckBox, QGroupBox
+
 from domains.story_config import StoryConfig
 
 

@@ -1,10 +1,13 @@
 """Persistencia de preferencias del usuario y aventura predeterminada."""
 
-import os
 import json
-from typing import Optional, List, Dict, Any
+import logging
+import os
+from typing import Any, Dict, List, Optional
 
-PREFERENCES_FILE_PATH = os.path.join("Resources", "system_data", "debugger_preferences.json")
+logger = logging.getLogger(__name__)
+
+PREFERENCES_FILE_PATH = os.path.join("Resources", "system_data", "selector_preferences.json")
 FALLBACK_ADVENTURE_PATH = os.path.join("Resources", "adventure_data", "Adventure.aad")
 
 
@@ -20,8 +23,8 @@ def load_preferences() -> Dict[str, Any]:
         try:
             with open(prefs_path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
-            pass
+        except (json.JSONDecodeError, OSError) as e:
+            logger.debug("No se pudieron cargar las preferencias desde '%s': %s", prefs_path, e)
 
     return {
         "last_selected_aad": None,
@@ -36,8 +39,8 @@ def save_preferences(prefs: Dict[str, Any]) -> None:
     try:
         with open(prefs_path, "w", encoding="utf-8") as f:
             json.dump(prefs, f, indent=2, ensure_ascii=False)
-    except Exception as e:
-        print(f"[WARN] No se pudieron guardar las preferencias del selector: {e}")
+    except OSError as e:
+        logger.warning("No se pudieron guardar las preferencias del selector: %s", e)
 
 
 def get_default_adventure_path() -> Optional[str]:

@@ -49,7 +49,8 @@ class TestCLIEventListener(unittest.TestCase):
         self.assertEqual(self.listener.latest_turn_result, res)
 
     def test_on_state_updated(self):
-        state = UIStateProjection(player_name="Aventurero", gold=50, current_location="Plaza Mayor", formatted_time="08:30", game_state="EXPLORE")
+        state = UIStateProjection(player_name="Aventurero", gold=50, current_location="Plaza Mayor",
+                                  formatted_time="08:30", game_state="EXPLORE")
         self.listener.on_state_updated(state.model_dump_json())
         self.assertEqual(self.listener.latest_ui_state, state)
 

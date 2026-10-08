@@ -1,7 +1,9 @@
-import os
 import json
+import os
 import shutil
 from typing import List, Optional, Tuple
+
+from adventure_packager import AdventurePackager
 from domains import (
     World,
     Location,
@@ -14,7 +16,7 @@ from domains import (
     LoreBlock,
     StoryConfig,
 )
-from adventure_packager import AdventurePackager
+from editor_debugger.editor.constants import ALLOWED_CHILD_TYPES
 
 
 class EditorController:
@@ -143,6 +145,8 @@ class EditorController:
            - Si hay más de un lugar, ninguno puede carecer de conexiones.
            - Las conexiones deben apuntar a lugares válidos existentes.
            - Todo el grafo de lugares debe formar una única componente conexa (todos interconectados).
+        4. Jerarquía HSM de LoreBlocks: primer bloque raíz debe ser Chapter, y restricciones de tipo padre/hijo.
+        5. Acciones Hook: toda acción con action="hook" requiere obligatoriamente target definido y no vacío.
         """
         # 1. Mínimo estructural
         if not self.world:
@@ -183,7 +187,7 @@ class EditorController:
         for item in self.items:
             item_loc = (item.initial_location or "").strip()
             in_player_inv = self.player and (
-                item.id in (self.player.inventory or []) or item.name in (self.player.inventory or [])
+                    item.id in (self.player.inventory or []) or item.name in (self.player.inventory or [])
             )
             if not item_loc and not in_player_inv:
                 return (
@@ -237,6 +241,55 @@ class EditorController:
                     False,
                     f"Todos los lugares deben estar interconectados. Se encontraron lugares aislados del resto del mundo: {names}.",
                 )
+
+        # 4. Jerarquía de Bloques de Lore (HSM)
+        if self.lore_blocks:
+            id_to_block = {b.id: b for b in self.lore_blocks}
+            root_blocks = [b for b in self.lore_blocks if not b.parent_id or b.parent_id not in id_to_block]
+
+            # El primer bloque raíz debe ser un Capítulo ('Chapter')
+            if root_blocks and root_blocks[0].type != "Chapter":
+                return (
+                    False,
+                    f"El primer bloque raíz de lore debe ser un Capítulo ('Chapter'). El bloque '{root_blocks[0].title or root_blocks[0].id}' es de tipo '{root_blocks[0].type}'."
+                )
+
+            for b in self.lore_blocks:
+                b_type = getattr(b, "type", "Event")
+                p_id = getattr(b, "parent_id", None)
+                if p_id and p_id in id_to_block:
+                    parent = id_to_block[p_id]
+                    p_type = getattr(parent, "type", "Event")
+                    allowed = ALLOWED_CHILD_TYPES.get(p_type, [])
+                    if b_type not in allowed:
+                        allowed_str = ", ".join(f"'{t}'" for t in allowed) if allowed else "(ninguno)"
+                        return (
+                            False,
+                            f"Restricción de jerarquía violada: El bloque '{b.title or b.id}' de tipo '{b_type}' "
+                            f"no puede ser hijo de '{parent.title or parent.id}' de tipo '{p_type}'. "
+                            f"Tipos de hijo permitidos: {allowed_str}."
+                        )
+                elif not p_id or p_id not in id_to_block:
+                    allowed = ALLOWED_CHILD_TYPES.get(None, ["Chapter", "popup"])
+                    if b_type not in allowed:
+                        return (
+                            False,
+                            f"Restricción de jerarquía violada: El bloque raíz '{b.title or b.id}' de tipo '{b_type}' "
+                            f"no está permitido en la raíz. Solo se permiten Capítulos ('Chapter') o avisos emergentes ('popup')."
+                        )
+
+        # 5. Validación de Acciones Hook en active_effects (target obligatorio)
+        for b in self.lore_blocks:
+            for eff in (getattr(b, "active_effects", []) or []):
+                eff_action = getattr(eff, "action", None) if not isinstance(eff, dict) else eff.get("action")
+                eff_target = getattr(eff, "target", None) if not isinstance(eff, dict) else eff.get("target")
+                if eff_action == "hook" and not eff_target:
+                    blk_name = getattr(b, "name", None) or getattr(b, "title", None) or getattr(b, "id", "sin_id")
+                    return (
+                        False,
+                        f"El bloque de lore '{blk_name}' contiene una acción de tipo 'hook' en active_effects sin entidad objetivo (target). "
+                        "Las acciones hook son pasivas y requieren obligatoriamente un target.",
+                    )
 
         return True, None
 
@@ -396,7 +449,8 @@ class EditorController:
                 return item
         return None
 
-    def add_item(self, name: str, description: str, state: str = "default", initial_location: Optional[str] = None) -> Item:
+    def add_item(self, name: str, description: str, state: str = "default",
+                 initial_location: Optional[str] = None) -> Item:
         item_id = f"obj_{len(self.items) + 1:02d}_{name.lower().replace(' ', '_')}"
         new_item = Item(
             id=item_id,
@@ -437,7 +491,8 @@ class EditorController:
                 return True
         return False
 
-    def add_connection(self, place_a_name: str, place_b_name: str, dir_ab: str, dir_ba: str, distance: int, terrain: str):
+    def add_connection(self, place_a_name: str, place_b_name: str, dir_ab: str, dir_ba: str, distance: int,
+                       terrain: str):
         place_a = self.get_place(place_a_name)
         place_b = self.get_place(place_b_name)
         if not place_a or not place_b:
@@ -504,4 +559,3 @@ class EditorController:
             return ("player", self.player.name, "🧑")
 
         return ("unknown", eid, "🔹")
-

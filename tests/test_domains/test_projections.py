@@ -1,10 +1,19 @@
 """Pruebas unitarias para las Proyecciones y DTOs de Cliente (domains.projections)."""
 
 import unittest
+
 from domains.game_state import NotebookEntry
+from domains.projections.debug import (
+    ConnectionProjection,
+    GameSnapshotProjection,
+    PlaceDetailProjection,
+    PlayerSummaryProjection,
+    RagAntennaScoreProjection,
+    RagEvaluationProjection,
+    TurnDebugProjection,
+)
 from domains.projections.game import (
     ActionCommandProjection,
-    AvailableActionsProjection,
     InventoryItemDTO,
     InventoryProjection,
     MapItemDTO,
@@ -18,19 +27,6 @@ from domains.projections.game import (
     TurnResultProjection,
     UIStateProjection,
     WorldMapProjection,
-)
-from domains.projections.debug import (
-    ConnectionProjection,
-    GameSnapshotProjection,
-    GameStateProjection,
-    LoreBlockDetailProjection,
-    LoreConditionDetailProjection,
-    LoreGraphProjection,
-    PlaceDetailProjection,
-    PlayerSummaryProjection,
-    RagAntennaScoreProjection,
-    RagEvaluationProjection,
-    TurnDebugProjection,
 )
 
 

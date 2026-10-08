@@ -1,10 +1,12 @@
 """Pruebas unitarias para LoreBlockForm y LoreEffectDialog (editor.views.lore_block_form)."""
 
 import unittest
+
 from PySide6.QtWidgets import QApplication
-from editor_debugger.editor.views.lore_block_form import LoreBlockForm, LoreEffectDialog
-from editor_debugger.editor.views.dialogs import CreateLoreBlockDialog
+
 from domains.lore import LoreBlock, LoreEffects, ConditionGroup, EntityCondition
+from editor_debugger.editor.views.dialogs import CreateLoreBlockDialog
+from editor_debugger.editor.views.lore_block_form import LoreBlockForm, LoreEffectDialog
 
 
 class TestLoreBlockForm(unittest.TestCase):
@@ -34,8 +36,9 @@ class TestLoreBlockForm(unittest.TestCase):
         self.assertEqual(self.form.id_edit.text(), "cap_1")
         self.assertEqual(self.form.type_combo.currentData(), "Chapter")
         self.assertIn("Capítulo", self.form.header_title.text())
-        self.assertFalse(self.form.container_note_group.isHidden())
-        self.assertTrue(self.form.effects_group.isHidden())
+        # En el diseño unificado de presets, todos los tipos tienen el formulario base completo
+        self.assertFalse(self.form.effects_group.isHidden())
+        self.assertFalse(self.form.done_box.isHidden())
 
     def test_change_type_updates_block(self):
         block = LoreBlock(
@@ -61,8 +64,19 @@ class TestLoreBlockForm(unittest.TestCase):
         self.form.type_combo.setCurrentIndex(idx_ev)
 
         self.assertEqual(self.form.lore_block.type, "Event")
-        self.assertTrue(self.form.container_note_group.isHidden())
         self.assertFalse(self.form.effects_group.isHidden())
+
+        # Cambiar a Info
+        idx_info = self.form.type_combo.findData("Info")
+        self.assertGreaterEqual(idx_info, 0)
+        self.form.type_combo.setCurrentIndex(idx_info)
+        self.assertEqual(self.form.lore_block.type, "Info")
+
+        # Cambiar a ask_permission
+        idx_ask = self.form.type_combo.findData("ask_permission")
+        self.assertGreaterEqual(idx_ask, 0)
+        self.form.type_combo.setCurrentIndex(idx_ask)
+        self.assertEqual(self.form.lore_block.type, "ask_permission")
 
         # Cambiar a popup
         idx_pop = self.form.type_combo.findData("popup")
@@ -70,12 +84,9 @@ class TestLoreBlockForm(unittest.TestCase):
         self.form.type_combo.setCurrentIndex(idx_pop)
 
         self.assertEqual(self.form.lore_block.type, "popup")
-        self.assertIn("Pop-up", self.form.header_title.text())
-        self.assertFalse(self.form.container_note_group.isHidden())
-        self.assertTrue(self.form.effects_group.isHidden())
-        self.assertTrue(self.form.done_box.isHidden())
-        self.assertEqual(self.form.lore_block.effects, [])
-        self.assertEqual(self.form.lore_block.done_conditions, [])
+        self.assertIn("Aviso Modal", self.form.header_title.text())
+        self.assertFalse(self.form.effects_group.isHidden())
+        self.assertFalse(self.form.done_box.isHidden())
 
     def test_card_mutations_formatting_badges(self):
         eff = LoreEffects(
@@ -182,4 +193,3 @@ class TestLoreBlockForm(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -1,6 +1,7 @@
 """Pruebas unitarias para PathCalculator y TimeCalculator."""
 
 import unittest
+
 from domains.world import Place, Connection
 from engines.game.utils import PathCalculator, TimeCalculator
 

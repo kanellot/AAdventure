@@ -1,7 +1,9 @@
 """Acción narrativa de inspección o explicación detallada de una entidad."""
 
 from __future__ import annotations
+
 from typing import Any, Dict, Optional, Tuple, Type
+
 from domains import (
     Entity,
     ExplainLookNarratorCtx,
@@ -16,10 +18,10 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
     """Acción de inspección: describe y explica entidades o lugares."""
 
     def __init__(
-        self,
-        target: Optional[str] = None,
-        failed_reason: Optional[str] = None,
-        directive: Optional[str] = None,
+            self,
+            target: Optional[str] = None,
+            failed_reason: Optional[str] = None,
+            directive: Optional[str] = None,
     ):
         self.target = target
         self.failed_reason = failed_reason
@@ -60,9 +62,9 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
         return None
 
     def build_context(
-        self,
-        controller: GameStateController,
-        player_input: str = "",
+            self,
+            controller: GameStateController,
+            player_input: str = "",
     ) -> ExplainLookNarratorCtx:
         entity = self._resolve_entity(controller)
         return ExplainLookNarratorCtx(

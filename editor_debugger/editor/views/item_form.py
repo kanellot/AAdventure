@@ -3,6 +3,7 @@ ID, Nombre, Descripción, Ubicación Inicial (📍) y Estado.
 """
 
 from typing import Optional
+
 from PySide6.QtWidgets import (
     QWidget,
     QFormLayout,
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
 )
+
 from domains.items import Item
 
 

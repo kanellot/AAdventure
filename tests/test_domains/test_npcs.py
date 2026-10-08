@@ -1,8 +1,9 @@
 """Pruebas unitarias para modelos de Personajes No Jugadores (domains.npcs)."""
 
 import unittest
-from domains.npcs import NPC, NPCMotivations
+
 from domains.conversation import ConversationRecord
+from domains.npcs import NPC, NPCMotivations
 
 
 class TestNPCModels(unittest.TestCase):

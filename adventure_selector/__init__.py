@@ -1,6 +1,8 @@
 """Módulo desacoplado para selección, inspección y gestión de aventuras (.aad)."""
 
 from typing import Optional
+
+from adventure_selector.dialog import AdventureSelectorDialog
 from adventure_selector.models import AdventureMetadata
 from adventure_selector.reader import read_adventure_metadata
 from adventure_selector.scanner import scan_adventures
@@ -11,7 +13,6 @@ from adventure_selector.storage import (
     load_preferences,
     save_preferences,
 )
-from adventure_selector.dialog import AdventureSelectorDialog
 
 
 def open_adventure_selector(parent=None, preselected_path: Optional[str] = None) -> Optional[str]:

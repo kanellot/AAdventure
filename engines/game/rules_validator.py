@@ -1,8 +1,10 @@
 """Validador de reglas físicas, desenganche universal y alcance espacial."""
 
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
+
 from domains.projections import TurnOutput
 from engines.game.state_controller import GameStateController
 from engines.game.utils.path_calculator import PathCalculator
@@ -26,11 +28,11 @@ class RulesValidator:
 
     @classmethod
     def validate(
-        cls,
-        action: str,
-        target: Optional[str],
-        player_input: str,
-        ctrl: GameStateController,
+            cls,
+            action: str,
+            target: Optional[str],
+            player_input: str,
+            ctrl: GameStateController,
     ) -> ActionValidationResult:
         """Verifica la acción solicitada según el estado del jugador y la física del mundo."""
         curr_state = ctrl.game_state.player_state

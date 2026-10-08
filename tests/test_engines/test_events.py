@@ -2,7 +2,7 @@
 
 import json
 import unittest
-from domains.projections import TurnResultProjection, UIStateProjection
+
 from engines.events import (
     BaseEngineEventListener,
     EngineEventListener,

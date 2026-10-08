@@ -1,9 +1,12 @@
 from __future__ import annotations
+
 from typing import List, Optional
+
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTextBrowser, QLineEdit, QPushButton, QComboBox, QLabel, QProgressBar
 )
-from PySide6.QtCore import Signal
+
 from domains.projections import ActionCommandProjection
 
 
@@ -54,7 +57,7 @@ class ChatTab(QWidget):
 
         # 2. Barra de acciones directas (MOVE, LOOK, TALK + Target Dropdown)
         action_layout = QHBoxLayout()
-        
+
         self.btn_move = QPushButton("MOVE")
         self.btn_move.setStyleSheet("font-weight: bold; padding: 6px 12px;")
         self.btn_move.clicked.connect(lambda: self.on_action_btn_clicked("MOVE"))
@@ -91,7 +94,7 @@ class ChatTab(QWidget):
         self.input_edit.setEnabled(False)
         self.input_edit.setPlaceholderText("Selecciona objetivo y pulsa un botón de acción (MOVE, LOOK, TALK)...")
         self.input_edit.returnPressed.connect(self.on_return_pressed)
-        
+
         self.send_btn = QPushButton("Enviar")
         self.send_btn.clicked.connect(self.on_send)
         # Oculto y deshabilitado inicialmente (solo visible en estado TALK o LOOK)
@@ -136,10 +139,10 @@ class ChatTab(QWidget):
             self.target_combo.setCurrentText(current_selection)
 
     def set_game_state(
-        self,
-        state: str,
-        active_affinity: Optional[float] = None,
-        target_name: Optional[str] = None,
+            self,
+            state: str,
+            active_affinity: Optional[float] = None,
+            target_name: Optional[str] = None,
     ):
         """
         Actualiza la interfaz según el estado de juego (EXPLORE, TALK o LOOK).
@@ -160,14 +163,16 @@ class ChatTab(QWidget):
                 self.lbl_affinity.setText(f"💚 Afinidad: {active_affinity:.2f} ({pct}%)")
                 self.lbl_affinity.setVisible(True)
                 target_str = f" para {target_name}" if target_name else ""
-                self.input_edit.setPlaceholderText(f"Escribe tu respuesta{target_str} (Afinidad actual: {active_affinity:.2f})...")
+                self.input_edit.setPlaceholderText(
+                    f"Escribe tu respuesta{target_str} (Afinidad actual: {active_affinity:.2f})...")
             else:
                 self.lbl_affinity.setVisible(False)
                 self.input_edit.setPlaceholderText("Escribe tu respuesta o frase para el NPC...")
             self.input_edit.setFocus()
         elif self.current_game_state == "LOOK":
             self.lbl_affinity.setVisible(False)
-            self.input_edit.setPlaceholderText("Especifica qué miras o examinas en detalle (ej: 'mirar debajo de la mesa')...")
+            self.input_edit.setPlaceholderText(
+                "Especifica qué miras o examinas en detalle (ej: 'mirar debajo de la mesa')...")
             self.input_edit.setFocus()
         else:
             self.lbl_affinity.setVisible(False)
@@ -175,10 +180,10 @@ class ChatTab(QWidget):
             self.input_edit.setPlaceholderText("Selecciona objetivo y pulsa un botón de acción (MOVE, LOOK, TALK)...")
 
     def update_header_info(
-        self,
-        formatted_time: Optional[str] = None,
-        player_state: Optional[str] = None,
-        location_name: Optional[str] = None,
+            self,
+            formatted_time: Optional[str] = None,
+            player_state: Optional[str] = None,
+            location_name: Optional[str] = None,
     ):
         """
         Actualiza los datos mostrados en la barra estática superior del chat sin iconos.

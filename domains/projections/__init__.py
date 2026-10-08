@@ -5,6 +5,19 @@ Organizado en dos capas:
 - `debug.py`: Proyecciones técnicas y diagnósticas para el depurador (Game Debugger) y herramientas de inspección.
 """
 
+from domains.projections.debug import (
+    ConnectionProjection,
+    GameSnapshotProjection,
+    GameStateProjection,
+    LoreBlockDetailProjection,
+    LoreConditionDetailProjection,
+    LoreGraphProjection,
+    PlaceDetailProjection,
+    PlayerSummaryProjection,
+    RagAntennaScoreProjection,
+    RagEvaluationProjection,
+    TurnDebugProjection,
+)
 from domains.projections.game import (
     ActionCommandProjection,
     AvailableActionsProjection,
@@ -23,19 +36,6 @@ from domains.projections.game import (
     UIStateProjection,
     WorldHierarchyProjection,
     WorldMapProjection,
-)
-from domains.projections.debug import (
-    ConnectionProjection,
-    GameSnapshotProjection,
-    GameStateProjection,
-    LoreBlockDetailProjection,
-    LoreConditionDetailProjection,
-    LoreGraphProjection,
-    PlaceDetailProjection,
-    PlayerSummaryProjection,
-    RagAntennaScoreProjection,
-    RagEvaluationProjection,
-    TurnDebugProjection,
 )
 
 __all__ = [

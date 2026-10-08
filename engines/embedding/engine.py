@@ -1,6 +1,7 @@
 """Motor fachada para generación y comparación de embeddings semánticos."""
 
 from typing import Any, List, Optional, Tuple
+
 from engines.embedding.base_backend import BaseEmbeddingBackend
 from engines.embedding.factory import EmbeddingFactory
 
@@ -9,10 +10,10 @@ class EmbeddingEngine:
     """Fachada unificada para el motor de generación y comparación de embeddings."""
 
     def __init__(
-        self,
-        backend: Optional[BaseEmbeddingBackend] = None,
-        config_path: Optional[str] = None,
-        backend_type: Optional[str] = None,
+            self,
+            backend: Optional[BaseEmbeddingBackend] = None,
+            config_path: Optional[str] = None,
+            backend_type: Optional[str] = None,
     ):
         if backend is not None:
             self._backend = backend

@@ -1,6 +1,7 @@
 """Pruebas unitarias para QtEngineListener del depurador."""
 
 import unittest
+
 from PySide6.QtWidgets import QApplication
 
 from domains.projections import (
@@ -11,8 +12,8 @@ from domains.projections import (
     UIStateProjection,
     WorldMapProjection,
 )
-from engines.events import EngineEventListener, ThinkingEvent
 from editor_debugger.debugger.qt_listener import QtEngineListener
+from engines.events import EngineEventListener, ThinkingEvent
 
 
 class TestQtEngineListener(unittest.TestCase):

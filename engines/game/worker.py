@@ -1,10 +1,12 @@
 """Gestor de concurrencia, cola de tareas en segundo plano y observadores."""
 
 from __future__ import annotations
+
 import logging
 import queue
 import threading
 from typing import Callable, List, Optional
+
 from domains.projections import TurnResultProjection, UIStateProjection
 from engines.events import EngineEventListener, EngineTask, ThinkingEvent
 
@@ -15,10 +17,10 @@ class EngineWorker:
     """Administra el ciclo de vida del hilo secundario, la cola de tareas y los observadores."""
 
     def __init__(
-        self,
-        turn_executor: Callable[[EngineTask], TurnResultProjection],
-        ui_state_provider: Callable[[], UIStateProjection],
-        listeners: Optional[List[EngineEventListener]] = None,
+            self,
+            turn_executor: Callable[[EngineTask], TurnResultProjection],
+            ui_state_provider: Callable[[], UIStateProjection],
+            listeners: Optional[List[EngineEventListener]] = None,
     ):
         self.turn_executor = turn_executor
         self.ui_state_provider = ui_state_provider
@@ -62,12 +64,12 @@ class EngineWorker:
                 self.listeners.remove(listener)
 
     def notify_thinking(
-        self,
-        is_thinking: bool,
-        task_id: str = "",
-        action: str = "",
-        target: str = "",
-        source: str = "PLAYER",
+            self,
+            is_thinking: bool,
+            task_id: str = "",
+            action: str = "",
+            target: str = "",
+            source: str = "PLAYER",
     ) -> None:
         """Notifica el estado de pensamiento a la interfaz."""
         msg = f"Pensando... [{action} -> {target}]" if action else "Pensando respuesta..."
@@ -100,7 +102,20 @@ class EngineWorker:
             if hasattr(l, "on_state_updated"):
                 l.on_state_updated(ui_state_json)
 
+    def notify_popup(self, popup_json: str) -> None:
+        """Emite una notificación popup individual a los observadores registrados."""
+        with self.lock:
+            active_listeners = list(self.listeners)
+        for l in active_listeners:
+            if hasattr(l, "on_popup"):
+                try:
+                    l.on_popup(popup_json)
+                except Exception as e:
+                    logger.debug("Error notificando popup a listener: %s", e)
+
+
     def _worker_loop(self) -> None:
+
         """Bucle consumidor de la cola de tareas en segundo plano."""
         while self._running:
             try:

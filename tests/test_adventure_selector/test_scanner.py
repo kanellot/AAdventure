@@ -1,9 +1,10 @@
 """Pruebas unitarias para el escáner de paquetes de aventura."""
 
-import unittest
 import os
 import tempfile
+import unittest
 import zipfile
+
 from adventure_selector.scanner import scan_adventures
 
 

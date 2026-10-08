@@ -1,14 +1,15 @@
 """Pruebas unitarias para el modelo de dominio canónico GameState."""
 
 import unittest
+
 from pydantic import ValidationError
+
 from domains.game_state import (
     EntityMapItem,
     EntityMapLocation,
     EntityMapNPC,
     EntityMapPlace,
     GameState,
-    Inventory,
     LoreBlockHierarchy,
     NotebookEntry,
 )

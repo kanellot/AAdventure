@@ -1,6 +1,7 @@
 """Pruebas unitarias para el módulo de listeners de engines."""
 
 import unittest
+
 from domains.projections import (
     InventoryProjection,
     NotebookProjection,
@@ -53,7 +54,8 @@ class TestListeners(unittest.TestCase):
         self.assertEqual(listener.completed_tasks[0], ("t1", res.model_dump_json()))
 
         # 3. on_state_updated
-        state = UIStateProjection(player_name="Hero", gold=100, current_location="Plaza", formatted_time="12:00", game_state="EXPLORE")
+        state = UIStateProjection(player_name="Hero", gold=100, current_location="Plaza", formatted_time="12:00",
+                                  game_state="EXPLORE")
         listener.on_state_updated(state.model_dump_json())
         self.assertEqual(len(listener.state_updates), 1)
         self.assertEqual(listener.state_updates[0], state.model_dump_json())

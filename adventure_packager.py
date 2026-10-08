@@ -1,9 +1,10 @@
-import os
-import zipfile
 import json
-import tempfile
+import os
 import shutil
-from typing import Optional, Dict, Any, List
+import tempfile
+import zipfile
+from typing import Optional
+
 
 class AdventurePackager:
     """
@@ -19,14 +20,14 @@ class AdventurePackager:
 
     @staticmethod
     def pack(
-        output_path: str,
-        world_data: dict,
-        npcs_data: dict,
-        player_data: dict,
-        items_data: Optional[dict] = None,
-        lore_data: Optional[dict] = None,
-        config_data: Optional[dict] = None,
-        **kwargs,
+            output_path: str,
+            world_data: dict,
+            npcs_data: dict,
+            player_data: dict,
+            items_data: Optional[dict] = None,
+            lore_data: Optional[dict] = None,
+            config_data: Optional[dict] = None,
+            **kwargs,
     ):
         """
         Empaqueta los datos de los 6 componentes en un archivo .aad.

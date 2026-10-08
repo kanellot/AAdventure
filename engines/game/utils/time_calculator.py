@@ -1,6 +1,7 @@
 """Cálculo y gestión del tiempo transcurrido en el mundo de juego."""
 
 from typing import Any, Dict, List, Optional
+
 from domains.world import Connection, Place
 from engines.game.utils.path_calculator import PathCalculator
 
@@ -18,10 +19,10 @@ class TimeCalculator:
 
     @classmethod
     def calculate_travel_time(
-        cls,
-        connections: List[Connection],
-        travel_speed: float = 4.5,
-        terrain_modifiers: Optional[Dict[str, float]] = None,
+            cls,
+            connections: List[Connection],
+            travel_speed: float = 4.5,
+            terrain_modifiers: Optional[Dict[str, float]] = None,
     ) -> int:
         """Calcula el tiempo de viaje total en minutos para una secuencia de conexiones."""
         if not connections:
@@ -44,12 +45,12 @@ class TimeCalculator:
 
     @classmethod
     def calculate_travel_time_between_places(
-        cls,
-        places: Dict[str, Place],
-        start_name_or_id: str,
-        end_name_or_id: str,
-        travel_speed: float = 4.5,
-        terrain_modifiers: Optional[Dict[str, float]] = None,
+            cls,
+            places: Dict[str, Place],
+            start_name_or_id: str,
+            end_name_or_id: str,
+            travel_speed: float = 4.5,
+            terrain_modifiers: Optional[Dict[str, float]] = None,
     ) -> int:
         """Calcula el tiempo total de viaje en minutos entre dos lugares."""
         connections, _ = PathCalculator.find_shortest_path(places, start_name_or_id, end_name_or_id)
@@ -82,4 +83,3 @@ class TimeCalculator:
         hours = (elapsed_minutes // 60) % 24
         minutes = elapsed_minutes % 60
         return f"Día {days}, {hours:02d}:{minutes:02d}"
-

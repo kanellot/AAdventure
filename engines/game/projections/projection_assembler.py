@@ -1,7 +1,9 @@
 """Ensamblador de Proyecciones DTO para clientes de juego y depuración."""
 
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Union
+
+from typing import Any, List, Optional, Union
+
 from domains.lore import EntityCondition
 from domains.projections import (
     AvailableActionsProjection,
@@ -40,11 +42,11 @@ class ProjectionAssembler:
 
     @classmethod
     def build_turn_result(
-        cls,
-        output: TurnOutput,
-        ctrl: GameStateController,
-        prompt_text: Optional[str] = None,
-        rag_eval: Optional[RagEvaluationProjection] = None,
+            cls,
+            output: TurnOutput,
+            ctrl: GameStateController,
+            prompt_text: Optional[str] = None,
+            rag_eval: Optional[RagEvaluationProjection] = None,
     ) -> TurnResultProjection:
         """Construye la proyección consolidada única de un turno."""
         world_map = cls.build_world_map_projection(ctrl)
@@ -202,6 +204,7 @@ class ProjectionAssembler:
             ("active", ctrl.game_state.loreblocks.active),
             ("done", ctrl.game_state.loreblocks.done),
             ("unknown", ctrl.game_state.loreblocks.unknown),
+            ("popups", ctrl.game_state.loreblocks.popups),
         ]
 
         for state_name, cat_list in categories:
@@ -229,10 +232,15 @@ class ProjectionAssembler:
                         rag_enabled=blk.get("rag_enabled", False),
                         trigger_phrases=list(blk.get("trigger_phrases", []) or []),
                         active_conditions=list(blk.get("active_conditions", []) or []),
+                        active_effects=list(blk.get("active_effects", []) or []),
                         done_conditions=list(blk.get("done_conditions", []) or []),
-                        effects=list(blk.get("effects", []) or []),
+                        done_effects=list(blk.get("done_effects", []) or []),
+                        effects=list(blk.get("effects", []) or []) or (list(blk.get("active_effects", []) or []) + list(
+                            blk.get("done_effects", []) or [])),
                         conditions=cond_projections,
                         exit_conditions=exit_cond_projections,
+                        on_active_summary=LoreGraphFormatter.format_effects_summary(blk.get("active_effects", [])),
+                        on_done_summary=LoreGraphFormatter.format_effects_summary(blk.get("done_effects", [])),
                         directive=blk.get("directive", ""),
                     )
                 )
@@ -247,9 +255,9 @@ class ProjectionAssembler:
 
     @classmethod
     def _build_condition_projections(
-        cls,
-        groups: List[Any],
-        ctrl: GameStateController,
+            cls,
+            groups: List[Any],
+            ctrl: GameStateController,
     ) -> List[LoreConditionDetailProjection]:
         projections: List[LoreConditionDetailProjection] = []
         for grp in groups:
@@ -297,7 +305,8 @@ class ProjectionAssembler:
                 name=curr_p.name if curr_p else gs.current_location,
                 description=curr_p.description if curr_p else "",
                 visible_entities=[
-                    npc.name for loc in gs.entity_map for p in loc.places if p.id == gs.current_location for npc in p.npcs
+                    npc.name for loc in gs.entity_map for p in loc.places if p.id == gs.current_location for npc in
+                    p.npcs
                 ],
                 connections=conns_dto,
             )

@@ -1,11 +1,10 @@
+import logging
 import os
 import sys
 from typing import Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QApplication,
-    QDialog,
     QHBoxLayout,
     QMainWindow,
     QMessageBox,
@@ -16,10 +15,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from editor_debugger.editor.app import StoryEditorApp
-from editor_debugger.debugger.app import GameDebuggerApp
 from adventure_selector import get_default_adventure_path
+from editor_debugger.debugger.app import GameDebuggerApp
+from editor_debugger.editor.app import StoryEditorApp
 
+logger = logging.getLogger(__name__)
 
 SEPIA_STYLESHEET = """
 QWidget {
@@ -226,9 +226,9 @@ class EditorDebuggerApp(QMainWindow):
     """
 
     def __init__(
-        self,
-        mode: str = "editor",
-        aad_path: Optional[str] = None,
+            self,
+            mode: str = "editor",
+            aad_path: Optional[str] = None,
     ):
         super().__init__()
         self.setWindowTitle("AAdventure Studio - Editor & Debugger")
@@ -326,7 +326,7 @@ class EditorDebuggerApp(QMainWindow):
             try:
                 self.editor_app.load_story_file(self.initial_aad_path)
             except Exception as e:
-                print(f"[WARN] No se pudo precargar {self.initial_aad_path} en el editor: {e}")
+                logger.warning("No se pudo precargar %s en el editor: %s", self.initial_aad_path, e)
 
         # 5. Conectar evento de conmutación de pestañas
         self.tab_widget.currentChanged.connect(self.on_tab_changed)
@@ -375,8 +375,9 @@ class EditorDebuggerApp(QMainWindow):
             is_running = getattr(self.debugger_app, "is_running", False)
             self._on_debugger_state_changed(is_running)
         except Exception as e:
-            print(f"[ERROR] No se pudo inicializar GameDebuggerApp: {e}")
-            if self.tab_widget.indexOf(self.debugger_placeholder) == -1 and self.tab_widget.indexOf(self.debugger_app) == -1:
+            logger.error("No se pudo inicializar GameDebuggerApp: %s", e)
+            if self.tab_widget.indexOf(self.debugger_placeholder) == -1 and self.tab_widget.indexOf(
+                    self.debugger_app) == -1:
                 self.tab_widget.addTab(self.debugger_placeholder, "🐞 Depurador de Juego")
 
     def reload_and_play_debugger(self):

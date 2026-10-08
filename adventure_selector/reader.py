@@ -1,10 +1,10 @@
 """Lector rápido de metadatos de archivos de aventura (.aad) sin extracción a disco."""
 
+import json
 import os
 import zipfile
-import json
 from datetime import datetime
-from typing import Optional
+
 from adventure_selector.models import AdventureMetadata
 
 
@@ -60,7 +60,7 @@ def read_adventure_metadata(aad_path: str) -> AdventureMetadata:
                     player_obj = p_data.get("player", p_data)
                     player_name = player_obj.get("name", player_name)
                     player_desc = player_obj.get("description", "")
-                    initial_place = player_obj.get("initial_place") or player_obj.get("player_location", "")
+                    initial_location = player_obj.get("initial_location", "")
                 except Exception:
                     pass
 

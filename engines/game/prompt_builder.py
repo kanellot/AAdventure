@@ -2,7 +2,6 @@
 
 import os
 from typing import Dict, Optional
-from pydantic import BaseModel
 
 
 class PromptBuilder:
@@ -10,12 +9,11 @@ class PromptBuilder:
 
     @classmethod
     def build(
-        cls,
-        rules_path: str,
-        gamecontext: BaseModel,
-        game_context_str: str,
-        user_input: str,
-        template_tags: Optional[Dict[str, str]] = None,
+            cls,
+            rules_path: str,
+            game_context_str: str,
+            user_input: str,
+            template_tags: Optional[Dict[str, str]] = None,
     ) -> str:
         """Lee el template de reglas, sustituye tags y devuelve el prompt compilado."""
         if not os.path.exists(rules_path):

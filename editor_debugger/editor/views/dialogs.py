@@ -1,3 +1,5 @@
+from typing import List, Optional, Tuple
+
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -8,8 +10,10 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QSpinBox,
 )
-from typing import List, Optional, Tuple
+
 from domains import Place
+from editor_debugger.editor.constants import TYPE_METADATA, get_allowed_child_types
+
 
 class ConnectionDialog(QDialog):
     """
@@ -95,21 +99,24 @@ class ConnectionDialog(QDialog):
 
 class CreateLoreBlockDialog(QDialog):
     """
-    Diálogo modal para crear un nuevo LoreBlock permitiendo seleccionar
-    su título, tipo canónico (Chapter, Quest, Task, Event, popup_event -> "popup")
-    y bloque padre opcional.
+    Diálogo modal para crear un nuevo LoreBlock con filtrado dinámico
+    estricto según la matriz de jerarquía HSM y metadatos de iconos.
     """
 
     def __init__(
-        self,
-        default_type: str = "Event",
-        parent_id: Optional[str] = None,
-        all_blocks: Optional[List] = None,
-        parent=None,
+            self,
+            default_type: str = "Event",
+            parent_id: Optional[str] = None,
+            all_blocks: Optional[List] = None,
+            parent=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Crear Bloque de Lore")
-        self.resize(460, 220)
+        self.resize(480, 230)
+
+        self.all_blocks = all_blocks or []
+        self.blocks_by_id = {b.id: b for b in self.all_blocks}
+        self.default_target_type = default_type
 
         layout = QFormLayout(self)
 
@@ -117,25 +124,21 @@ class CreateLoreBlockDialog(QDialog):
         self.title_edit.setPlaceholderText("Título o nombre del bloque...")
         layout.addRow("Título / Nombre:", self.title_edit)
 
-        self.type_combo = QComboBox()
-        self.type_combo.addItem("📖 Chapter (Capítulo - Contenedor)", "Chapter")
-        self.type_combo.addItem("⚔️ Quest (Misión Principal)", "Quest")
-        self.type_combo.addItem("📌 Task (Tarea / Objetivo)", "Task")
-        self.type_combo.addItem("⚡ Event (Evento sobre Entidades)", "Event")
-        self.type_combo.addItem("📢 Pop-up Event (popup_event)", "popup")
-
-        target_type = "popup" if default_type in ("popup", "popup_event", "event_popup") else default_type
-        idx = self.type_combo.findData(target_type)
-        if idx >= 0:
-            self.type_combo.setCurrentIndex(idx)
-        layout.addRow("Tipo de Bloque:", self.type_combo)
-
         self.parent_combo = QComboBox()
         self.parent_combo.addItem("(Ninguno - Bloque Raíz)", "")
-        if all_blocks:
-            for b in all_blocks:
-                b_title = getattr(b, "title", "") or getattr(b, "name", "") or b.id
-                self.parent_combo.addItem(f"📁 {b_title} ({b.id})", b.id)
+        for b in self.all_blocks:
+            b_title = getattr(b, "title", "") or getattr(b, "name", "") or b.id
+            b_type = getattr(b, "type", "Event")
+            icon = TYPE_METADATA.get(b_type, {}).get("icon", "📁")
+            self.parent_combo.addItem(f"{icon} {b_title} ({b.id})", b.id)
+
+        layout.addRow("Bloque Padre (HSM):", self.parent_combo)
+
+        self.type_combo = QComboBox()
+        layout.addRow("Tipo de Bloque:", self.type_combo)
+
+        # Conectar cambio de padre a actualización dinámica de tipos permitidos
+        self.parent_combo.currentIndexChanged.connect(self.on_parent_changed)
 
         if parent_id:
             pidx = self.parent_combo.findData(parent_id)
@@ -144,7 +147,10 @@ class CreateLoreBlockDialog(QDialog):
             else:
                 self.parent_combo.addItem(f"📁 {parent_id}", parent_id)
                 self.parent_combo.setCurrentIndex(self.parent_combo.count() - 1)
-        layout.addRow("Bloque Padre (HSM):", self.parent_combo)
+        else:
+            self.parent_combo.setCurrentIndex(0)
+
+        self.on_parent_changed()
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Ok).setText("Crear")
@@ -152,6 +158,27 @@ class CreateLoreBlockDialog(QDialog):
         buttons.accepted.connect(self.on_accept)
         buttons.rejected.connect(self.reject)
         layout.addRow(buttons)
+
+    def on_parent_changed(self):
+        """Filtra los tipos permitidos según la regla estricta de anidamiento."""
+        pid = self.parent_combo.currentData()
+        parent_block = self.blocks_by_id.get(pid) if pid else None
+        parent_type = getattr(parent_block, "type", None) if parent_block else None
+
+        allowed = get_allowed_child_types(parent_type)
+
+        self.type_combo.blockSignals(True)
+        self.type_combo.clear()
+        for t in allowed:
+            meta = TYPE_METADATA.get(t, {"icon": "📜", "label": t})
+            self.type_combo.addItem(f"{meta['icon']} {meta['label']}", t)
+
+        idx = self.type_combo.findData(self.default_target_type)
+        if idx >= 0:
+            self.type_combo.setCurrentIndex(idx)
+        else:
+            self.type_combo.setCurrentIndex(0)
+        self.type_combo.blockSignals(False)
 
     def on_accept(self):
         if not self.title_edit.text().strip():
@@ -167,5 +194,3 @@ class CreateLoreBlockDialog(QDialog):
             self.type_combo.currentData() or "Event",
             p_val if p_val else None,
         )
-
-

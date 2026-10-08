@@ -1,6 +1,7 @@
 """Pestaña de visualización de LoreBlocks (HSM) en lista de texto jerárquica con colores y símbolos."""
 
 from typing import Dict, List, Optional
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
@@ -44,16 +45,20 @@ class LoreGraphTab(QWidget):
         row1.setSpacing(8)
 
         self.lbl_total = QLabel("Total: 0")
-        self.lbl_total.setStyleSheet("font-weight: bold; padding: 4px 8px; border-radius: 4px; background: #e0e0e0; color: #333;")
+        self.lbl_total.setStyleSheet(
+            "font-weight: bold; padding: 4px 8px; border-radius: 4px; background: #e0e0e0; color: #333;")
 
         self.lbl_active = QLabel("🟢 Activos: 0")
-        self.lbl_active.setStyleSheet("font-weight: bold; padding: 4px 8px; border-radius: 4px; background: #c8e6c9; color: #1b5e20;")
+        self.lbl_active.setStyleSheet(
+            "font-weight: bold; padding: 4px 8px; border-radius: 4px; background: #c8e6c9; color: #1b5e20;")
 
         self.lbl_done = QLabel("🔵 Completados: 0")
-        self.lbl_done.setStyleSheet("font-weight: bold; padding: 4px 8px; border-radius: 4px; background: #bbdefb; color: #0d47a1;")
+        self.lbl_done.setStyleSheet(
+            "font-weight: bold; padding: 4px 8px; border-radius: 4px; background: #bbdefb; color: #0d47a1;")
 
         self.lbl_unknown = QLabel("🟡 Pendientes: 0")
-        self.lbl_unknown.setStyleSheet("font-weight: bold; padding: 4px 8px; border-radius: 4px; background: #ffe0b2; color: #e65100;")
+        self.lbl_unknown.setStyleSheet(
+            "font-weight: bold; padding: 4px 8px; border-radius: 4px; background: #ffe0b2; color: #e65100;")
 
         row1.addWidget(self.lbl_total)
         row1.addWidget(self.lbl_active)
@@ -245,7 +250,8 @@ class LoreGraphTab(QWidget):
             children_map.setdefault(p_id, []).append(b)
 
         # 2. Construir nodos recursivamente
-        def create_block_subtree(block: LoreBlockDetailProjection, parent_item: Optional[QTreeWidgetItem]) -> QTreeWidgetItem:
+        def create_block_subtree(block: LoreBlockDetailProjection,
+                                 parent_item: Optional[QTreeWidgetItem]) -> QTreeWidgetItem:
             item = QTreeWidgetItem(parent_item or self.tree)
             self.block_items[block.id] = item
             item.setData(0, Qt.UserRole, block.id)

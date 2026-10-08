@@ -1,6 +1,7 @@
 """Adaptador simulado (Mock) de LLM para testing y ejecución desacoplada sin dependencias externas."""
 
 from typing import Optional
+
 from engines.transformer.base_adapter import BaseLLMAdapter
 
 
@@ -13,11 +14,11 @@ class MockLLMAdapter(BaseLLMAdapter):
         self.call_count: int = 0
 
     def generate(
-        self,
-        prompt: str,
-        profile_name: str = "narrator",
-        response_schema: Optional[dict] = None,
-        schema_name: Optional[str] = None,
+            self,
+            prompt: str,
+            profile_name: str = "narrator",
+            response_schema: Optional[dict] = None,
+            schema_name: Optional[str] = None,
     ) -> dict:
         self.last_prompt = prompt
         self.call_count += 1
@@ -52,4 +53,3 @@ class MockLLMAdapter(BaseLLMAdapter):
                 res[k] = v
 
         return res
-

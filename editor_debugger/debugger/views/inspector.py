@@ -1,10 +1,12 @@
 from __future__ import annotations
+
 from typing import Optional, Union, List
-from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
-from PySide6.QtCore import Qt
+
 from PySide6.QtGui import QFont, QColor, QBrush
-from domains.projections import GameStateProjection, NotebookProjection
+from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
+
 from domains.game_state import NotebookEntry
+from domains.projections import GameStateProjection, NotebookProjection
 
 
 class NotebookTreeWidget(QTreeWidget):

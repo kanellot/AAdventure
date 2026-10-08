@@ -1,7 +1,9 @@
 """Pruebas unitarias para los componentes visuales del depurador (Views)."""
 
 import unittest
+
 from PySide6.QtWidgets import QApplication
+
 from domains.projections import (
     ActionCommandProjection,
     GameStateProjection,

@@ -1,5 +1,8 @@
 import os
 from typing import List, Optional, Tuple
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -19,20 +22,19 @@ from PySide6.QtWidgets import (
     QDialog,
     QSizePolicy,
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction
 
-from editor_debugger.editor.controller import EditorController
-from editor_debugger.editor.views.world_form import WorldForm
-from editor_debugger.editor.views.location_form import LocationForm
-from editor_debugger.editor.views.place_form import PlaceForm
-from editor_debugger.editor.views.npc_form import NPCForm
-from editor_debugger.editor.views.player_form import PlayerForm
-from editor_debugger.editor.views.item_form import ItemForm
-from editor_debugger.editor.views.lore_block_form import LoreBlockForm
-from editor_debugger.editor.views.story_config_form import StoryConfigForm
-from editor_debugger.editor.views.dialogs import CreateLoreBlockDialog
 from domains.lore import LoreBlock
+from editor_debugger.editor.constants import TYPE_METADATA, get_allowed_child_types, init_preset_loreblock
+from editor_debugger.editor.controller import EditorController
+from editor_debugger.editor.views.dialogs import CreateLoreBlockDialog
+from editor_debugger.editor.views.item_form import ItemForm
+from editor_debugger.editor.views.location_form import LocationForm
+from editor_debugger.editor.views.lore_block_form import LoreBlockForm
+from editor_debugger.editor.views.npc_form import NPCForm
+from editor_debugger.editor.views.place_form import PlaceForm
+from editor_debugger.editor.views.player_form import PlayerForm
+from editor_debugger.editor.views.story_config_form import StoryConfigForm
+from editor_debugger.editor.views.world_form import WorldForm
 
 
 class StoryEditorApp(QMainWindow):
@@ -191,15 +193,15 @@ class StoryEditorApp(QMainWindow):
         self.welcome_label.setAlignment(Qt.AlignCenter)
         welcome_layout.addWidget(self.welcome_label)
 
-        self.stacked_widget.addWidget(self.world_form)         # 0
-        self.stacked_widget.addWidget(self.location_form)      # 1
-        self.stacked_widget.addWidget(self.place_form)         # 2
-        self.stacked_widget.addWidget(self.npc_form)           # 3
-        self.stacked_widget.addWidget(self.player_form)        # 4
-        self.stacked_widget.addWidget(self.item_form)          # 5
-        self.stacked_widget.addWidget(self.lore_block_form)    # 6
+        self.stacked_widget.addWidget(self.world_form)  # 0
+        self.stacked_widget.addWidget(self.location_form)  # 1
+        self.stacked_widget.addWidget(self.place_form)  # 2
+        self.stacked_widget.addWidget(self.npc_form)  # 3
+        self.stacked_widget.addWidget(self.player_form)  # 4
+        self.stacked_widget.addWidget(self.item_form)  # 5
+        self.stacked_widget.addWidget(self.lore_block_form)  # 6
         self.stacked_widget.addWidget(self.story_config_form)  # 7
-        self.stacked_widget.addWidget(self.welcome_widget)     # 8
+        self.stacked_widget.addWidget(self.welcome_widget)  # 8
 
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.stacked_widget.setCurrentIndex(8)
@@ -388,13 +390,7 @@ class StoryEditorApp(QMainWindow):
 
         roots = [b for b in lore_blocks if not b.parent_id or b.parent_id not in id_to_block]
 
-        TYPE_ICONS = {
-            "Chapter": "📖",
-            "Quest": "⚔️",
-            "Task": "📌",
-            "Event": "⚡",
-            "popup": "📢",
-        }
+        TYPE_ICONS = {k: v["icon"] for k, v in TYPE_METADATA.items()}
 
         def add_lore_tree_item(parent_node, b: LoreBlock):
             item = QTreeWidgetItem(parent_node)
@@ -619,7 +615,8 @@ class StoryEditorApp(QMainWindow):
             try:
                 self.controller.save_story(self.controller.current_file_path)
                 self.refresh_tree()
-                self.statusBar().showMessage(f"Historia guardada en {os.path.basename(self.controller.current_file_path)}")
+                self.statusBar().showMessage(
+                    f"Historia guardada en {os.path.basename(self.controller.current_file_path)}")
                 self.story_saved.emit(self.controller.current_file_path)
                 return True
             except ValueError as ve:
@@ -677,7 +674,8 @@ class StoryEditorApp(QMainWindow):
 
         data = item.data(0, Qt.UserRole)
         if not data or data[0] != "location":
-            QMessageBox.warning(self, "Añadir Lugar", "Debes seleccionar un nodo de tipo Localización en el árbol para añadirle un lugar.")
+            QMessageBox.warning(self, "Añadir Lugar",
+                                "Debes seleccionar un nodo de tipo Localización en el árbol para añadirle un lugar.")
             return
 
         location = data[1]
@@ -715,14 +713,7 @@ class StoryEditorApp(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             title, type_val, pid = dialog.get_data()
             lb_id = f"lb_{len(self.controller.lore_blocks) + 1:02d}_{title.strip().lower().replace(' ', '_')}"
-            new_lb = LoreBlock(
-                id=lb_id,
-                name=title.strip(),
-                title=title.strip(),
-                parent_id=pid,
-                type=type_val,
-                state="unknown",
-            )
+            new_lb = init_preset_loreblock(type_val, lb_id, title.strip(), pid)
             self.controller.add_lore_block(new_lb)
             self.refresh_tree()
             self.select_entity_by_id("loreblock", new_lb.id)
@@ -802,30 +793,27 @@ class StoryEditorApp(QMainWindow):
             act_del.triggered.connect(lambda: self.delete_item(obj))
 
         elif item_type == "lore_group":
-            act_add_lore = menu.addAction("📜➕ Añadir Bloque de Lore...")
-            act_add_lore.triggered.connect(lambda: self.on_add_lore(default_type="Event"))
-            menu.addSeparator()
-            act_add_popup = menu.addAction("📢➕ Añadir Evento Pop-up (popup_event)...")
-            act_add_popup.triggered.connect(lambda: self.on_add_lore(default_type="popup"))
-            act_add_event = menu.addAction("⚡➕ Añadir Evento (Event)...")
-            act_add_event.triggered.connect(lambda: self.on_add_lore(default_type="Event"))
             act_add_chapter = menu.addAction("📖➕ Añadir Capítulo (Chapter)...")
             act_add_chapter.triggered.connect(lambda: self.on_add_lore(default_type="Chapter"))
-            act_add_quest = menu.addAction("⚔️➕ Añadir Quest (Misión)...")
-            act_add_quest.triggered.connect(lambda: self.on_add_lore(default_type="Quest"))
+            act_add_popup = menu.addAction("📢➕ Añadir Aviso Modal (popup)...")
+            act_add_popup.triggered.connect(lambda: self.on_add_lore(default_type="popup"))
 
         elif item_type == "loreblock":
             title = obj.title or obj.name or obj.id
-            act_add_child = menu.addAction(f"📁➕ Añadir Sub-bloque hijo...")
-            act_add_child.triggered.connect(lambda: self.on_add_child_lore(obj.id, default_type="Task"))
-            menu.addSeparator()
-            act_add_child_popup = menu.addAction("📢➕ Añadir Evento Pop-up (popup_event) hijo...")
-            act_add_child_popup.triggered.connect(lambda: self.on_add_child_lore(obj.id, default_type="popup"))
-            act_add_child_event = menu.addAction("⚡➕ Añadir Evento hijo...")
-            act_add_child_event.triggered.connect(lambda: self.on_add_child_lore(obj.id, default_type="Event"))
-            menu.addSeparator()
-            act_add_lore = menu.addAction("📜➕ Añadir Bloque de Lore raíz...")
-            act_add_lore.triggered.connect(lambda: self.on_add_lore(default_type="Event"))
+            allowed = get_allowed_child_types(getattr(obj, "type", "Event"))
+            if allowed:
+                for c_type in allowed:
+                    meta = TYPE_METADATA.get(c_type, {"icon": "🔹", "label": c_type})
+                    icon = meta.get("icon", "🔹")
+                    label = meta.get("label", c_type)
+                    act = menu.addAction(f"{icon}➕ Añadir {label}...")
+                    act.triggered.connect(lambda _, t=c_type: self.on_add_child_lore(obj.id, default_type=t))
+                menu.addSeparator()
+
+            act_add_chapter = menu.addAction("📖➕ Añadir nuevo Capítulo raíz...")
+            act_add_chapter.triggered.connect(lambda: self.on_add_lore(default_type="Chapter"))
+            act_add_popup = menu.addAction("📢➕ Añadir Aviso Modal (popup) raíz...")
+            act_add_popup.triggered.connect(lambda: self.on_add_lore(default_type="popup"))
             menu.addSeparator()
             act_del = menu.addAction(f"🗑️ Eliminar LoreBlock '{title}'...")
             act_del.triggered.connect(lambda: self.delete_lore_block(obj))
@@ -846,7 +834,8 @@ class StoryEditorApp(QMainWindow):
             self.controller.remove_location(loc.id)
             self.refresh_tree()
             if self.controller.world:
-                self.select_entity_by_id("world", getattr(self.controller.world, "id", None) or self.controller.world.name)
+                self.select_entity_by_id("world",
+                                         getattr(self.controller.world, "id", None) or self.controller.world.name)
             else:
                 self.stacked_widget.setCurrentIndex(8)
             self.statusBar().showMessage(f"Localización '{loc.name}' eliminada.")
@@ -871,7 +860,8 @@ class StoryEditorApp(QMainWindow):
                 if all_places:
                     selected = self.select_entity_by_id("place", all_places[0].id)
                 elif self.controller.world:
-                    selected = self.select_entity_by_id("world", getattr(self.controller.world, "id", None) or self.controller.world.name)
+                    selected = self.select_entity_by_id("world", getattr(self.controller.world, "id",
+                                                                         None) or self.controller.world.name)
             if not selected:
                 self.stacked_widget.setCurrentIndex(8)
             self.statusBar().showMessage(f"Lugar '{place.name}' eliminado.")
@@ -892,7 +882,8 @@ class StoryEditorApp(QMainWindow):
             if npcs:
                 selected = self.select_entity_by_id("npc", npcs[0].id)
             elif self.controller.world:
-                selected = self.select_entity_by_id("world", getattr(self.controller.world, "id", None) or self.controller.world.name)
+                selected = self.select_entity_by_id("world", getattr(self.controller.world, "id",
+                                                                     None) or self.controller.world.name)
             if not selected:
                 self.stacked_widget.setCurrentIndex(8)
             self.statusBar().showMessage(f"Personaje '{npc.name}' eliminado.")
@@ -913,7 +904,8 @@ class StoryEditorApp(QMainWindow):
             if items:
                 selected = self.select_entity_by_id("item", items[0].id)
             elif self.controller.world:
-                selected = self.select_entity_by_id("world", getattr(self.controller.world, "id", None) or self.controller.world.name)
+                selected = self.select_entity_by_id("world", getattr(self.controller.world, "id",
+                                                                     None) or self.controller.world.name)
             if not selected:
                 self.stacked_widget.setCurrentIndex(8)
             self.statusBar().showMessage(f"Ítem '{obj.name}' eliminado.")
@@ -971,7 +963,8 @@ class StoryEditorApp(QMainWindow):
             if lore_blocks:
                 selected = self.select_entity_by_id("loreblock", lore_blocks[0].id)
             elif self.controller.world:
-                selected = self.select_entity_by_id("world", getattr(self.controller.world, "id", None) or self.controller.world.name)
+                selected = self.select_entity_by_id("world", getattr(self.controller.world, "id",
+                                                                     None) or self.controller.world.name)
         if not selected:
             self.stacked_widget.setCurrentIndex(8)
         self.statusBar().showMessage(f"LoreBlock '{title}' eliminado.")
@@ -981,4 +974,3 @@ def start_editor(*args, **kwargs):
     """Punto de entrada de conveniencia que delega en editor_debugger.editor.main.start_editor."""
     from editor_debugger.editor.main import start_editor as _start_editor
     return _start_editor(*args, **kwargs)
-

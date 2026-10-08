@@ -1,6 +1,7 @@
 """Modelos de datos para el selector de aventuras."""
 
 from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -17,15 +18,16 @@ class AdventureMetadata(BaseModel):
     description: str = Field(default="", description="Descripción narrativa del mundo")
     player_name: str = Field(default="Aventurero", description="Nombre del personaje principal")
     player_description: str = Field(default="", description="Descripción del personaje")
-    initial_place: str = Field(default="", description="Lugar de inicio de la aventura")
+    initial_location: str = Field(default="", description="Lugar de inicio de la aventura")
 
     # Métricas y conteo de entidades
     locations_count: int = Field(default=0, description="Número de localizaciones/regiones")
     places_count: int = Field(default=0, description="Número total de lugares")
     npcs_count: int = Field(default=0, description="Número total de NPCs")
-    objects_count: int = Field(default=0, description="Número de objetos en el catálogo")
+    items_count: int = Field(default=0, description="Número de items en el catálogo")
     lore_blocks_count: int = Field(default=0, description="Número de bloques de lore en el catálogo")
 
     # Estado de integridad
     is_valid: bool = Field(default=True, description="True si el archivo es un .aad válido y legible")
-    error_message: Optional[str] = Field(default=None, description="Mensaje de error si el archivo es inválido o corrupto")
+    error_message: Optional[str] = Field(default=None,
+                                         description="Mensaje de error si el archivo es inválido o corrupto")

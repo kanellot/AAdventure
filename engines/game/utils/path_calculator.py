@@ -2,6 +2,7 @@
 
 import heapq
 from typing import Dict, List, Optional, Tuple
+
 from domains.world import Connection, Place
 
 
@@ -30,10 +31,10 @@ class PathCalculator:
 
     @classmethod
     def find_shortest_path(
-        cls,
-        places: Dict[str, Place],
-        start_name_or_id: str,
-        end_name_or_id: str,
+            cls,
+            places: Dict[str, Place],
+            start_name_or_id: str,
+            end_name_or_id: str,
     ) -> Tuple[List[Connection], List[Place]]:
         """Encuentra la ruta con menor distancia acumulada entre dos lugares usando Dijkstra."""
         by_name, by_id = cls._build_place_lookups(places)
@@ -93,10 +94,10 @@ class PathCalculator:
 
     @classmethod
     def find_intermediate_places(
-        cls,
-        places: Dict[str, Place],
-        start_name_or_id: str,
-        end_name_or_id: str,
+            cls,
+            places: Dict[str, Place],
+            start_name_or_id: str,
+            end_name_or_id: str,
     ) -> List[Place]:
         """Devuelve los lugares intermedios entre origen y destino (excluyendo ambos)."""
         _, full_path = cls.find_shortest_path(places, start_name_or_id, end_name_or_id)
@@ -106,10 +107,10 @@ class PathCalculator:
 
     @classmethod
     def calculate_navigation_route(
-        cls,
-        places: Dict[str, Place],
-        start_name_or_id: str,
-        end_name_or_id: str,
+            cls,
+            places: Dict[str, Place],
+            start_name_or_id: str,
+            end_name_or_id: str,
     ) -> Tuple[str, List[Connection], List[Place], Optional[Place]]:
         """Calcula la ruta teniendo en cuenta corte inmediato por lugares bloqueados (blocked_place).
         

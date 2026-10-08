@@ -2,6 +2,7 @@
 
 from enum import Enum
 from typing import Any, List, Literal, Optional
+
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -13,7 +14,7 @@ class LoreBlockState(str, Enum):
     DONE = "done"
 
 
-LoreBlockType = Literal["Chapter", "Quest", "Task", "Event", "popup"]
+LoreBlockType = Literal["Chapter", "Quest", "Task", "Event", "popup", "Info", "ask_permission"]
 
 EntityConditionType = Literal["place", "npc", "item", "loreblock", "gold", "time"]
 
@@ -78,7 +79,7 @@ class LoreEffects(BaseModel):
 
 
 class LoreBlock(BaseModel):
-    """Bloque de lore como máquina de estados jerárquica (HSM)."""
+    """Bloque de lore como máquina de estados jerárquica (HSM) con doble efecto nativo."""
 
     id: str
     name: str
@@ -89,8 +90,9 @@ class LoreBlock(BaseModel):
     state: str = LoreBlockState.UNKNOWN.value
 
     active_conditions: List[ConditionGroup] = Field(default_factory=list)
+    active_effects: List[LoreEffects] = Field(default_factory=list)
     done_conditions: List[ConditionGroup] = Field(default_factory=list)
-    effects: List[LoreEffects] = Field(default_factory=list)
+    done_effects: List[LoreEffects] = Field(default_factory=list)
 
     @property
     def is_root(self) -> bool:

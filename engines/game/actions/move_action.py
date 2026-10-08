@@ -1,7 +1,9 @@
 """Acción narrativa de desplazamiento."""
 
 from __future__ import annotations
+
 from typing import Any, Dict, List, Optional, Tuple, Type
+
 from domains import MoveNarratorCtx, MoveNarratorResponse, Place
 from engines.game.actions.base_action import BaseAction
 from engines.game.state_controller import GameStateController
@@ -12,13 +14,13 @@ class MoveAction(BaseAction[MoveNarratorCtx, MoveNarratorResponse]):
     """Acción de desplazamiento: construye contexto y genera narrativa de viaje."""
 
     def __init__(
-        self,
-        origin_place: Optional[Place],
-        destination_place: Optional[Place],
-        path_taken: Optional[List[Place]] = None,
-        travel_time: int = 0,
-        directive: Optional[str] = None,
-        blocked_place: Optional[Place] = None,
+            self,
+            origin_place: Optional[Place],
+            destination_place: Optional[Place],
+            path_taken: Optional[List[Place]] = None,
+            travel_time: int = 0,
+            directive: Optional[str] = None,
+            blocked_place: Optional[Place] = None,
     ):
         self.origin_place = origin_place
         self.destination_place = destination_place
@@ -46,9 +48,9 @@ class MoveAction(BaseAction[MoveNarratorCtx, MoveNarratorResponse]):
         return MarkdownFormatter.move_markdown(ctx)
 
     def build_context(
-        self,
-        controller: GameStateController,
-        player_input: str = "",
+            self,
+            controller: GameStateController,
+            player_input: str = "",
     ) -> MoveNarratorCtx:
         return MoveNarratorCtx(
             origin_place=self.origin_place,

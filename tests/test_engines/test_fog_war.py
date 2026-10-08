@@ -1,9 +1,10 @@
 """Pruebas unitarias para el sistema de Niebla de Guerra canónico (GameStateController)."""
 
 import unittest
+
+from domains.npcs import NPC
 from domains.player import Player
 from domains.world import World, Location, Place, Connection
-from domains.npcs import NPC
 from engines.game.state_controller import GameStateController
 
 

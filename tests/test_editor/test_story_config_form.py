@@ -1,9 +1,11 @@
 """Pruebas unitarias para StoryConfigForm (editor.views.story_config_form)."""
 
 import unittest
+
 from PySide6.QtWidgets import QApplication
-from editor_debugger.editor.views.story_config_form import StoryConfigForm
+
 from domains.story_config import StoryConfig
+from editor_debugger.editor.views.story_config_form import StoryConfigForm
 
 
 class TestStoryConfigForm(unittest.TestCase):

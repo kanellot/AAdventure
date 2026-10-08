@@ -9,8 +9,8 @@ from adventure_selector import (
     open_adventure_selector,
     set_default_adventure_path,
 )
-from engines import AdventureSession
 from editor_debugger.debugger.app import GameDebuggerApp
+from engines import AdventureSession
 
 # Reutilizar el mismo estilo papiro que el editor para consistencia estética
 SEPIA_STYLESHEET = """
@@ -112,10 +112,10 @@ from engines.game.engine import GameEngine
 
 
 def start_debugger(
-    engine: Optional[GameEngine] = None,
-    session: Optional[AdventureSession] = None,
-    aad_path: Optional[str] = None,
-    **kwargs: Any,
+        engine: Optional[GameEngine] = None,
+        session: Optional[AdventureSession] = None,
+        aad_path: Optional[str] = None,
+        **kwargs: Any,
 ):
     """
     Punto de entrada de la aplicación del Depurador Gráfico.
@@ -155,4 +155,3 @@ def start_debugger(
 
 if __name__ == "__main__":
     start_debugger()
-

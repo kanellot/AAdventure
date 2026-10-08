@@ -1,7 +1,9 @@
 """Modelo de dominio para el jugador y su estado inicial."""
 
 from typing import List, Optional, Any
+
 from pydantic import Field, model_validator
+
 from domains.base import Entity
 
 
@@ -36,6 +38,7 @@ class Player(Entity):
             elif ab and not aq:
                 d["active_quest"] = ab
             return d
+
 
 # Re-exportación para compatibilidad de importación
 from domains.game_state import GameState

@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 import os
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -8,21 +10,20 @@ from PySide6.QtWidgets import (
     QSplitter,
     QTabWidget,
     QTextEdit,
-    QVBoxLayout,
     QWidget,
 )
 
 from domains.projections import ActionCommandProjection, TurnResultProjection, UIStateProjection
-from engines import AdventureSession
-from engines.game.engine import GameEngine
+from editor_debugger.debugger.qt_listener import QtEngineListener
 from editor_debugger.debugger.views.chat_tab import ChatTab
-from editor_debugger.debugger.views.entities_tab import AllEntitiesTreeWidget, EntitiesTreeWidget, MapTreeWidget
-from editor_debugger.debugger.views.inspector import GameStateHierarchicalTreeWidget, GameStateInspector, NotebookTreeWidget
+from editor_debugger.debugger.views.entities_tab import AllEntitiesTreeWidget, MapTreeWidget
+from editor_debugger.debugger.views.inspector import GameStateHierarchicalTreeWidget, NotebookTreeWidget
 from editor_debugger.debugger.views.lore_graph_tab import LoreGraphTab
 from editor_debugger.debugger.views.rag_tab import RagTab
 from editor_debugger.debugger.views.result_tab import ResultTab
-from editor_debugger.debugger.qt_listener import QtEngineListener
+from engines import AdventureSession
 from engines.events import ThinkingEvent
+from engines.game.engine import GameEngine
 
 
 class GameDebuggerApp(QMainWindow):
@@ -35,11 +36,11 @@ class GameDebuggerApp(QMainWindow):
     adventure_state_changed = Signal(bool)
 
     def __init__(
-        self,
-        engine: Optional[GameEngine] = None,
-        session: Optional[AdventureSession] = None,
-        aad_path: Optional[str] = None,
-        auto_start: bool = False,
+            self,
+            engine: Optional[GameEngine] = None,
+            session: Optional[AdventureSession] = None,
+            aad_path: Optional[str] = None,
+            auto_start: bool = False,
     ):
         super().__init__()
         self.setWindowTitle("Depurador de Juego - AAdventure")
@@ -68,6 +69,7 @@ class GameDebuggerApp(QMainWindow):
         self.listener.task_completed.connect(self.on_task_completed)
         self.listener.state_updated.connect(self.on_state_updated)
         self.listener.task_error.connect(self.on_task_error)
+        self.listener.popup_triggered.connect(self.on_popup_triggered)
 
         self._setup_menu()
 
@@ -202,7 +204,8 @@ class GameDebuggerApp(QMainWindow):
         if self.aad_path:
             file_name = os.path.basename(self.aad_path)
             try:
-                world_name = self.engine.get_world_name() if (self.engine and hasattr(self.engine, "get_world_name")) else "--"
+                world_name = self.engine.get_world_name() if (
+                            self.engine and hasattr(self.engine, "get_world_name")) else "--"
             except Exception:
                 world_name = "--"
             title = f"{title} [{file_name} - {world_name}]"
@@ -463,17 +466,19 @@ class GameDebuggerApp(QMainWindow):
         else:
             self.update_status_bar()
 
+    def on_popup_triggered(self, popup_json: str):
+        """Maneja el disparo reactivo de un popup modal individual emitido por el motor."""
+        from engines.events import PopupEvent
+        popup = PopupEvent.model_validate_json(popup_json)
+        title = popup.title or "Aviso del Sistema"
+        msg = popup.message
+        QMessageBox.information(self, title, msg)
+
     def on_task_completed(self, task_id: str, result_json: str):
         """Recibe el resultado completado en JSON desde el worker thread de la sesión."""
         turn_output = TurnResultProjection.model_validate_json(result_json)
         # Agregar respuesta del Dungeon Master o NPC al chat
         self.chat_tab.append_message(turn_output.output.author or "Dungeon Master", turn_output.output.msg)
-
-        # Si hubo un popup modal directo en la proyección, mostrarlo en pantalla
-        if turn_output.output.type == "popup" or turn_output.output.popup_message:
-            title = turn_output.output.popup_title or "Aviso del Sistema"
-            msg = turn_output.output.popup_message or turn_output.output.msg
-            QMessageBox.information(self, title, msg)
 
         # Actualizar pestañas del panel principal
         dbg = turn_output.debug
@@ -513,7 +518,6 @@ class GameDebuggerApp(QMainWindow):
         """Maneja errores recibidos del motor."""
         self.chat_tab.append_message("SYSTEM", f"Error [{error_code}]: {error_message}")
         self.update_status_bar()
-
 
     def closeEvent(self, event):
         """Asegura la liberación de recursos y detención limpia del worker thread."""

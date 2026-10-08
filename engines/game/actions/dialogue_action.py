@@ -1,8 +1,11 @@
 """Acción narrativa de diálogo e interacción con NPCs."""
 
 from __future__ import annotations
+
 from typing import Any, Dict, List, Optional, Tuple, Type
+
 from pydantic import BaseModel, Field, field_validator
+
 from domains import ContextType, ResponseType
 from domains.npcs import NPCMotivations
 from engines.game.actions.base_action import BaseAction
@@ -79,9 +82,9 @@ class DialogueAction(BaseAction[DialogueNarratorCtx, DialogueNarratorResponse]):
         return MarkdownFormatter.dialogue_markdown(ctx)
 
     def build_context(
-        self,
-        controller: GameStateController,
-        player_input: str = "",
+            self,
+            controller: GameStateController,
+            player_input: str = "",
     ) -> DialogueNarratorCtx:
         npc = controller.npcs_by_id.get(self.target_npc)
         if not npc:

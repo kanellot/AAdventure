@@ -1,6 +1,7 @@
 """Pruebas unitarias para el modelo StoryConfig (domains.story_config)."""
 
 import unittest
+
 from domains.story_config import StoryConfig
 
 

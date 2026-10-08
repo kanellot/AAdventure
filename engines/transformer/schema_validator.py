@@ -1,6 +1,7 @@
 """Validador de esquemas estructurados devueltos por los modelos."""
 
 from typing import Type
+
 from pydantic import BaseModel
 
 

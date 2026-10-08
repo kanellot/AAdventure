@@ -6,11 +6,11 @@ y las tareas en cola.
 """
 
 from __future__ import annotations
-import time
-from typing import Any, Dict, Literal, Optional
-from pydantic import BaseModel, Field
 
-from domains.projections import TurnResultProjection, UIStateProjection
+import time
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field
 
 
 class ThinkingEvent(BaseModel):
@@ -27,15 +27,35 @@ class ThinkingEvent(BaseModel):
     message: str = "Pensando..."
 
 
+class UIAction(BaseModel):
+    """Acción pura generada por la interfaz de usuario o cliente CLI."""
+
+    action: str = ""
+    target: str = ""
+    player_input: str = ""
+
+
 class EngineTask(BaseModel):
     """Tarea individual encolada para ejecución en el motor."""
 
     task_id: str
+    author: str = "Player"
     action: str = ""
     target: str = ""
     player_input: str = ""
     source: Literal["PLAYER", "LORE"] = "PLAYER"
+    autonomous_depth: int = 0
+    directive: Optional[str] = None
+    bypass_llm: bool = False
     created_at: float = Field(default_factory=time.time)
+
+
+class PopupEvent(BaseModel):
+    """Notificación modal independiente emitida por un LoreBlock tipo popup."""
+
+    title: str = "Aviso del Sistema"
+    message: str = ""
+    block_id: Optional[str] = None
 
 
 # Re-exportación de listeners desde engines.listeners para compatibilidad
@@ -46,9 +66,12 @@ from engines.listeners import (  # noqa: E402
 )
 
 __all__ = [
+    "UIAction",
     "ThinkingEvent",
     "EngineTask",
+    "PopupEvent",
     "EngineEventListener",
     "BaseEngineEventListener",
     "SyncCollectingEventListener",
 ]
+

@@ -1,10 +1,11 @@
 """Pruebas unitarias para el lector de metadatos de aventuras (.aad)."""
 
-import unittest
 import os
 import tempfile
-from adventure_selector.reader import read_adventure_metadata
+import unittest
+
 from adventure_selector.models import AdventureMetadata
+from adventure_selector.reader import read_adventure_metadata
 
 
 class TestAdventureReader(unittest.TestCase):

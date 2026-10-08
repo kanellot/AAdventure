@@ -4,6 +4,7 @@
 """
 
 from typing import Optional
+
 from PySide6.QtWidgets import (
     QWidget,
     QFormLayout,
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
 )
+
 from domains import NPC
 
 
@@ -201,7 +203,6 @@ class NPCForm(QWidget):
     def on_dislikes_changed(self, text: str):
         if self.npc and self.npc.motivations:
             self.npc.motivations.dislikes = [item.strip() for item in text.split(",") if item.strip()]
-
 
     def on_delete_clicked(self):
         if self.npc and self.parent_app and hasattr(self.parent_app, "delete_npc"):

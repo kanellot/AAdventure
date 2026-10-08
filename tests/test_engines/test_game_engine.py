@@ -1,10 +1,9 @@
 """Pruebas unitarias para el nuevo GameEngine."""
 
-import os
 import shutil
 import tempfile
-import time
 import unittest
+
 from domains.game_state import LoreBlockHierarchy
 from domains.items import Item
 from domains.npcs import NPC
@@ -63,7 +62,8 @@ class TestGameEngine(unittest.TestCase):
             connections={"p2": Connection(target="p2", distance=500, terrain_type="forest")},
         )
 
-        self.loc = Location(id="loc1", name="Aldea", description="Una aldea tranquila", places=[self.p1, self.p2, self.p3])
+        self.loc = Location(id="loc1", name="Aldea", description="Una aldea tranquila",
+                            places=[self.p1, self.p2, self.p3])
         self.world = World(id="w1", name="Mundo", description="Un mundo fantástico", locations=[self.loc])
 
         self.player = Player(
@@ -76,7 +76,8 @@ class TestGameEngine(unittest.TestCase):
         )
 
         self.npc1 = NPC(id="npc_tom", name="Tom", description="Un aldeano amistoso", initial_location="p1")
-        self.npc2 = NPC(id="npc_bartender", name="Tabernero", description="El dueño de la taberna", initial_location="p2")
+        self.npc2 = NPC(id="npc_bartender", name="Tabernero", description="El dueño de la taberna",
+                        initial_location="p2")
 
         self.item1 = Item(id="item_apple", name="Manzana", description="Fruta roja", initial_location="p1")
         self.item2 = Item(id="item_ale", name="Cerveza", description="Bebida espumosa", initial_location="p2")
@@ -538,6 +539,57 @@ class TestGameEngine(unittest.TestCase):
         self.assertTrue(win_ant.conditions_met)
         self.assertTrue(win_ant.affects_active_entity)
 
+    def test_rag_hook_isolated_to_turn_and_not_injected_on_conversation_or_return(self):
+        """Verifica que un hook RAG solo se inyecta en el turno que dispara el RAG y no al continuar o volver."""
+        block = {
+            "id": "lb_rumor_castillo",
+            "name": "Rumor Castillo",
+            "title": "Rumor Castillo",
+            "type": "Quest",
+            "parent_id": None,
+            "threshold": 0.65,
+            "active_conditions": [
+                {
+                    "rag_enabled": True,
+                    "trigger_phrases": ["donde encontrar castillo"],
+                    "conditions": [],
+                }
+            ],
+            "done_conditions": [],
+            "effects": [
+                {
+                    "target": "npc_tom",
+                    "directive": "Dile que el castillo está al norte",
+                }
+            ],
+        }
+        self.controller.game_state.loreblocks.unknown = [block]
+        self.controller.game_state.loreblocks.active = []
+        self.controller.game_state.loreblocks.done = []
+
+        # Turno 1: Jugador pregunta por el castillo -> RAG dispara e inyecta directriz
+        res1 = self.engine.execute_turn(action="TALK", target="npc_tom", player_input="donde encontrar castillo")
+        self.assertEqual(res1.debug.rag_evaluation.injected_directive, "Dile que el castillo está al norte")
+
+        # Turno 2: Jugador sigue la conversación sin preguntar por el castillo ("muchas gracias")
+        # El bloque sigue en active, pero RAG NO se disparó -> NO se inyecta la directriz
+        res2 = self.engine.execute_turn(action="TALK", target="npc_tom", player_input="muchas gracias")
+        self.assertIsNone(res2.debug.rag_evaluation.injected_directive)
+
+        # Turno 3: Jugador se desplaza a otro lugar (p2)
+        self.engine.execute_turn(action="MOVE", target="p2")
+
+        # Turno 4: Jugador regresa (p1)
+        self.engine.execute_turn(action="MOVE", target="p1")
+
+        # Turno 5: Jugador habla con Tom diciendo "hola de nuevo" sin disparar RAG -> NO se inyecta
+        res5 = self.engine.execute_turn(action="TALK", target="npc_tom", player_input="hola de nuevo")
+        self.assertIsNone(res5.debug.rag_evaluation.injected_directive)
+
+        # Turno 6: Jugador vuelve a preguntar por el castillo -> RAG dispara e inyecta directriz
+        res6 = self.engine.execute_turn(action="TALK", target="npc_tom", player_input="donde encontrar castillo")
+        self.assertEqual(res6.debug.rag_evaluation.injected_directive, "Dile que el castillo está al norte")
+
     def test_rag_evaluation_done_conditions_on_active_blocks(self):
         """Verifica que bloques en active evalúan sus done_conditions con RAG y completan a done."""
         block = {
@@ -654,7 +706,50 @@ class TestGameEngine(unittest.TestCase):
         res_tom = self.engine.execute_turn(action="TALK", target="npc_tom", player_input="donde esta el molino")
         self.assertEqual(res_tom.debug.rag_evaluation.injected_directive, "Tom dice: ve por el camino sur")
 
+    def test_push_action_enqueues_to_worker_queue(self):
+        """Verifica que execute_turn encola las acciones push generadas en worker.task_queue."""
+        block = {
+            "id": "block_push_test",
+            "name": "Push Test",
+            "type": "Event",
+            "parent_id": None,
+            "state": "unknown",
+            "active_conditions": [
+                {
+                    "conditions": [
+                        {"entity_type": "place", "entity_id": "p2", "sub_condition": "current_location"}
+                    ]
+                }
+            ],
+            "active_effects": [
+                {
+                    "action": "push",
+                    "target": "npc_tom",
+                    "directive": "Tom te saluda efusivamente.",
+                    "bypass_llm": True,
+                }
+            ],
+            "done_conditions": [],
+            "done_effects": [],
+        }
+        self.controller.game_state.loreblocks.unknown = [block]
+        self.controller.game_state.loreblocks.active = []
+        self.controller.game_state.loreblocks.done = []
+
+        # Ejecutar MOVE a p2
+        res = self.engine.execute_turn(action="MOVE", target="p2")
+        self.assertEqual(res.output.author, "Dungeon Master")
+
+        # Comprobar que en worker.task_queue hay una tarea encolada
+        self.assertEqual(self.engine.worker.task_queue.qsize(), 1)
+        task = self.engine.worker.task_queue.get_nowait()
+        self.assertEqual(task.source, "LORE")
+        self.assertEqual(task.action, "TALK")
+        self.assertEqual(task.target, "npc_tom")
+        self.assertEqual(task.directive, "Tom te saluda efusivamente.")
+        self.assertTrue(task.bypass_llm)
+        self.assertEqual(task.autonomous_depth, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
-

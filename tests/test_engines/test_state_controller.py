@@ -4,7 +4,8 @@ import os
 import shutil
 import tempfile
 import unittest
-from domains.game_state import GameState, Inventory, LoreBlockHierarchy
+
+from domains.game_state import LoreBlockHierarchy
 from domains.items import Item
 from domains.npcs import NPC
 from domains.player import Player
@@ -43,7 +44,8 @@ class TestGameStateController(unittest.TestCase):
             connections={"p2": Connection(target="p2", distance=500, terrain_type="forest")},
         )
 
-        self.loc = Location(id="loc1", name="Aldea", description="Una aldea tranquila", places=[self.p1, self.p2, self.p3])
+        self.loc = Location(id="loc1", name="Aldea", description="Una aldea tranquila",
+                            places=[self.p1, self.p2, self.p3])
         self.world = World(id="w1", name="Mundo", description="Un mundo fantástico", locations=[self.loc])
 
         self.player = Player(
@@ -56,7 +58,8 @@ class TestGameStateController(unittest.TestCase):
         )
 
         self.npc1 = NPC(id="npc_tom", name="Tom", description="Un aldeano amistoso", initial_location="p1")
-        self.npc2 = NPC(id="npc_bartender", name="Tabernero", description="El dueño de la taberna", initial_location="p2")
+        self.npc2 = NPC(id="npc_bartender", name="Tabernero", description="El dueño de la taberna",
+                        initial_location="p2")
 
         self.item1 = Item(id="item_apple", name="Manzana", description="Fruta roja", initial_location="p1")
         self.item2 = Item(id="item_ale", name="Cerveza", description="Bebida espumosa", initial_location="p2")
@@ -106,10 +109,12 @@ class TestGameStateController(unittest.TestCase):
         self.assertTrue(places_map["p1"].items[0].visible)
         self.assertEqual(places_map["p1"].items[0].id, "item_apple")
 
-        # Notebook contiene la Quest activa inicial
-        self.assertEqual(len(gs.notebook), 1)
+        # Notebook contiene la Quest y Task activas iniciales
+        self.assertEqual(len(gs.notebook), 2)
         self.assertEqual(gs.notebook[0].id, "q1")
         self.assertEqual(gs.notebook[0].status, "active")
+        self.assertEqual(gs.notebook[1].id, "t1")
+        self.assertEqual(gs.notebook[1].status, "active")
 
     def test_movement_and_fog_war_progression(self):
         """Verifica la actualización de posición y progresión de niebla de guerra."""

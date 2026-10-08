@@ -1,9 +1,11 @@
 """Catálogo canónico e inmutable del mundo cargado desde archivos JSON."""
 
 from __future__ import annotations
+
 import json
 import os
 from typing import Dict, Optional
+
 from domains import (
     Item,
     Location,
@@ -20,13 +22,13 @@ class WorldState:
     """Administra los catálogos canónicos e inmutables del mundo cargados desde los 6 archivos JSON."""
 
     def __init__(
-        self,
-        world_json_path: str,
-        npcs_json_path: Optional[str] = None,
-        player_json_path: Optional[str] = None,
-        items_json_path: Optional[str] = None,
-        lore_json_path: Optional[str] = None,
-        config_json_path: Optional[str] = None,
+            self,
+            world_json_path: str,
+            npcs_json_path: Optional[str] = None,
+            player_json_path: Optional[str] = None,
+            items_json_path: Optional[str] = None,
+            lore_json_path: Optional[str] = None,
+            config_json_path: Optional[str] = None,
     ):
         base_dir = os.path.dirname(world_json_path)
         self.world_json_path = world_json_path
@@ -88,8 +90,8 @@ class WorldState:
             with open(self.items_json_path, "r", encoding="utf-8") as f:
                 item_data_raw = json.load(f)
             raw_items = (
-                item_data_raw.get("items") if isinstance(item_data_raw, dict) else None
-            ) or (item_data_raw if isinstance(item_data_raw, list) else [])
+                            item_data_raw.get("items") if isinstance(item_data_raw, dict) else None
+                        ) or (item_data_raw if isinstance(item_data_raw, list) else [])
             for i_data in raw_items:
                 item = Item.model_validate(i_data)
                 self.items[item.id] = item

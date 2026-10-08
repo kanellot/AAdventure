@@ -1,9 +1,10 @@
 """Pruebas unitarias para la persistencia de preferencias de aventuras."""
 
-import unittest
 import os
 import tempfile
+import unittest
 from unittest.mock import patch
+
 from adventure_selector.storage import (
     load_preferences,
     save_preferences,

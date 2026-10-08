@@ -1,12 +1,13 @@
 from __future__ import annotations
+
 from typing import Dict, List, Optional, Union
-from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QColor, QBrush
+from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
+
 from domains.projections import (
-    MapItemDTO,
     MapNPCDTO,
-    PlaceProjection,
     WorldHierarchyProjection,
     WorldMapProjection,
 )
