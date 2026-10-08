@@ -1,7 +1,9 @@
 """Entidad base del dominio del juego."""
 
 from typing import List
+
 from pydantic import BaseModel, ConfigDict, Field
+
 from domains.lore import LoreBlock
 
 

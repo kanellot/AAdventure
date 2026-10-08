@@ -1,6 +1,7 @@
 """Formateador de datos y entidades del juego a representaciones Markdown."""
 
 from typing import Any, Dict, List, Optional, Union
+
 from domains.base import Entity
 from domains.npcs import NPC
 from domains.world import Place
@@ -11,9 +12,9 @@ class MarkdownFormatter:
 
     @staticmethod
     def format_conversation(
-        history: List[Dict[str, str]],
-        current_input: Optional[str] = None,
-        default_speaker: str = "Player",
+            history: List[Dict[str, str]],
+            current_input: Optional[str] = None,
+            default_speaker: str = "Player",
     ) -> str:
         """Formatea el historial de conversación añadiendo la consulta actual."""
         lines = []
@@ -60,22 +61,13 @@ class MarkdownFormatter:
             lines.append("* **Motivaciones**:")
             lines.append(f"  * Likes: {likes}")
             lines.append(f"  * Dislikes: {dislikes}")
-
-        services = getattr(npc, "services", [])
-        if detailed and services:
-            lines.append("* **Servicios ofrecidos**:")
-            for svc in services:
-                cost_str = f"{svc.cost} monedas" if getattr(svc, "cost", None) is not None else "Gratuito"
-                min_aff = getattr(svc, "min_affinity", 0.0)
-                lines.append(f"  * {svc.type} ({cost_str}): {svc.description} [Afinidad mín: {min_aff}]")
-
         return "\n".join(lines)
 
     @staticmethod
     def format_place(
-        place: Optional[Place],
-        include_connections: bool = False,
-        include_visible: bool = False,
+            place: Optional[Place],
+            include_connections: bool = False,
+            include_visible: bool = False,
     ) -> str:
         """Formatea la información de un lugar o entorno."""
         if not place:

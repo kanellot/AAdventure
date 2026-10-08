@@ -1,1 +1,0 @@
-# AAdventure Story Editor Package

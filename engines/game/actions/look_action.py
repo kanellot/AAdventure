@@ -1,27 +1,31 @@
-"""Acción de explicación o inspección detallada de un lugar, NPC u objeto."""
+"""Acción narrativa de inspección o explicación detallada de una entidad."""
 
-from typing import Dict, Optional, Tuple, Type
+from __future__ import annotations
+
+from typing import Any, Dict, Optional, Tuple, Type
+
 from domains import (
     Entity,
     ExplainLookNarratorCtx,
     ExplainLookResponse,
-    ExplainLookResult,
-    NPC,
-    Place,
 )
 from engines.game.actions.base_action import BaseAction
-from engines.game.lore_router import LoreRouter
 from engines.game.state_controller import GameStateController
 from engines.game.utils import MarkdownFormatter
 
 
 class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
-    """Acción de inspección: describe y explica entidades o lugares integrando lore."""
+    """Acción de inspección: describe y explica entidades o lugares."""
 
-    def __init__(self, target: Optional[str] = None, failed_reason: Optional[str] = None):
+    def __init__(
+            self,
+            target: Optional[str] = None,
+            failed_reason: Optional[str] = None,
+            directive: Optional[str] = None,
+    ):
         self.target = target
         self.failed_reason = failed_reason
-        self._triggered_lore = None
+        self.directive = directive
 
     @property
     def rules_path(self) -> str:
@@ -36,177 +40,62 @@ class LookAction(BaseAction[ExplainLookNarratorCtx, ExplainLookResponse]):
         return "explain_look_narrator"
 
     def get_template_tags(self, ctx: ExplainLookNarratorCtx) -> Dict[str, str]:
-        """Genera los tags runtime formateados para la plantilla de inspección."""
         return MarkdownFormatter.explain_look_tags(ctx)
 
     def to_markdown(self, ctx: ExplainLookNarratorCtx) -> str:
-        """Genera la representación Markdown de respaldo del contexto."""
         return MarkdownFormatter.explain_look_markdown(ctx)
 
-    def build_context(
-        self,
-        game_state_controller: GameStateController,
-        player_input: str,
-    ) -> ExplainLookNarratorCtx:
-        """Construye el contexto de inspección resolviendo la entidad consultada."""
-        entity = None
+    def _resolve_entity(self, controller: GameStateController) -> Optional[Entity]:
         target = self.target
+        if not target or target == controller.game_state.current_location:
+            return controller.game_state.place
 
-        if not target:
-            entity = game_state_controller.data.place
-        else:
-            for n in game_state_controller.data.npcs.values():
-                if n.id == target or n.name == target:
-                    entity = n
-                    break
+        if target in controller.places_by_id:
+            return controller.places_by_id[target]
 
-            if not entity and hasattr(game_state_controller.world_state, "npcs"):
-                for n in game_state_controller.world_state.npcs.values():
-                    if n.id == target or n.name == target:
-                        entity = n
-                        break
+        if target in controller.npcs_by_id:
+            return controller.npcs_by_id[target]
 
-            if not entity:
-                current_place = game_state_controller.data.place
-                if current_place and (current_place.id == target or current_place.name == target):
-                    entity = current_place
-                else:
-                    if target in game_state_controller.world_state.places_by_id:
-                        entity = game_state_controller.world_state.places_by_id[target]
-                    elif target in game_state_controller.world_state.places_by_name:
-                        entity = game_state_controller.world_state.places_by_name[target]
+        if target in controller.items_by_id:
+            return controller.items_by_id[target]
 
-            if not entity and game_state_controller.data.place:
-                for vent in game_state_controller.data.place.visible_entities:
-                    if vent.lower() == target.lower() or vent.lower().endswith(target.lower()):
-                        entity = Entity(
-                            id=vent,
-                            name=vent,
-                            description=f"Elemento u objeto situado en {game_state_controller.data.place.name}.",
-                        )
-                        break
+        return None
 
-            if not entity:
-                entity = game_state_controller.data.place
-
-        router = LoreRouter.get_instance()
-        self._triggered_lore = None
-        directive = None
-
-        has_dynamic_lore = (
-            (entity and getattr(entity, "dynamic_lore", None)) or
-            (game_state_controller.data.place and getattr(game_state_controller.data.place, "dynamic_lore", None))
-        )
-
-        if has_dynamic_lore:
-            clean_input = (player_input or "").strip()
-            match = None
-            if clean_input and entity:
-                match = router.find_reactive_lore(clean_input, entity, game_state_controller)
-                if not match and game_state_controller.data.place and game_state_controller.data.place != entity:
-                    match = router.find_reactive_lore(clean_input, game_state_controller.data.place, game_state_controller)
-
-            if match:
-                self._triggered_lore, _ = match
-                directive = self._triggered_lore.directive
-            else:
-                proactive_block = None
-                if entity:
-                    proactive_block = router.find_proactive_lore(entity, game_state_controller)
-                if not proactive_block and game_state_controller.data.place and game_state_controller.data.place != entity:
-                    proactive_block = router.find_proactive_lore(game_state_controller.data.place, game_state_controller)
-                if proactive_block:
-                    self._triggered_lore = proactive_block
-                    directive = self._triggered_lore.directive
-
-        inspection_hist = getattr(game_state_controller.data.state, "inspection_history", [])
-
+    def build_context(
+            self,
+            controller: GameStateController,
+            player_input: str = "",
+    ) -> ExplainLookNarratorCtx:
+        entity = self._resolve_entity(controller)
         return ExplainLookNarratorCtx(
             entity=entity,
-            inspection_history=list(inspection_hist),
+            inspection_history=[],
             player_input=player_input,
-            directive=directive,
+            directive=self.directive,
             failed_reason=self.failed_reason,
         )
 
-    def validate(
-        self,
-        game_state_controller: GameStateController,
-        player_input: str,
-        llm_response: Optional[ExplainLookResponse] = None,
-    ) -> Tuple[bool, Optional[str], Optional[dict]]:
-        return True, None, None
+    def fallback_narrative(self, controller: GameStateController, ctx: ExplainLookNarratorCtx) -> Tuple[str, Any]:
+        if self.failed_reason:
+            return f"No es posible observar '{self.target}': {self.failed_reason}", None
 
-    def mutate(
-        self,
-        game_state_controller: GameStateController,
-        player_input: str,
-        llm_response: ExplainLookResponse,
-        is_valid: bool,
-        metadata: Optional[dict],
-    ) -> None:
-        if not is_valid or self.failed_reason:
-            return
-
-        if self._triggered_lore:
-            router = LoreRouter.get_instance()
-            router.apply_effects(self._triggered_lore, game_state_controller)
-
-        if hasattr(game_state_controller.data.state, "inspection_history"):
-            entry_input = player_input if player_input else f"Mirar {self.target or 'entorno'}"
-            game_state_controller.data.state.inspection_history.append({
-                "Player": entry_input,
-                "Dungeon Master": llm_response.msg,
-            })
-
-        if not self.target:
-            return
-
-        new_desc = llm_response.msg
+        p = controller.game_state.place
         target = self.target
+        if not target or target == controller.game_state.current_location:
+            desc = p.description if p else "Un lugar sin descripción."
+            name = p.name if p else target
+            return f"Miras a tu alrededor en {name}: {desc}", None
 
-        npc = None
-        for n in game_state_controller.data.npcs.values():
-            if n.id == target or n.name == target:
-                npc = n
-                break
+        if target in controller.places_by_id:
+            pl = controller.places_by_id[target]
+            return f"Observas {pl.name}: {pl.description}", None
 
-        if npc:
-            npc.description = f"{npc.description}\n{new_desc}"
-            if npc.id in game_state_controller.world_state.npcs:
-                game_state_controller.world_state.npcs[npc.id].description = npc.description
-            return
+        if target in controller.npcs_by_id:
+            npc = controller.npcs_by_id[target]
+            return f"Observas a {npc.name}: {npc.description}", None
 
-        place = None
-        current_place = game_state_controller.data.place
-        if current_place and (current_place.id == target or current_place.name == target):
-            place = current_place
+        if target in controller.items_by_id:
+            it = controller.items_by_id[target]
+            return f"Examinas {it.name}: {it.description}", None
 
-        if not place:
-            if target in game_state_controller.world_state.places_by_id:
-                place = game_state_controller.world_state.places_by_id[target]
-            elif target in game_state_controller.world_state.places_by_name:
-                place = game_state_controller.world_state.places_by_name[target]
-
-        if place:
-            if current_place and place.id == current_place.id:
-                current_place.description = f"{current_place.description}\n{new_desc}"
-            if place.id in game_state_controller.world_state.places_by_id:
-                game_state_controller.world_state.places_by_id[place.id].description = (
-                    f"{game_state_controller.world_state.places_by_id[place.id].description}\n{new_desc}"
-                )
-
-    def build_result(
-        self,
-        game_state_controller: GameStateController,
-        player_input: str,
-        llm_response: ExplainLookResponse,
-        is_valid: bool,
-        reason: Optional[str],
-        metadata: Optional[dict],
-    ) -> ExplainLookResult:
-        return ExplainLookResult(
-            success=is_valid and not self.failed_reason,
-            message=llm_response.msg,
-            data=metadata,
-        )
+        return f"Observas '{target}', pero no distingues detalles relevantes.", None

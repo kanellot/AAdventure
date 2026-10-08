@@ -1,22 +1,39 @@
-"""Clase base y plantilla de ejecución para las acciones (steps) del juego."""
+"""Clase base para las acciones narrativas del juego."""
 
+from __future__ import annotations
+
+import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Generic, Optional, Tuple, Type, TypeVar
-from domains import ContextType, ResponseType, ResultType
+from dataclasses import dataclass
+from typing import Any, Dict, Generic, Optional, Tuple, Type, TypeVar
+
+from domains import ContextType, ResponseType
 from engines.game.prompt_builder import PromptBuilder
 from engines.game.state_controller import GameStateController
+from engines.transformer import TransformerEngine
+
+logger = logging.getLogger(__name__)
 
 C = TypeVar("C", bound=ContextType)
 R = TypeVar("R", bound=ResponseType)
 
 
+@dataclass
+class NarrativeResult:
+    """Resultado enriquecido de una acción narrativa."""
+
+    msg: str
+    extra: Any = None
+    prompt: Optional[str] = None
+
+
 class BaseAction(ABC, Generic[C, R]):
-    """Interfaz base (template method) para las acciones del juego."""
+    """Interfaz base para las acciones narrativas del juego."""
 
     @property
     @abstractmethod
     def rules_path(self) -> str:
-        """Ruta al archivo Markdown que define las reglas de rol para el LLM."""
+        """Ruta al archivo Markdown de reglas de rol para el LLM."""
         pass
 
     @property
@@ -30,84 +47,65 @@ class BaseAction(ABC, Generic[C, R]):
         """Nombre del perfil de inferencia del LLM."""
         return "narrator"
 
+    @abstractmethod
     def build_context(
-        self,
-        game_state_controller: GameStateController,
-        player_input: str,
+            self,
+            controller: GameStateController,
+            player_input: str = "",
     ) -> C:
         """Construye y retorna el modelo de contexto para el LLM."""
-        raise NotImplementedError
+        pass
 
     def get_template_tags(self, ctx: C) -> Dict[str, str]:
         """Genera tags runtime para inyectar en la plantilla del prompt."""
         return {}
 
     def to_markdown(self, ctx: C) -> str:
-        """Genera la representación alternativa del contexto en formato Markdown."""
+        """Genera la representación Markdown de respaldo del contexto."""
         return ""
 
     def build_prompt(self, ctx: C, player_input: str) -> str:
-        """Construye el prompt completo utilizando PromptBuilder y la configuración del step."""
+        """Construye el prompt completo utilizando PromptBuilder."""
         tags = self.get_template_tags(ctx)
         ctx_md = self.to_markdown(ctx)
         return PromptBuilder.build(
             rules_path=self.rules_path,
-            gamecontext=ctx,
             game_context_str=ctx_md,
             user_input=player_input,
             template_tags=tags,
         )
 
-    def get_response_schema(self) -> Optional[dict]:
-        """Extrae el JSON schema del modelo de respuesta esperado."""
-        if self.response_model and hasattr(self.response_model, "model_json_schema"):
-            return self.response_model.model_json_schema()
-        return None
-
-    def validate(
-        self,
-        game_state_controller: GameStateController,
-        player_input: str,
-        llm_response: Optional[R] = None,
-    ) -> Tuple[bool, Optional[str], Optional[dict]]:
-        """Valida condiciones previas o la respuesta producida por el LLM."""
-        return True, None, None
-
-    def mutate(
-        self,
-        game_state_controller: GameStateController,
-        player_input: str,
-        llm_response: R,
-        is_valid: bool,
-        metadata: Optional[dict],
-    ) -> None:
-        """Aplica mutaciones de estado tras la validación."""
+    @abstractmethod
+    def fallback_narrative(self, controller: GameStateController, ctx: C) -> Tuple[str, Any]:
+        """Genera la narración determinista de respaldo cuando no se usa LLM."""
         pass
 
-    def build_result(
-        self,
-        game_state_controller: GameStateController,
-        player_input: str,
-        llm_response: R,
-        is_valid: bool,
-        reason: Optional[str],
-        metadata: Optional[dict],
-    ) -> ResultType:
-        """Construye el objeto ResultType con el resultado final del turno."""
-        msg = getattr(llm_response, "msg", "") or reason or ""
-        return ResultType(
-            success=is_valid,
-            message=msg,
-            data=metadata,
-        )
+    def generate_narrative(
+            self,
+            controller: GameStateController,
+            player_input: str = "",
+            transformer_engine: Optional[TransformerEngine] = None,
+    ) -> NarrativeResult:
+        """Genera la narrativa del turno invocando al TransformerEngine o usando el fallback determinista."""
+        ctx = self.build_context(controller, player_input)
+        prompt: Optional[str] = None
 
-    def execute(
-        self,
-        game_state_controller: GameStateController,
-        player_input: str,
-        llm_response: R,
-    ) -> ResultType:
-        """Template method que ejecuta la secuencia validate -> mutate -> build_result."""
-        is_valid, reason, metadata = self.validate(game_state_controller, player_input, llm_response)
-        self.mutate(game_state_controller, player_input, llm_response, is_valid, metadata)
-        return self.build_result(game_state_controller, player_input, llm_response, is_valid, reason, metadata)
+        if transformer_engine is not None:
+            try:
+                prompt = self.build_prompt(ctx, player_input)
+                schema = self.response_model.model_json_schema()
+                raw_dict = transformer_engine.execute(
+                    prompt=prompt,
+                    response_schema=schema,
+                    response_model=self.response_model,
+                    profile_name=self.profile_name,
+                )
+                msg = raw_dict.get("msg", "").strip()
+                extra = raw_dict.get("affinity", None)
+                if msg:
+                    return NarrativeResult(msg=msg, extra=extra, prompt=prompt)
+            except Exception as e:
+                logger.warning("Fallo en inferencia LLM para %s: %s. Usando fallback.", self.__class__.__name__, e)
+
+        fb_msg, fb_extra = self.fallback_narrative(controller, ctx)
+        return NarrativeResult(msg=fb_msg, extra=fb_extra, prompt=prompt)

@@ -1,11 +1,12 @@
 """Modelos del sistema, contextos de ejecución y proyecciones de estado."""
 
 from typing import Any, Dict, List, Optional, Union
-from pydantic import BaseModel, Field, computed_field
+
+from pydantic import BaseModel, Field
+
 from domains.base import Entity
-from domains.conversation import ConversationRecord
 from domains.npcs import NPC
-from domains.player import Player
+from domains.projections import PlaceProjection
 from domains.world import Place
 
 
@@ -29,9 +30,6 @@ class ResultType(BaseModel):
     data: Optional[Dict[str, Any]] = None
 
 
-from domains.projections import PlaceProjection
-
-
 class RuntimeState(BaseModel):
     """Estado volátil de runtime y control de juego."""
 
@@ -43,36 +41,6 @@ class RuntimeState(BaseModel):
     elapsed_time: int = 0
     inspection_history: List[Dict[str, str]] = Field(default_factory=list)
     active_npc_affinity: Optional[float] = None
-
-
-class GameState(BaseModel):
-    """Proyección completa del estado accesible y percepción actual del jugador."""
-
-    state: RuntimeState
-    player: Player
-    npcs: Dict[str, NPC] = Field(default_factory=dict)
-    place: Optional[Place] = None
-
-    @computed_field
-    @property
-    def active_npc_affinity(self) -> Optional[float]:
-        """Afinidad del NPC con el que se está conversando si player_state es TALK."""
-        if self.state.player_state.upper() == "TALK":
-            if self.state.active_npc_affinity is not None:
-                return self.state.active_npc_affinity
-            target = self.state.player_target
-            if target:
-                for npc in self.npcs.values():
-                    if npc.id == target or npc.name == target:
-                        return npc.affinity
-        return None
-
-
-class ActionCommand(BaseModel):
-    """Comando directo de acción emitido desde la interfaz de usuario."""
-
-    action: str
-    target: str
 
 
 class MoveNarratorCtx(ContextType):

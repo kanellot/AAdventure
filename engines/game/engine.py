@@ -1,528 +1,644 @@
-"""Motor principal de juego (Fachada) que coordina acciones, estado y reglas."""
+"""Motor principal de juego (GameEngine): orquestador de ciclo de vida y turnos deterministas."""
 
+from __future__ import annotations
+
+import logging
 import os
-import shutil
-from typing import List, Optional, Union
-from pydantic import BaseModel
-from adventure_packager import AdventurePackager
-from domains import (
-    ActionCommand,
+import queue
+import sys
+import threading
+import uuid
+from typing import Any, Dict, List, Optional, Tuple
+
+from domains.projections import (
     AvailableActionsProjection,
-    ConnectionProjection,
     GameStateProjection,
-    LocationHierarchyProjection,
-    MoveOptionProjection,
-    NPC,
-    Place,
-    PlaceDetailProjection,
-    PlaceProjection,
-    PlayerSummaryProjection,
-    ResultType,
+    InventoryProjection,
+    LoreGraphProjection,
+    NotebookProjection,
+    RagEvaluationProjection,
+    TurnOutput,
     TurnResultProjection,
     UIStateProjection,
     WorldHierarchyProjection,
+    WorldMapProjection,
 )
-from engines.game.actions import BaseAction, DialogueAction, LookAction, MoveAction
-from engines.game.lore_router import LoreRouter
-from engines.game.state_controller import GameStateController, WorldState
+from engines.embedding import EmbeddingEngine, EmbeddingFactory, MockEmbeddingBackend
+from engines.events import EngineEventListener, EngineTask, PopupEvent
+from engines.game.actions import DialogueAction, LookAction, MoveAction
+from engines.game.lore import (
+    AutonomousPushAction,
+    HsmCycleResult,
+    LoreConditionEvaluator,
+    LoreEffectApplier,
+    LoreStateMachine,
+)
+from engines.game.projections import ProjectionAssembler
+from engines.game.rag import RagAntennaEvaluator
+from engines.game.rules_validator import ActionValidationResult, RulesValidator
+from engines.game.state_controller import GameStateController
 from engines.game.utils import TimeCalculator
+from engines.game.worker import EngineWorker
 from engines.transformer import TransformerEngine
 
-# TurnOutput es canónicamente TurnResultProjection (mantiene compatibilidad 100%)
-TurnOutput = TurnResultProjection
+logger = logging.getLogger(__name__)
+
 
 
 class GameEngine:
-    """Coordinador y fachada principal del motor de juego."""
+    """Orquestador de turnos deterministas y fachada del motor de juego."""
+
+    MAX_AUTONOMOUS_CHAIN_DEPTH: int = 3
+    MAX_CONVERSATION_MESSAGES: int = 16
+    DIALOGUE_ELAPSED_MINUTES: int = 2
+    BASE_TRAVEL_SPEED: float = 4.5
 
     def __init__(
-        self,
-        world_json_path: str,
-        npcs_json_path: Optional[str] = None,
-        player_json_path: Optional[str] = None,
+            self,
+            game_state_controller: Optional[GameStateController] = None,
+            transformer_engine: Optional[TransformerEngine] = None,
+            embedding_engine: Optional[EmbeddingEngine] = None,
+            listeners: Optional[List[EngineEventListener]] = None,
+            aad_path: Optional[str] = None,
+            world_json_path: Optional[str] = None,
     ):
-        self.temp_dir: Optional[str] = None
-        self.turn_debug_steps: List[dict] = []
+        path = aad_path or world_json_path
+        if game_state_controller is None:
+            if path:
+                game_state_controller = GameStateController.from_aad(path)
+            else:
+                raise ValueError("Se requiere game_state_controller o aad_path para inicializar GameEngine.")
 
-        if world_json_path.lower().endswith(".aad"):
-            self.temp_dir = AdventurePackager.unpack_to_temp(world_json_path)
-            world_path = os.path.join(self.temp_dir, "world.json")
-            npcs_path = os.path.join(self.temp_dir, "npcs.json")
-            player_path = os.path.join(self.temp_dir, "player.json")
-        else:
-            world_path = world_json_path
-            npcs_path = npcs_json_path
-            player_path = player_json_path
+        self.game_state_controller = game_state_controller
 
-        self.world_state = WorldState(world_path, npcs_path, player_path)
-        self.game_state_controller = GameStateController.create_from_world(self.world_state)
-        self.fog_war = self.game_state_controller.fog_war
-
-    def __del__(self) -> None:
-        self.cleanup()
-
-    def cleanup(self) -> None:
-        """Limpia el directorio temporal si se extrajo un paquete .aad."""
-        if hasattr(self, "temp_dir") and self.temp_dir and os.path.exists(self.temp_dir):
-            try:
-                shutil.rmtree(self.temp_dir)
-            except Exception:
-                pass
-            self.temp_dir = None
-
-    def get_npc_by_name_or_id(self, target: str) -> Optional[NPC]:
-        """Busca un NPC por su ID o su nombre en el estado del mundo."""
-        if target in self.world_state.npcs:
-            return self.world_state.npcs[target]
-        if target in self.world_state.npcs_by_name:
-            return self.world_state.npcs_by_name[target]
-        return None
-
-    def get_npc_place(self, npc_id_or_name: str) -> Optional[Place]:
-        """Devuelve el objeto Place donde reside el NPC buscando en visible_entities."""
-        npc = self.get_npc_by_name_or_id(npc_id_or_name)
-        if not npc:
-            return None
-        for place in self.world_state.places_by_id.values():
-            if npc.id in place.visible_entities or npc.name in place.visible_entities:
-                return place
-        return None
-
-    def change_npc_affinity(self, npc_name_or_id: str, delta: float) -> None:
-        """Modifica la afinidad de un NPC."""
-        npc = self.get_npc_by_name_or_id(npc_name_or_id)
-        if npc:
-            npc.affinity = round(max(0.0, min(1.0, npc.affinity + delta)), 4)
-        for n in self.game_state_controller.data.npcs.values():
-            if n.id == npc_name_or_id or n.name == npc_name_or_id:
-                n.affinity = round(max(0.0, min(1.0, n.affinity + delta)), 4)
-
-    def get_player_name(self) -> str:
-        """Devuelve el nombre del jugador cargado en el estado."""
-        if self.game_state_controller.data.player:
-            return self.game_state_controller.data.player.name
-        return "Jugador"
-
-    def get_formatted_time(self) -> str:
-        """Devuelve el tiempo transcurrido formateado en 'Día X, HH:MM'."""
-        return TimeCalculator.format_elapsed_time(self.game_state_controller.data.state.elapsed_time)
-
-    def get_all_target_names(self) -> List[str]:
-        """Devuelve una lista ordenada con los nombres de todos los lugares y NPCs."""
-        place_names = sorted(list(self.world_state.places_by_name.keys()))
-        npc_names = sorted(list(self.world_state.npcs_by_name.keys()))
-        return place_names + npc_names
-
-    def get_discovered_target_names(self) -> List[str]:
-        """Devuelve una lista ordenada con los nombres de lugares y NPCs descubiertos (según la niebla de guerra)."""
-        if hasattr(self, "fog_war") and self.fog_war:
-            places = self.fog_war.get_all_discovered_places()
-            npcs = self.fog_war.get_visible_npcs()
-            return sorted(places + npcs)
-        return self.get_all_target_names()
-
-    def get_world_entities_hierarchy(self, use_fog_of_war: bool = True) -> List[dict]:
-        """
-        Devuelve una estructura jerárquica de localizaciones, lugares y NPCs.
-        Si use_fog_of_war es True, delega en self.fog_war para aplicar la niebla de guerra.
-        """
-        if use_fog_of_war and hasattr(self, "fog_war") and self.fog_war:
-            return self.fog_war.get_entities_hierarchy(self.world_state.world, self.world_state.npcs)
-
-        hierarchy = []
-        if not self.world_state or not self.world_state.world:
-            return hierarchy
-
-        all_npcs_accounted = set()
-
-        for loc in self.world_state.world.locations:
-            places_list = []
-            npcs_in_loc = []
-            seen_loc_npcs = set()
-
-            for place in loc.places:
-                places_list.append(place.name)
-                for ent_id in place.visible_entities:
-                    npc = self.get_npc_by_name_or_id(ent_id)
-                    if npc and npc.name not in seen_loc_npcs:
-                        npcs_in_loc.append(npc.name)
-                        seen_loc_npcs.add(npc.name)
-                        all_npcs_accounted.add(npc.id)
-                        all_npcs_accounted.add(npc.name)
-
-            hierarchy.append({
-                "location_name": loc.name,
-                "places": sorted(places_list),
-                "npcs": sorted(npcs_in_loc),
-            })
-
-        remaining_npcs = []
-        for npc_id, npc in self.world_state.npcs.items():
-            if npc_id not in all_npcs_accounted and npc.name not in all_npcs_accounted:
-                remaining_npcs.append(npc.name)
-                all_npcs_accounted.add(npc_id)
-                all_npcs_accounted.add(npc.name)
-
-        if remaining_npcs:
-            hierarchy.append({
-                "location_name": "Otras Entidades",
-                "places": [],
-                "npcs": sorted(remaining_npcs),
-            })
-
-        return hierarchy
-
-    def save(self) -> None:
-        """Sincroniza y persiste los cambios del controlador al WorldState."""
-        self.game_state_controller.save()
-
-    def _create_debug_turn_output(
-        self,
-        msg: str,
-        author: str,
-        info_msg: Optional[str] = None,
-    ) -> TurnResultProjection:
-        """Empaqueta TurnResultProjection junto con los registros de depuración y RAG."""
-        debug_prompts = []
-        debug_raws = []
-        debug_structureds = []
-        debug_results = []
-
-        for idx, debug in enumerate(self.turn_debug_steps, 1):
-            header = f"--- PASO {idx}: {debug['step_name']} ---\n"
-            debug_prompts.append(header + debug["prompt"])
-            debug_raws.append(header + debug["raw_response"])
-            debug_structureds.append(header + debug["structured_response"])
-            debug_results.append(header + debug["result"])
-
-        rag_eval = LoreRouter.get_instance().get_last_evaluation()
-
-        return TurnResultProjection(
-            msg=msg,
-            author=author,
-            info_msg=info_msg,
-            debug_prompt="\n\n".join(debug_prompts) if debug_prompts else None,
-            debug_raw_response="\n\n".join(debug_raws) if debug_raws else None,
-            debug_structured_response="\n\n".join(debug_structureds) if debug_structureds else None,
-            debug_engine_result="\n\n".join(debug_results) if debug_results else None,
-            rag_evaluation=rag_eval,
+        # Detección de entorno de prueba para Mock
+        is_test_mode = bool(
+            os.environ.get("TESTING")
+            or (
+                    "unittest" in sys.modules
+                    and not any(arg.endswith("main.py") or "main.py" in arg for arg in sys.argv)
+            )
         )
+
+        # Inicialización de TransformerEngine
+        if transformer_engine is None and path is not None:
+            if is_test_mode:
+                from engines.transformer.mock_adapter import MockLLMAdapter
+                transformer_engine = TransformerEngine(llm_adapter=MockLLMAdapter())
+            else:
+                try:
+                    from engines.transformer.factory import create_llm_adapter
+                    adapter = create_llm_adapter()
+                    transformer_engine = TransformerEngine(llm_adapter=adapter)
+                except Exception as e:
+                    logger.warning("Fallo al inicializar adaptador LLM real (%s). Usando MockLLMAdapter.", e)
+                    from engines.transformer.mock_adapter import MockLLMAdapter
+                    transformer_engine = TransformerEngine(llm_adapter=MockLLMAdapter())
+
+        self.transformer_engine = transformer_engine
+
+        # Inicialización de EmbeddingEngine
+        if embedding_engine is None:
+            if is_test_mode:
+                self.embedding_engine = EmbeddingEngine(backend=MockEmbeddingBackend())
+            else:
+                try:
+                    backend = EmbeddingFactory.get_backend()
+                    self.embedding_engine = EmbeddingEngine(backend=backend)
+                except Exception as e:
+                    logger.warning("Fallo al inicializar EmbeddingEngine real (%s). Usando MockEmbeddingBackend.", e)
+                    self.embedding_engine = EmbeddingEngine(backend=MockEmbeddingBackend())
+        else:
+            self.embedding_engine = embedding_engine
+
+        # Componente de concurrencia y worker en segundo plano
+        self.worker = EngineWorker(
+            turn_executor=self._execute_worker_task,
+            ui_state_provider=self.get_ui_state_projection,
+            listeners=listeners,
+        )
+
+    # =========================================================================
+    # Propiedades y Acceso Concurrente
+    # =========================================================================
+
+    @property
+    def listeners(self) -> List[EngineEventListener]:
+        return self.worker.listeners
+
+    @listeners.setter
+    def listeners(self, val: List[EngineEventListener]) -> None:
+        self.worker.listeners = list(val or [])
+
+    @property
+    def task_queue(self) -> queue.Queue[EngineTask]:
+        return self.worker.task_queue
+
+    @property
+    def worker_thread(self) -> Optional[threading.Thread]:
+        return self.worker.worker_thread
+
+    @property
+    def _running(self) -> bool:
+        return self.worker._running
+
+    @_running.setter
+    def _running(self, val: bool) -> None:
+        self.worker._running = val
+
+    def start(self) -> None:
+        """Inicia el worker en segundo plano."""
+        self.worker.start()
+
+    def stop(self) -> None:
+        """Detiene el bucle de trabajo de forma ordenada."""
+        self.worker.stop()
+
+    def add_listener(self, listener: EngineEventListener) -> None:
+        self.worker.add_listener(listener)
+
+    def remove_listener(self, listener: EngineEventListener) -> None:
+        self.worker.remove_listener(listener)
+
+    def notify_thinking(self, is_thinking: bool, task_id: str = "", action: str = "", target: str = "",
+                        source: str = "PLAYER") -> None:
+        self.worker.notify_thinking(is_thinking, task_id=task_id, action=action, target=target, source=source)
+
+    def notify_turn_completed(self, turn_result: TurnResultProjection, task_id: str = "") -> None:
+        self.worker.notify_turn_completed(turn_result, task_id=task_id)
+
+    # =========================================================================
+    # Métodos de Entrada de la UI (Encolamiento)
+    # =========================================================================
+
+    def enqueue_action(self, action: str = "", target: str = "", player_input: str = "") -> str:
+        """Encola una acción o input enviada por el jugador, notificando thinking síncronamente."""
+        task_id = f"task_{uuid.uuid4().hex[:8]}"
+        self.notify_thinking(
+            is_thinking=True,
+            task_id=task_id,
+            action=action,
+            target=target,
+            source="PLAYER",
+        )
+        self.worker.task_queue.put(
+            EngineTask(
+                task_id=task_id,
+                author="Player",
+                action=action,
+                target=target,
+                player_input=player_input,
+                source="PLAYER",
+                directive="",
+                bypass_llm=False,
+            )
+        )
+        return task_id
+
+    def enqueue_message(self, text: str) -> str:
+        """Encola texto libre del jugador."""
+        return self.enqueue_action(action="", target="", player_input=text)
+
+    def enqueue_start_game(self) -> str:
+        """Encola el Turno 0 para iniciar formalmente la partida."""
+        task_id = f"task_{uuid.uuid4().hex[:8]}"
+        self.notify_thinking(
+            is_thinking=True,
+            task_id=task_id,
+            action="START",
+            target="",
+            source="PLAYER",
+        )
+        self.worker.task_queue.put(
+            EngineTask(
+                task_id=task_id,
+                author="Dungeon Master",
+                action="__START__",
+                target="",
+                player_input="",
+                source="PLAYER",
+            )
+        )
+        return task_id
+
+    def _execute_worker_task(self, task: EngineTask) -> TurnResultProjection:
+        """Despacha la tarea al método de turno correspondiente."""
+        if task.action == "__START__":
+            return self.execute_turn_0()
+        return self.execute_turn(
+            action=task.action,
+            target=task.target,
+            player_input=task.player_input,
+            autonomous_depth=task.autonomous_depth,
+            directive=task.directive,
+            bypass_llm=task.bypass_llm,
+            author=task.author,
+            source=task.source,
+        )
+
+    # =========================================================================
+    # Pipeline Determinista de Turno (Turno 0 y 5 Fases)
+    # =========================================================================
+
+    def execute_turn_0(self) -> TurnResultProjection:
+        """Ejecuta el Turno 0 de inicio de partida (texto Dungeon Master y popups iniciales)."""
+        ctrl = self.game_state_controller
+        start_loc = ctrl.game_state.current_location
+
+        ctrl.set_player_state("EXPLORE")
+        ctrl.set_player_target(None)
+
+        # Ejecución del ciclo de Turno 0 en la máquina de estados de Lore
+        hsm_res = LoreStateMachine.execute_turn_0_cycle(ctrl)
+
+        # Emitir cada popup individualmente a los listeners de la UI
+        for p_title, p_msg in hsm_res.popups:
+            self.worker.notify_popup(PopupEvent(title=p_title, message=p_msg).model_dump_json())
+
+        popup_title = hsm_res.popup_title
+        popup_message = hsm_res.popup_message
+
+        # Obtención del texto introductorio
+        intro_text = (getattr(ctrl.world, "initial_text", "") or "").strip()
+        if not intro_text:
+            current_place = ctrl.places_by_id.get(start_loc)
+            if current_place and current_place.description:
+                intro_text = f"Te encuentras en {current_place.name}. {current_place.description}"
+            else:
+                intro_text = "Tu aventura comienza aquí."
+
+        output = TurnOutput(
+            author="Dungeon Master",
+            type="msg",
+            msg=intro_text,
+            player_state="EXPLORE",
+            popup_title=popup_title,
+            popup_message=popup_message,
+        )
+
+        turn_result = ProjectionAssembler.build_turn_result(output, ctrl)
+
+        if hsm_res.autonomous_push_actions:
+            for push in hsm_res.autonomous_push_actions:
+                push_task_id = f"task_{uuid.uuid4().hex[:8]}"
+                push_author = (
+                    ctrl.npcs_by_id[push.target].name
+                    if push.target in ctrl.npcs_by_id
+                    else (
+                        ctrl.npcs_by_name[push.target].name
+                        if hasattr(ctrl, "npcs_by_name") and push.target in ctrl.npcs_by_name
+                        else "Dungeon Master"
+                    )
+                )
+                self.worker.task_queue.put(
+                    EngineTask(
+                        task_id=push_task_id,
+                        author=push_author,
+                        action=push.action,
+                        target=push.target,
+                        source="LORE",
+                        autonomous_depth=1,
+                        directive=push.directive,
+                        bypass_llm=push.bypass_llm,
+                    )
+                )
+
+        return turn_result
 
     def execute_turn(
-        self,
-        action: Union[ActionCommand, str],
-        target: Optional[str] = None,
-        player_input: str = "",
-        dm: Optional[TransformerEngine] = None,
+            self,
+            action: str,
+            target: Optional[str] = None,
+            player_input: str = "",
+            autonomous_depth: int = 0,
+            directive: Optional[str] = None,
+            bypass_llm: bool = False,
+            author: Optional[str] = None,
+            source: str = "PLAYER",
     ) -> TurnResultProjection:
-        """Ejecuta un turno de juego según la acción solicitada (MOVE, LOOK, TALK)."""
-        self.turn_debug_steps.clear()
-        LoreRouter.get_instance().reset_evaluation(player_input=player_input or "")
+        """Ejecuta de forma síncrona el pipeline completo de 5 fases deterministas."""
+        ctrl = self.game_state_controller
 
-        if isinstance(action, ActionCommand):
-            action_type = action.action.upper()
-            target_name = action.target
-        elif isinstance(action, str):
-            clean_str = action.strip()
-            first_word = clean_str.split(maxsplit=1)[0].upper() if clean_str else ""
-            if first_word in ["MOVE", "LOOK", "TALK", "EXPLAIN", "EXPLORE"]:
-                parts = clean_str.split(maxsplit=1)
-                action_type = parts[0].upper()
-                target_name = parts[1].strip() if len(parts) > 1 else (target or "")
-            else:
-                curr_state = self.game_state_controller.data.state.player_state.upper()
-                if curr_state == "TALK":
-                    action_type = "TALK"
-                    target_name = self.game_state_controller.data.state.player_target or (target or "")
-                    if not player_input:
-                        player_input = action
-                elif curr_state == "LOOK":
-                    action_type = "LOOK"
-                    target_name = self.game_state_controller.data.state.player_target or (target or "")
-                    if not player_input:
-                        player_input = action
-                else:
-                    action_type = action.upper()
-                    target_name = target or ""
+        # ---------------------------------------------------------------------
+        # FASE 1: Verificación de Acción e Input Físico
+        # ---------------------------------------------------------------------
+        if source == "LORE":
+            # Acción autónoma Push: validada directamente por el motor (solo LOOK o TALK)
+            action_name = action.strip().upper()
+            resolved_target = target or ""
+            val_res = ActionValidationResult(
+                is_valid=True,
+                action_name=action_name,
+                resolved_target=resolved_target,
+            )
         else:
-            raise ValueError(f"Acción inválida: {action}")
+            val_res = RulesValidator.validate(action, target, player_input, ctrl)
+            if not val_res.is_valid:
+                return ProjectionAssembler.build_turn_result(val_res.error_output, ctrl)
 
-        if action_type in ["MOVE", "EXPLORE"]:
-            self.game_state_controller.update_state("EXPLORE")
-            self.game_state_controller.data.state.player_target = ""
-            self.game_state_controller.data.state.active_npc_affinity = None
-            if hasattr(self.game_state_controller.data.state, "inspection_history"):
-                self.game_state_controller.data.state.inspection_history.clear()
-            step = MoveAction(target_name)
-            final_author = "Dungeon Master"
+            action_name = val_res.action_name
+            resolved_target = val_res.resolved_target
 
-        elif action_type in ["LOOK", "EXPLAIN"]:
-            if self.game_state_controller.data.state.player_target != target_name:
-                if hasattr(self.game_state_controller.data.state, "inspection_history"):
-                    self.game_state_controller.data.state.inspection_history.clear()
-            self.game_state_controller.update_state("LOOK")
-            self.game_state_controller.data.state.player_target = target_name
-            self.game_state_controller.data.state.active_npc_affinity = None
-            step = LookAction(target_name)
-            final_author = "Dungeon Master"
+        # ---------------------------------------------------------------------
+        # FASE 2: Mutación Canónica de Estado
+        # ---------------------------------------------------------------------
+        if action_name == "MOVE":
+            ctrl.set_player_state("EXPLORE")
+            ctrl.set_player_target(None)
+            destination_place = val_res.traversed_places[-1]
+            ctrl.set_current_location(destination_place.id)
+            travel_minutes = TimeCalculator.calculate_travel_time(
+                val_res.traversed_conns,
+                travel_speed=self.BASE_TRAVEL_SPEED,
+            )
+            ctrl.add_elapsed_minutes(travel_minutes)
 
-        elif action_type == "TALK":
-            if hasattr(self.game_state_controller.data.state, "inspection_history"):
-                self.game_state_controller.data.state.inspection_history.clear()
-            npc = self.get_npc_by_name_or_id(target_name)
-            if npc:
-                npc_place = self.get_npc_place(npc.id)
-                if npc_place and (
-                    not self.game_state_controller.data.place
-                    or self.game_state_controller.data.place.id != npc_place.id
-                ):
-                    self.game_state_controller.update_location(npc_place.name)
+        elif action_name == "TALK":
+            ctrl.set_player_state("TALK")
+            ctrl.set_player_target(resolved_target)
+            ctrl.add_elapsed_minutes(self.DIALOGUE_ELAPSED_MINUTES)
 
-                loaded_npc = self.game_state_controller.load_npc(npc.id)
-                self.game_state_controller.update_state("TALK")
-                self.game_state_controller.data.state.player_target = npc.name
-                actual_npc = loaded_npc or npc
-                self.game_state_controller.data.state.active_npc_affinity = round(actual_npc.affinity, 4)
-                final_author = npc.name
-            else:
-                self.game_state_controller.update_state("TALK")
-                self.game_state_controller.data.state.player_target = target_name
-                self.game_state_controller.sync_active_npc_affinity()
-                final_author = target_name
+        elif action_name == "LOOK":
+            ctrl.set_player_state("LOOK")
+            ctrl.set_player_target(resolved_target)
 
-            step = DialogueAction(target_name)
-        else:
-            return self._create_debug_turn_output(author="SYSTEM", msg=f"Acción desconocida: '{action_type}'")
-
-        res = self._run_step(step, player_input, dm)
-        if not res.success:
-            return self._create_debug_turn_output(author="SYSTEM", msg=res.message)
-
-        return self._create_debug_turn_output(msg=res.message, author=final_author)
-
-    def _run_step(self, step: BaseAction, player_input: str, dm: TransformerEngine) -> ResultType:
-        """Ejecuta el ciclo de vida del step contra el transformer engine."""
-        ctx = step.build_context(self.game_state_controller, player_input)
-        prompt = step.build_prompt(ctx, player_input)
-        response_schema = step.get_response_schema()
-        schema_name = getattr(step.response_model, "__name__", "StructuredResponse")
-
-        llm_raw = dm.execute(
-            prompt=prompt,
-            response_schema=response_schema,
-            response_model=step.response_model,
-            profile_name=step.profile_name,
-            schema_name=schema_name,
+        # Identificación de la entidad activa para sesgo RAG
+        active_entity_id = (
+            resolved_target
+            if action_name in ("TALK", "LOOK")
+            else (val_res.traversed_places[
+                      -1].id if action_name == "MOVE" and val_res.traversed_places else ctrl.game_state.current_location)
         )
-        llm_response = step.response_model.model_validate(llm_raw)
-        result = step.execute(self.game_state_controller, player_input, llm_response)
+        active_entity_name = (
+            ctrl.npcs_by_id[active_entity_id].name
+            if active_entity_id in ctrl.npcs_by_id
+            else (
+                ctrl.places_by_id[active_entity_id].name if active_entity_id in ctrl.places_by_id else active_entity_id)
+        )
 
-        self.save()
-
-        debug_info = {
-            "step_name": step.__class__.__name__,
-            "prompt": prompt,
-            "raw_response": str(llm_raw),
-            "structured_response": (
-                llm_response.model_dump_json(indent=2)
-                if hasattr(llm_response, "model_dump_json")
-                else str(llm_response)
-            ),
-            "result": (
-                result.model_dump_json(indent=2)
-                if hasattr(result, "model_dump_json")
-                else str(result)
-            ),
-        }
-        self.turn_debug_steps.append(debug_info)
-
-        if self.game_state_controller.data.state.player_state.upper() not in ["TALK", "LOOK"]:
-            current_target = self.game_state_controller.data.state.player_target
-            current_prev_place = self.game_state_controller.data.state.prev_place
-            self.game_state_controller = GameStateController.create_from_world(
-                self.world_state,
-                target=current_target,
-                prev_place=current_prev_place,
+        # ---------------------------------------------------------------------
+        # Evaluación Semántica RAG (Deduplicada)
+        # ---------------------------------------------------------------------
+        eval_query = player_input.strip() if player_input and source == "PLAYER" else ""
+        rag_evaluation = None
+        precomputed_scores = {}
+        if eval_query:
+            rag_evaluation, _, precomputed_scores = RagAntennaEvaluator.evaluate_antennas(
+                eval_query=eval_query,
+                ctrl=ctrl,
+                embedding_engine=self.embedding_engine,
+                active_entity_id=active_entity_id,
+                active_entity_name=active_entity_name,
             )
 
-        return result
+        # ---------------------------------------------------------------------
+        # FASE 3: Máquina de Estados HSM y Ciclo en Cascada
+        # ---------------------------------------------------------------------
+        hsm_res: HsmCycleResult = LoreStateMachine.execute_cycle(
+            ctrl=ctrl,
+            eval_query=eval_query,
+            precomputed_scores=precomputed_scores,
+            embedding_engine=self.embedding_engine,
+            active_entity_id=active_entity_id,
+            action_name=action_name,
+            source=source,
+        )
 
-    def _build_world_hierarchy_projection(self, raw_hierarchy: List[dict]) -> WorldHierarchyProjection:
-        """Convierte una lista jerárquica cruda a WorldHierarchyProjection."""
-        locations_proj = []
-        for loc in raw_hierarchy:
-            places_proj = []
-            visited_list = loc.get("visited_places", [])
-            for p in loc.get("places", []):
-                if isinstance(p, PlaceProjection):
-                    places_proj.append(p)
-                elif isinstance(p, dict):
-                    places_proj.append(
-                        PlaceProjection(
-                            id=p.get("id", p.get("name", "")),
-                            name=p.get("name", ""),
-                            status=p.get("status", "visible"),
+        # Emitir cada popup individualmente a los listeners de UI
+        for p_title, p_msg in hsm_res.popups:
+            self.worker.notify_popup(PopupEvent(title=p_title, message=p_msg).model_dump_json())
+
+        if rag_evaluation and hsm_res.injected_directive:
+            rag_evaluation.injected_directive = hsm_res.injected_directive
+
+        # ---------------------------------------------------------------------
+        # FASE 4: Orquestación Narrativa
+        # ---------------------------------------------------------------------
+        if source == "LORE":
+            # Turno autónomo push: usa directive y bypass_llm propios de la tarea
+            effective_bypass = bypass_llm and bool(directive)
+            default_author = (
+                ctrl.npcs_by_id[resolved_target].name
+                if action_name == "TALK" and resolved_target in ctrl.npcs_by_id
+                else "Dungeon Master"
+            )
+            push_author = author or default_author
+
+            if effective_bypass:
+                output = TurnOutput(
+                    author=push_author,
+                    type="msg",
+                    msg=directive or "",
+                    player_state=ctrl.game_state.player_state,
+                )
+                prompt_text = None
+            else:
+                output, prompt_text = self._generate_narrative_output(
+                    action_name=action_name,
+                    target=resolved_target,
+                    player_input="",
+                    val_res=val_res,
+                    directive=directive,
+                )
+                output.author = push_author
+        else:
+            # Turno del jugador: evalúa bypass y directiva inyectada por hooks
+            effective_bypass = hsm_res.bypass_llm or (bypass_llm and bool(directive))
+            effective_bypass_text = hsm_res.bypass_text or directive
+
+            if effective_bypass and effective_bypass_text:
+                output = TurnOutput(
+                    author=hsm_res.bypass_author or (
+                        ctrl.npcs_by_id[resolved_target].name
+                        if action_name == "TALK" and resolved_target in ctrl.npcs_by_id
+                        else "Dungeon Master"
+                    ),
+                    type="msg",
+                    msg=effective_bypass_text,
+                    player_state=ctrl.game_state.player_state,
+                )
+                prompt_text = None
+            else:
+                output, prompt_text = self._generate_narrative_output(
+                    action_name=action_name,
+                    target=resolved_target if action_name in ("TALK", "LOOK") else (target or ""),
+                    player_input=player_input,
+                    val_res=val_res,
+                    directive=hsm_res.injected_directive or directive,
+                )
+
+        if hsm_res.popup_message:
+            output.popup_message = hsm_res.popup_message
+            output.popup_title = hsm_res.popup_title
+
+        # ---------------------------------------------------------------------
+        # FASE 5: Emisión de Proyección Consolidada y Encadenamiento Autónomo
+        # ---------------------------------------------------------------------
+        turn_result = ProjectionAssembler.build_turn_result(
+            output=output,
+            ctrl=ctrl,
+            prompt_text=prompt_text,
+            rag_eval=rag_evaluation,
+        )
+
+        if hsm_res.autonomous_push_actions:
+            if autonomous_depth < self.MAX_AUTONOMOUS_CHAIN_DEPTH:
+                for push in hsm_res.autonomous_push_actions:
+                    push_task_id = f"task_{uuid.uuid4().hex[:8]}"
+                    push_author = (
+                        ctrl.npcs_by_id[push.target].name
+                        if push.target in ctrl.npcs_by_id
+                        else (
+                            ctrl.npcs_by_name[push.target].name
+                            if hasattr(ctrl, "npcs_by_name") and push.target in ctrl.npcs_by_name
+                            else "Dungeon Master"
                         )
                     )
-                else:
-                    p_name = str(p)
-                    p_status = getattr(p, "status", None)
-                    if not p_status:
-                        p_status = "visited" if p_name in visited_list else "visible"
-                    places_proj.append(
-                        PlaceProjection(
-                            id=getattr(p, "id", p_name),
-                            name=p_name,
-                            status=p_status,
+                    self.worker.task_queue.put(
+                        EngineTask(
+                            task_id=push_task_id,
+                            author=push_author,
+                            action=push.action,
+                            target=push.target,
+                            source="LORE",
+                            autonomous_depth=autonomous_depth + 1,
+                            directive=push.directive,
+                            bypass_llm=push.bypass_llm,
                         )
                     )
-            locations_proj.append(
-                LocationHierarchyProjection(
-                    location_name=loc.get("location_name", "Desconocido"),
-                    places=places_proj,
-                    npcs=loc.get("npcs", []),
+            else:
+                logger.warning(
+                    "Límite MAX_AUTONOMOUS_CHAIN_DEPTH (%d) alcanzado; bucle autónomo detenido de forma segura.",
+                    self.MAX_AUTONOMOUS_CHAIN_DEPTH,
                 )
+
+        return turn_result
+
+    def _generate_narrative_output(
+            self,
+            action_name: str,
+            target: str,
+            player_input: str,
+            val_res: ActionValidationResult,
+            directive: Optional[str] = None,
+    ) -> Tuple[TurnOutput, Optional[str]]:
+        """Invoca a las acciones desacopladas (MoveAction, DialogueAction, LookAction)."""
+        ctrl = self.game_state_controller
+
+        if action_name == "MOVE":
+            origin = val_res.traversed_places[0] if val_res.traversed_places else ctrl.game_state.place
+            dest = val_res.traversed_places[-1] if val_res.traversed_places else ctrl.game_state.place
+            path_taken = val_res.traversed_places[1:-1] if len(val_res.traversed_places) > 2 else []
+            travel_time = TimeCalculator.calculate_travel_time(val_res.traversed_conns,
+                                                               travel_speed=self.BASE_TRAVEL_SPEED)
+            move_act = MoveAction(
+                origin_place=origin,
+                destination_place=dest,
+                path_taken=path_taken,
+                travel_time=travel_time,
+                directive=directive,
+                blocked_place=val_res.blocked_place_obstacle,
             )
-        return WorldHierarchyProjection(locations=locations_proj)
-
-    def get_navigation_hierarchy(self) -> WorldHierarchyProjection:
-        """Devuelve la jerarquía del mundo filtrada según fog_war (percepción del jugador)."""
-        raw_list = self.get_world_entities_hierarchy(use_fog_of_war=True)
-        return self._build_world_hierarchy_projection(raw_list)
-
-    def get_entities_hierarchy(self) -> WorldHierarchyProjection:
-        """Devuelve la jerarquía completa de todas las entidades del mundo sin niebla (para depuración)."""
-        raw_list = self.get_world_entities_hierarchy(use_fog_of_war=False)
-        return self._build_world_hierarchy_projection(raw_list)
-
-    def get_game_state_projection(self) -> GameStateProjection:
-        """Devuelve una proyección exhaustiva del estado actual para el inspector visual."""
-        state = self.game_state_controller.data.state
-        player = self.game_state_controller.data.player
-        place = self.game_state_controller.data.place
-
-        player_summary = PlayerSummaryProjection(
-            id=player.id if player else "player",
-            name=player.name if player else "Jugador",
-            description=player.description if player else "",
-            gold=player.gold if player else 0,
-            player_location=player.player_location if player else "",
-            state=player.state if player else "EXPLORE",
-            active_quest=player.active_quest if player else None,
-            completed_quests=list(player.completed_quests) if player else [],
-            inventory=list(player.inventory) if player else [],
-            visited_places=list(player.visited_places) if player else [],
-        )
-
-        place_detail = None
-        if place:
-            connections_proj = []
-            for direction, conn in (place.connections or {}).items():
-                connections_proj.append(
-                    ConnectionProjection(
-                        direction=direction,
-                        target=conn.target,
-                        distance=conn.distance,
-                        terrain_type=getattr(conn, "terrain_type", "normal") or "normal",
-                    )
-                )
-            place_detail = PlaceDetailProjection(
-                id=place.id,
-                name=place.name,
-                description=place.description,
-                visible_entities=list(place.visible_entities or []),
-                connections=connections_proj,
+            res = move_act.generate_narrative(ctrl, player_input, self.transformer_engine)
+            return (
+                TurnOutput(
+                    author="Dungeon Master",
+                    type="msg",
+                    msg=res.msg,
+                    player_state="EXPLORE",
+                ),
+                res.prompt,
             )
 
-        discovered = (
-            self.fog_war.get_all_discovered_places()
-            if hasattr(self, "fog_war") and self.fog_war
-            else []
-        )
-        visible_npcs = (
-            self.fog_war.get_visible_npcs()
-            if hasattr(self, "fog_war") and self.fog_war
-            else []
-        )
+        elif action_name == "TALK":
+            npc = ctrl.npcs_by_id.get(target)
+            npc_name = npc.name if npc else target
+            dialogue_act = DialogueAction(target_npc=target, directive=directive)
+            res = dialogue_act.generate_narrative(ctrl, player_input, self.transformer_engine)
+            if res.extra is not None:
+                ctrl.update_npc_affinity(target, res.extra)
 
-        active_affinity = None
-        if state and state.player_state.upper() == "TALK":
-            active_affinity = self.game_state_controller.sync_active_npc_affinity()
-            if active_affinity is None:
-                active_affinity = getattr(state, "active_npc_affinity", None)
+            ctrl.append_dialogue_exchange(
+                target_id=target,
+                player_msg=player_input,
+                npc_name=npc_name,
+                npc_msg=res.msg,
+                max_messages=self.MAX_CONVERSATION_MESSAGES,
+            )
+            return (
+                TurnOutput(
+                    author=npc_name,
+                    type="msg",
+                    msg=res.msg,
+                    player_state="TALK",
+                ),
+                res.prompt,
+            )
 
-        return GameStateProjection(
-            player=player_summary,
-            player_state=state.player_state if state else "EXPLORE",
-            player_target=state.player_target if state else "",
-            active_npc_affinity=active_affinity,
-            current_place=place.name if place else None,
-            current_place_detail=place_detail,
-            prev_place=state.prev_place.name if state and state.prev_place else None,
-            travel_speed=state.travel_speed if state else 4.5,
-            elapsed_time=state.elapsed_time if state else 0,
-            formatted_time=self.get_formatted_time(),
-            discovered_places=discovered,
-            visible_npcs=visible_npcs,
-        )
+        elif action_name == "LOOK":
+            look_act = LookAction(target=target, directive=directive)
+            res = look_act.generate_narrative(ctrl, player_input, self.transformer_engine)
+            return (
+                TurnOutput(
+                    author="Dungeon Master",
+                    type="msg",
+                    msg=res.msg,
+                    player_state="LOOK",
+                ),
+                res.prompt,
+            )
+
+        return (TurnOutput(author="SYSTEM", type="msg", msg="", player_state="EXPLORE"), None)
+
+    # =========================================================================
+    # Proyecciones DTO Públicas
+    # =========================================================================
 
     def get_ui_state_projection(self) -> UIStateProjection:
-        """Devuelve un resumen del estado del juego en formato DTO para la interfaz."""
-        state = self.game_state_controller.data.state
-        player = self.game_state_controller.data.player
-        place = self.game_state_controller.data.place
-
-        active_affinity = None
-        if state and state.player_state.upper() == "TALK":
-            active_affinity = self.game_state_controller.sync_active_npc_affinity()
-            if active_affinity is None:
-                active_affinity = getattr(state, "active_npc_affinity", None)
-
-        return UIStateProjection(
-            player_name=player.name if player else "Jugador",
-            gold=player.gold if player else 0,
-            current_location=place.name if place else "Desconocido",
-            formatted_time=self.get_formatted_time(),
-            game_state=state.player_state.upper() if state else "EXPLORE",
-            player_target=state.player_target if state else None,
-            active_npc_affinity=active_affinity,
-        )
-
-    def get_active_npc_affinity(self) -> Optional[float]:
-        """Devuelve la afinidad del NPC activo en conversación, o None si no está en TALK."""
-        return self.game_state_controller.sync_active_npc_affinity()
+        return ProjectionAssembler.build_ui_state_projection(self.game_state_controller)
 
     def get_available_actions_projection(self) -> AvailableActionsProjection:
-        """Devuelve las acciones disponibles en formato DTO para la interfaz de usuario."""
-        current_place = self.game_state_controller.data.place
-        moves = []
-        if current_place and current_place.connections:
-            for direction, conn in current_place.connections.items():
-                moves.append(
-                    MoveOptionProjection(
-                        direction=direction,
-                        target=conn.target,
-                        distance=conn.distance,
-                        terrain=conn.terrain_type or "normal",
-                    )
-                )
+        return ProjectionAssembler.build_available_actions_projection(self.game_state_controller)
 
-        npcs = []
-        for npc_info in self.game_state_controller.get_npc_list():
-            npcs.append(npc_info["name"])
+    def get_navigation_hierarchy(self) -> WorldHierarchyProjection:
+        return ProjectionAssembler.build_navigation_hierarchy(self.game_state_controller)
 
-        look_targets = [current_place.name] if current_place else []
+    def get_entities_hierarchy(self) -> WorldHierarchyProjection:
+        return ProjectionAssembler.build_entities_hierarchy(self.game_state_controller)
 
-        return AvailableActionsProjection(
-            moves=moves,
-            npcs=npcs,
-            look_targets=look_targets,
-        )
+    def get_lore_graph_projection(self) -> LoreGraphProjection:
+        return ProjectionAssembler.build_lore_graph_projection(self.game_state_controller)
 
-    def get_available_actions(self) -> dict:
-        """Devuelve las acciones disponibles para la interfaz de usuario (compatibilidad dict)."""
-        return self.get_available_actions_projection().model_dump()
+    def get_game_state_projection(self) -> GameStateProjection:
+        return ProjectionAssembler.build_game_state_projection(self.game_state_controller, self.BASE_TRAVEL_SPEED)
 
-    def get_ui_state(self) -> dict:
-        """Devuelve un resumen del estado del juego para la barra de interfaz (compatibilidad dict)."""
-        return self.get_ui_state_projection().model_dump()
+    def get_world_map_projection(self) -> WorldMapProjection:
+        return ProjectionAssembler.build_world_map_projection(self.game_state_controller)
+
+    def get_inventory_projection(self) -> InventoryProjection:
+        return ProjectionAssembler.build_inventory_projection(self.game_state_controller)
+
+    def get_notebook_projection(self) -> NotebookProjection:
+        return NotebookProjection(quests=list(self.game_state_controller.game_state.notebook))
+
+    def get_player_name(self) -> str:
+        return self.game_state_controller.game_state.player_name
+
+    def get_world_name(self) -> str:
+        return self.game_state_controller.world.name if self.game_state_controller.world else "Aventura"
+
+    def get_all_target_names(self) -> List[str]:
+        ctrl = self.game_state_controller
+        names = set()
+        for p in ctrl.places_by_id.values():
+            names.add(p.name)
+            names.add(p.id)
+        for n in ctrl.npcs_by_id.values():
+            names.add(n.name)
+            names.add(n.id)
+        for it in ctrl.items_by_id.values():
+            names.add(it.name)
+            names.add(it.id)
+        return sorted(list(names))
+
+

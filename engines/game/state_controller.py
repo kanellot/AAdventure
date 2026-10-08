@@ -1,291 +1,514 @@
-"""Controlador de estado de juego y proyección de entidades del mundo."""
+"""Controlador del estado activo de juego (GameState) y persistencia canónica."""
 
-import json
-from typing import Dict, List, Optional
-from domains import (
+from __future__ import annotations
+
+import logging
+import os
+from typing import Dict, List, Literal, Optional
+
+logger = logging.getLogger(__name__)
+
+from domains.game_state import (
+    EntityMapItem,
+    EntityMapLocation,
+    EntityMapNPC,
+    EntityMapPlace,
     GameState,
-    NPC,
-    Place,
-    PlaceProjection,
-    Player,
-    RuntimeState,
-    World,
+    Inventory,
+    LoreBlockHierarchy,
+    NotebookEntry,
 )
-from engines.game.utils import FogWar, PathCalculator, TimeCalculator
-
-
-class WorldState:
-    """Administra el estado dinámico global de todo el mundo de juego."""
-
-    def __init__(self, world_json_path: str, npcs_json_path: str, player_json_path: str):
-        self.world_json_path = world_json_path
-        self.npcs_json_path = npcs_json_path
-        self.player_json_path = player_json_path
-
-        self.world: Optional[World] = None
-        self.npcs: Dict[str, NPC] = {}
-        self.player: Optional[Player] = None
-
-        self.places_by_name: Dict[str, Place] = {}
-        self.places_by_id: Dict[str, Place] = {}
-        self.npcs_by_name: Dict[str, NPC] = {}
-
-        self.load_initial_state()
-
-    def load_initial_state(self) -> None:
-        """Carga y valida los archivos JSON de inicialización del mundo."""
-        with open(self.world_json_path, "r", encoding="utf-8") as f:
-            world_data = json.load(f)
-        self.world = World.model_validate(world_data["world"])
-
-        for loc in self.world.locations:
-            for place in loc.places:
-                self.places_by_name[place.name] = place
-                self.places_by_id[place.id] = place
-
-        with open(self.npcs_json_path, "r", encoding="utf-8") as f:
-            npcs_data = json.load(f)
-        for npc_data in npcs_data["NPCS"]:
-            npc = NPC.model_validate(npc_data)
-            self.npcs[npc.id] = npc
-            self.npcs_by_name[npc.name] = npc
-
-        with open(self.player_json_path, "r", encoding="utf-8") as f:
-            player_data = json.load(f)
-        self.player = Player.model_validate(player_data["player"])
+from domains.items import Item
+from domains.npcs import NPC
+from domains.player import Player
+from domains.world import Place, World
 
 
 class GameStateController:
-    """Gestiona la lógica activa, mutación y persistencia de GameState."""
+    """Gestiona el estado activo de la partida (GameState), mutaciones y persistencia."""
 
-    def __init__(self, data: GameState, world_state: WorldState, fog_war: Optional[FogWar] = None):
-        self.data = data
-        self.world_state = world_state
+    def __init__(
+            self,
+            game_state: GameState,
+            world: Optional[World] = None,
+            npcs: Optional[List[NPC]] = None,
+            items: Optional[List[Item]] = None,
+            adventure_path: Optional[str] = None,
+            fog_war_enabled: bool = True,
+    ):
+        self.game_state = game_state
+        self.world = world
+        self.adventure_path = adventure_path
+        self.fog_war_enabled = fog_war_enabled
 
-        if fog_war is not None:
-            self.fog_war = fog_war
-        else:
-            visited = getattr(data.player, "visited_places", []) or []
-            initial = data.place.name if data.place else (data.player.player_location if data.player else None)
-            self.fog_war = FogWar(
-                places=world_state.places_by_name,
-                initial_place=initial,
-                visited_places=visited,
-                world=world_state.world,
-                npcs=world_state.npcs,
+        # Catálogos de consulta O(1)
+        self.npcs_by_id: Dict[str, NPC] = {n.id: n for n in (npcs or [])}
+        self.npcs_by_name: Dict[str, NPC] = {n.name: n for n in (npcs or [])}
+        self.items_by_id: Dict[str, Item] = {i.id: i for i in (items or [])}
+        self.items_by_name: Dict[str, Item] = {i.name: i for i in (items or [])}
+        self.places_by_id: Dict[str, Place] = {}
+        self.places_by_name: Dict[str, Place] = {}
+        if world:
+            for loc in world.locations:
+                for p in loc.places:
+                    self.places_by_id[p.id] = p
+                    self.places_by_name[p.name] = p
+
+        # Asegurar que el objeto place esté sincronizado con current_location
+        if self.world and not self.game_state.place and self.game_state.current_location:
+            self.game_state.place = self.places_by_id.get(self.game_state.current_location)
+
+        # Biblioteca inmutable/estructural de LoreBlocks
+        from engines.game.lore.library import LoreLibrary
+        all_blocks = []
+        if self.game_state and self.game_state.loreblocks:
+            all_blocks = (
+                list(self.game_state.loreblocks.unknown)
+                + list(self.game_state.loreblocks.active)
+                + list(self.game_state.loreblocks.done)
+                + list(self.game_state.loreblocks.popups)
             )
-
-        if self.data.place:
-            self.fog_war.visit(self.data.place.name)
-            if hasattr(self.data.player, "visited_places"):
-                if self.data.place.name not in self.data.player.visited_places:
-                    self.data.player.visited_places.append(self.data.place.name)
+        self.lore_library = LoreLibrary(all_blocks)
 
     @classmethod
-    def create_from_world(
-        cls,
-        world_state: WorldState,
-        target: str = "",
-        prev_place: Optional[PlaceProjection] = None,
-    ) -> "GameStateController":
-        """Genera una proyección del GameState basada en el estado global del mundo."""
-        player = world_state.player
-        if not player:
-            raise ValueError("No se puede crear GameState sin un jugador cargado en WorldState.")
+    def create_initial(
+            cls,
+            world: World,
+            player: Player,
+            npcs: Optional[List[NPC]] = None,
+            items: Optional[List[Item]] = None,
+            loreblocks_hierarchy: Optional[LoreBlockHierarchy] = None,
+            adventure_path: Optional[str] = None,
+            elapsed_time_enabled: bool = True,
+            fog_war_enabled: bool = True,
+    ) -> GameStateController:
+        """Inicializa GameStateController a partir de las entidades de la historia."""
+        all_npcs = npcs or []
+        all_items = items or []
+        start_location = player.initial_location or ""
 
-        current_place_orig = world_state.places_by_name.get(player.player_location)
-        current_place = current_place_orig.model_copy(deep=True) if current_place_orig else None
+        # Construir mapa jerárquico por Location
+        places_by_id: Dict[str, Place] = {}
+        for loc in world.locations:
+            for p in loc.places:
+                places_by_id[p.id] = p
 
-        current_place_proj = None
-        if current_place:
-            current_place_proj = PlaceProjection(id=current_place.id, name=current_place.name)
+        places_by_name = {p.name: p for p in places_by_id.values()}
+        if start_location in places_by_name:
+            start_location = places_by_name[start_location].id
 
-        initial_state = player.state.upper() if player.state else "EXPLORE"
-        if initial_state not in ["TALK", "LOOK"]:
-            initial_state = "EXPLORE"
+        for npc in all_npcs:
+            loc_val = getattr(npc, "initial_location", None)
+            if loc_val in places_by_name:
+                npc.initial_location = places_by_name[loc_val].id
 
-        runtime_state = RuntimeState(
-            player_state=initial_state,
-            player_target=target,
-            current_place=current_place_proj,
-            prev_place=prev_place,
-            travel_speed=player.travel_speed,
-            elapsed_time=player.elapsed_time,
+        for it in all_items:
+            loc_val = getattr(it, "initial_location", None)
+            if loc_val in places_by_name:
+                it.initial_location = places_by_name[loc_val].id
+
+        initial_place = places_by_id.get(start_location)
+        connected_ids = set()
+        if initial_place:
+            for k, conn in initial_place.connections.items():
+                target = getattr(conn, "target", k) if hasattr(conn, "target") else (
+                    conn.get("target", k) if isinstance(conn, dict) else k)
+                if target in places_by_name:
+                    connected_ids.add(places_by_name[target].id)
+                else:
+                    connected_ids.add(target)
+                connected_ids.add(k)
+
+        entity_map: List[EntityMapLocation] = []
+        for loc in world.locations:
+            places_dto: List[EntityMapPlace] = []
+            for p in loc.places:
+                # Niebla de guerra inicial
+                if p.id == start_location:
+                    status = "visited"
+                elif not fog_war_enabled or p.id in connected_ids:
+                    status = "visible"
+                else:
+                    status = "hidden"
+
+                # Entidades presentes en este lugar
+                place_items: List[EntityMapItem] = []
+                for it in all_items:
+                    if getattr(it, "initial_location", None) == p.id:
+                        place_items.append(
+                            EntityMapItem(
+                                id=it.id,
+                                name=it.name,
+                                visible=(status == "visited"),
+                            )
+                        )
+
+                place_npcs: List[EntityMapNPC] = []
+                for npc in all_npcs:
+                    if getattr(npc, "initial_location", None) == p.id:
+                        place_npcs.append(
+                            EntityMapNPC(
+                                id=npc.id,
+                                name=npc.name,
+                                status="visible" if status == "visited" else "visible",
+                                affinity=getattr(npc, "affinity", 0.5),
+                            )
+                        )
+
+                places_dto.append(
+                    EntityMapPlace(
+                        id=p.id,
+                        name=p.name,
+                        status=status,
+                        items=place_items,
+                        npcs=place_npcs,
+                    )
+                )
+
+            entity_map.append(
+                EntityMapLocation(
+                    id=loc.id,
+                    name=loc.name,
+                    places=places_dto,
+                )
+            )
+
+        # Cuaderno de misiones iniciales
+        notebook: List[NotebookEntry] = []
+        hierarchy = loreblocks_hierarchy or LoreBlockHierarchy()
+        for cat in ("active", "done"):
+            for blk in hierarchy.get(cat, []):
+                if blk.get("type") in ("Chapter", "Quest", "Task"):
+                    notebook.append(
+                        NotebookEntry(
+                            id=blk.get("id", ""),
+                            name=blk.get("name", ""),
+                            description=blk.get("description", ""),
+                            status=cat,
+                        )
+                    )
+
+        initial_time = "Día 1, 08:00" if elapsed_time_enabled else None
+        inventory = Inventory(items=list(player.inventory), gold=player.gold)
+
+        state = GameState(
+            player_name=player.name,
+            player_state="EXPLORE",
+            player_target=None,
+            current_location=start_location,
+            current_time=initial_time,
+            inventory=inventory,
+            place=initial_place,
+            entity_map=entity_map,
+            loreblocks=hierarchy,
+            notebook=notebook,
+            conversations={},
         )
 
-        player_copy = player.model_copy(deep=True)
-
-        npcs = {}
-        if current_place:
-            for entity_id in current_place.visible_entities:
-                if entity_id in world_state.npcs:
-                    npc_full = world_state.npcs[entity_id]
-                    npcs[npc_full.id] = npc_full.model_copy(deep=True)
-
-        data = GameState(
-            state=runtime_state,
-            player=player_copy,
-            npcs=npcs,
-            place=current_place,
+        return cls(
+            game_state=state,
+            world=world,
+            npcs=all_npcs,
+            items=all_items,
+            adventure_path=adventure_path,
+            fog_war_enabled=fog_war_enabled,
         )
 
-        controller = cls(data, world_state)
+    @classmethod
+    def from_aad(cls, aad_path: str) -> GameStateController:
+        """Carga e inicializa el controlador a partir de un paquete .aad o directorio."""
+        import json
+        import shutil
+        from adventure_packager import AdventurePackager
 
-        if player.state.upper() == "TALK" and target:
-            loaded_npc = controller.load_npc(target)
-            if loaded_npc:
-                controller.data.state.active_npc_affinity = round(loaded_npc.affinity, 4)
+        if not os.path.exists(aad_path):
+            raise FileNotFoundError(f"No se encontró el archivo de aventura: {aad_path}")
 
-        return controller
-
-    def load_npc(self, npc_id_or_name: str) -> Optional[NPC]:
-        """Carga un NPC del world_state al game_state local."""
-        npc_full = None
-        if npc_id_or_name in self.world_state.npcs:
-            npc_full = self.world_state.npcs[npc_id_or_name]
-        elif npc_id_or_name in self.world_state.npcs_by_name:
-            npc_full = self.world_state.npcs_by_name[npc_id_or_name]
-
-        if npc_full:
-            if npc_full.id not in self.data.npcs:
-                npc_copy = npc_full.model_copy(deep=True)
-                self.data.npcs[npc_copy.id] = npc_copy
-                return npc_copy
-            return self.data.npcs[npc_full.id]
-        return None
-
-    def calculate_path_travel_time(self, start_name: str, end_name: str) -> int:
-        """Calcula el tiempo total de viaje en minutos entre dos lugares."""
-        return TimeCalculator.calculate_travel_time_between_places(
-            self.world_state.places_by_name,
-            start_name,
-            end_name,
-            travel_speed=self.data.state.travel_speed,
-        )
-
-    def find_shortest_path_places(self, start_name: str, end_name: str) -> List[Place]:
-        """Retorna la lista de lugares intermedios en la ruta óptima."""
-        return PathCalculator.find_intermediate_places(
-            self.world_state.places_by_name,
-            start_name,
-            end_name,
-        )
-
-    def update_location(self, new_location_name_or_id: str) -> None:
-        """Actualiza la ubicación del jugador si el lugar existe por ID o nombre."""
-        dest_place_full = None
-        if new_location_name_or_id in self.world_state.places_by_id:
-            dest_place_full = self.world_state.places_by_id[new_location_name_or_id]
-        elif new_location_name_or_id in self.world_state.places_by_name:
-            dest_place_full = self.world_state.places_by_name[new_location_name_or_id]
-
-        if dest_place_full:
-            self.fog_war.visit(dest_place_full.name)
-            if hasattr(self.data.player, "visited_places"):
-                if dest_place_full.name not in self.data.player.visited_places:
-                    self.data.player.visited_places.append(dest_place_full.name)
-
-            if self.data.place and self.data.place.name != dest_place_full.name:
-                travel_time = self.calculate_path_travel_time(self.data.place.name, dest_place_full.name)
-                self.data.state.elapsed_time += travel_time
-
-            self.data.state.prev_place = self.data.state.current_place
-            self.data.state.current_place = PlaceProjection(id=dest_place_full.id, name=dest_place_full.name)
-            self.data.place = dest_place_full.model_copy(deep=True)
-
-            self.data.npcs = {}
-            for entity_id in dest_place_full.visible_entities:
-                if entity_id in self.world_state.npcs:
-                    npc_full = self.world_state.npcs[entity_id]
-                    self.data.npcs[npc_full.id] = npc_full.model_copy(deep=True)
-
-    def update_state(self, new_state: str) -> None:
-        """Actualiza el estado dinámico del jugador (ej. EXPLORE, TALK o LOOK)."""
-        self.data.state.player_state = new_state.upper()
-        if self.data.state.player_state != "TALK":
-            self.data.state.active_npc_affinity = None
+        temp_dir = None
+        if os.path.isfile(aad_path):
+            work_dir = AdventurePackager.unpack_to_temp(aad_path)
+            temp_dir = work_dir
         else:
-            self.sync_active_npc_affinity()
+            work_dir = aad_path
 
-    def sync_active_npc_affinity(self) -> Optional[float]:
-        """Sincroniza el nivel de afinidad del NPC activo en RuntimeState si el estado es TALK."""
-        if self.data.state.player_state.upper() == "TALK":
-            target = self.data.state.player_target
-            if target:
-                npc = None
-                for n in self.data.npcs.values():
-                    if n.id == target or n.name == target:
-                        npc = n
-                        break
-                if not npc and hasattr(self, "world_state") and self.world_state:
-                    npc = self.load_npc(target)
-                if npc:
-                    self.data.state.active_npc_affinity = round(npc.affinity, 4)
-                    return self.data.state.active_npc_affinity
-        self.data.state.active_npc_affinity = None
-        return None
+        try:
+            with open(os.path.join(work_dir, "world.json"), "r", encoding="utf-8") as f:
+                raw_world = json.load(f)
+            world_data = raw_world.get("world", raw_world)
+            world = World.model_validate(world_data)
 
-    def save(self) -> None:
-        """Sincroniza y guarda los cambios de GameState de vuelta en WorldState."""
-        world_state = self.world_state
-        if world_state.player:
-            world_state.player.state = self.data.state.player_state
-            world_state.player.gold = self.data.player.gold
-            world_state.player.active_quest = self.data.player.active_quest
-            world_state.player.completed_quests = self.data.player.completed_quests
-            world_state.player.travel_speed = self.data.state.travel_speed
-            world_state.player.elapsed_time = self.data.state.elapsed_time
-            if hasattr(world_state.player, "visited_places"):
-                world_state.player.visited_places = self.fog_war.get_visited_places()
-            if self.data.place:
-                world_state.player.player_location = self.data.place.name
+            with open(os.path.join(work_dir, "player.json"), "r", encoding="utf-8") as f:
+                raw_player = json.load(f)
+            player_data = raw_player.get("player", raw_player)
+            player = Player.model_validate(player_data)
 
-        for npc_id, npc_local in self.data.npcs.items():
-            if npc_id in world_state.npcs:
-                npc_world = world_state.npcs[npc_id]
-                npc_world.affinity = npc_local.affinity
-                npc_world.conversation = npc_local.conversation
-                npc_world.state = npc_local.state
+            npcs = []
+            npcs_file = os.path.join(work_dir, "npcs.json")
+            if os.path.exists(npcs_file):
+                with open(npcs_file, "r", encoding="utf-8") as f:
+                    raw_npcs = json.load(f)
+                npcs = [NPC.model_validate(n) for n in raw_npcs.get("npcs", [])]
 
-    def get_current_location(self) -> Optional[dict]:
-        """Devuelve el ID y nombre de la localización actual del jugador."""
-        current_place = self.data.place
-        if current_place and self.world_state.world:
-            for location in self.world_state.world.locations:
-                if any(p.id == current_place.id for p in location.places):
-                    return {"id": location.id, "name": location.name}
-        return None
+            items = []
+            items_file = os.path.join(work_dir, "items.json")
+            if os.path.exists(items_file):
+                with open(items_file, "r", encoding="utf-8") as f:
+                    raw_items = json.load(f)
+                items = [Item.model_validate(i) for i in raw_items.get("items", [])]
 
-    def get_location_list(self) -> list[dict]:
-        """Devuelve una lista con el ID y nombre de todas las localizaciones del mundo."""
-        if not self.world_state.world:
-            return []
-        return [{"id": loc.id, "name": loc.name} for loc in self.world_state.world.locations]
+            hierarchy = LoreBlockHierarchy()
+            lore_file = os.path.join(work_dir, "loreblocks.json")
+            if os.path.exists(lore_file):
+                with open(lore_file, "r", encoding="utf-8") as f:
+                    raw_lore = json.load(f)
+                blocks = raw_lore.get("lore_blocks", [])
+                for b in blocks:
+                    b["state"] = "unknown"
+                hierarchy = LoreBlockHierarchy(unknown=blocks, active=[], done=[], popups=[])
 
-    def get_places_list(self) -> list[dict]:
-        """Devuelve una lista con el ID y nombre de todos los lugares dentro de la localización actual."""
-        current_place = self.data.place
-        if current_place and self.world_state.world:
-            for location in self.world_state.world.locations:
-                if any(p.id == current_place.id for p in location.places):
-                    return [{"id": p.id, "name": p.name} for p in location.places]
-        return []
+            elapsed_time_enabled = True
+            fog_war_enabled = True
+            config_file = os.path.join(work_dir, "story_config.json")
+            if os.path.exists(config_file):
+                with open(config_file, "r", encoding="utf-8") as f:
+                    cfg_data = json.load(f)
+                elapsed_time_enabled = cfg_data.get("elapsed_time", True)
+                fog_war_enabled = cfg_data.get("fog_war", True)
 
-    def get_npc_list(self) -> list[dict]:
-        """Devuelve una lista con el ID y nombre de todos los NPCs en la localización actual."""
-        current_place = self.data.place
-        if current_place and self.world_state.world:
-            for location in self.world_state.world.locations:
-                if any(p.id == current_place.id for p in location.places):
-                    npc_ids = set()
-                    for p in location.places:
-                        for entity_id in p.visible_entities:
-                            npc_ids.add(entity_id)
+            return cls.create_initial(
+                world=world,
+                player=player,
+                npcs=npcs,
+                items=items,
+                loreblocks_hierarchy=hierarchy,
+                adventure_path=aad_path,
+                elapsed_time_enabled=elapsed_time_enabled,
+                fog_war_enabled=fog_war_enabled,
+            )
+        finally:
+            if temp_dir and os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
-                    npcs = []
-                    for nid in npc_ids:
-                        if nid in self.world_state.npcs:
-                            npc = self.world_state.npcs[nid]
-                            npcs.append({"id": npc.id, "name": npc.name})
-                    return npcs
-        return []
+    # =========================================================================
+    # Métodos de Mutación Atómica de Estado
+    # =========================================================================
+
+    def set_player_state(self, state: Literal["EXPLORE", "TALK", "LOOK"]) -> None:
+        """Actualiza el modo o estado del jugador."""
+        self.game_state.player_state = state
+
+    def set_player_target(self, target_id: Optional[str]) -> None:
+        """Actualiza el objetivo activo del jugador."""
+        self.game_state.player_target = target_id
+
+    def set_current_location(self, place_id: str) -> None:
+        """Actualiza la posición espacial del jugador y sincroniza lugar y niebla de guerra."""
+        self.game_state.current_location = place_id
+        target_place = self.places_by_id.get(place_id)
+        if target_place:
+            self.game_state.place = target_place
+        self.reveal_place_and_neighbors(place_id)
+
+    def reveal_place_and_neighbors(self, visited_place_id: str) -> None:
+        """Aplica las reglas de niebla de guerra para el lugar visitado y colindantes."""
+        target_place = self.places_by_id.get(visited_place_id)
+        connected_ids = set()
+        if target_place:
+            for k, conn in target_place.connections.items():
+                target = getattr(conn, "target", k) if hasattr(conn, "target") else (
+                    conn.get("target", k) if isinstance(conn, dict) else k)
+                if target in self.places_by_name:
+                    connected_ids.add(self.places_by_name[target].id)
+                else:
+                    connected_ids.add(target)
+                connected_ids.add(k)
+
+        for loc in self.game_state.entity_map:
+            for p in loc.places:
+                if p.id == visited_place_id:
+                    p.status = "visited"
+                    for item in p.items:
+                        item.visible = True
+                    for npc in p.npcs:
+                        npc.status = "visible"
+                elif (not self.fog_war_enabled or p.id in connected_ids) and p.status == "hidden":
+                    p.status = "visible"
+
+    def add_to_inventory(self, item_id: str) -> None:
+        """Añade un ítem al inventario y lo retira del mapa si estuviera en un lugar."""
+        self.game_state.inventory.append(item_id)
+        for loc in self.game_state.entity_map:
+            for p in loc.places:
+                p.items = [it for it in p.items if it.id != item_id]
+
+    def remove_from_inventory(self, item_id: str) -> None:
+        """Elimina un ítem del inventario."""
+        self.game_state.inventory.remove(item_id)
+
+    def add_gold(self, amount: int) -> None:
+        """Incrementa el oro del jugador."""
+        self.game_state.inventory.gold += max(0, amount)
+
+    def remove_gold(self, amount: int) -> None:
+        """Reduce el oro del jugador sin permitir valores negativos."""
+        self.game_state.inventory.gold = max(0, self.game_state.inventory.gold - amount)
+
+    def block_place(self, place_id: str) -> None:
+        """Bloquea el acceso a un lugar."""
+        p = self.places_by_id.get(place_id)
+        if p:
+            p.blocked_place = True
+        if self.game_state.place and self.game_state.place.id == place_id:
+            self.game_state.place.blocked_place = True
+
+    def unblock_place(self, place_id: str) -> None:
+        """Desbloquea el acceso a un lugar."""
+        p = self.places_by_id.get(place_id)
+        if p:
+            p.blocked_place = False
+        if self.game_state.place and self.game_state.place.id == place_id:
+            self.game_state.place.blocked_place = False
+
+    def is_place_blocked(self, place_id: str) -> bool:
+        """Indica si un lugar se encuentra físicamente bloqueado."""
+        p = self.places_by_id.get(place_id)
+        return p.blocked_place if p else False
+
+    def update_npc_affinity(self, npc_id: str, new_affinity: float) -> None:
+        """Actualiza la afinidad viva de un NPC en el mapa."""
+        clamped = max(0.0, min(1.0, new_affinity))
+        for loc in self.game_state.entity_map:
+            for p in loc.places:
+                for npc in p.npcs:
+                    if npc.id == npc_id:
+                        npc.affinity = clamped
+                        return
+
+    def get_npc_affinity(self, npc_id: str) -> float:
+        """Obtiene la afinidad actual de un NPC."""
+        for loc in self.game_state.entity_map:
+            for p in loc.places:
+                for npc in p.npcs:
+                    if npc.id == npc_id:
+                        return npc.affinity
+        return 0.5
+
+    def get_conversation(self, target_id: str) -> List[Dict[str, str]]:
+        """Recupera el historial de mensajes para un target de conversación."""
+        return self.game_state.conversations.get(target_id, [])
+
+    def append_dialogue_exchange(
+            self,
+            target_id: str,
+            player_msg: str,
+            npc_name: str,
+            npc_msg: str,
+            max_messages: int = 16,
+    ) -> None:
+        """Registra un par de diálogo en el historial y mantiene la ventana deslizante."""
+        if target_id not in self.game_state.conversations:
+            self.game_state.conversations[target_id] = []
+
+        history = self.game_state.conversations[target_id]
+        if player_msg:
+            history.append({"player": player_msg})
+        if npc_msg:
+            history.append({npc_name: npc_msg})
+
+        if len(history) > max_messages:
+            self.game_state.conversations[target_id] = history[-max_messages:]
+
+    def add_elapsed_minutes(self, minutes: int) -> None:
+        """Avanza los minutos transcurridos de juego y actualiza current_time."""
+        if not self.game_state.current_time or minutes <= 0:
+            return
+        total = self._parse_elapsed_minutes(self.game_state.current_time) + minutes
+        self.game_state.current_time = self._format_elapsed_time(total)
+
+    def sync_notebook(self) -> None:
+        """Sincroniza las misiones del cuaderno a partir de los LoreBlocks activos y completados."""
+        quests: List[NotebookEntry] = []
+        for cat in ("active", "done"):
+            for blk in self.game_state.loreblocks.get(cat, []):
+                if blk.get("type") in ("Chapter", "Quest", "Task"):
+                    quests.append(
+                        NotebookEntry(
+                            id=blk.get("id", ""),
+                            name=blk.get("name", ""),
+                            description=blk.get("description", ""),
+                            status=cat,
+                        )
+                    )
+        self.game_state.notebook = quests
+
+    # =========================================================================
+    # Persistencia Canónica Pura (JSON)
+    # =========================================================================
+
+    @property
+    def saves_directory(self) -> str:
+        """Directorio base de partidas guardadas."""
+        if not self.adventure_path:
+            return "saves"
+        base = os.path.dirname(self.adventure_path) if os.path.isfile(self.adventure_path) else self.adventure_path
+        return os.path.join(base, "saves")
+
+    def save(self, filepath: Optional[str] = None) -> str:
+        """Serializa el GameState canónico a disco en formato JSON."""
+        if not filepath:
+            target_path = os.path.join(self.saves_directory, "savegame.json")
+        elif not os.path.dirname(filepath):
+            slot_name = filepath if filepath.endswith(".json") else f"{filepath}.json"
+            target_path = os.path.join(self.saves_directory, slot_name)
+        else:
+            target_path = filepath
+
+        dir_name = os.path.dirname(target_path)
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
+        with open(target_path, "w", encoding="utf-8") as f:
+            f.write(self.game_state.model_dump_json(indent=2))
+
+        return target_path
+
+    def load(self, filepath: str) -> GameState:
+        """Carga y valida un GameState previamente guardado."""
+        target_path = filepath
+        if not os.path.exists(target_path):
+            alt_path = os.path.join(self.saves_directory,
+                                    filepath if filepath.endswith(".json") else f"{filepath}.json")
+            if os.path.exists(alt_path):
+                target_path = alt_path
+            else:
+                raise FileNotFoundError(f"Archivo de partida guardada no encontrado: {filepath}")
+
+        with open(target_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        self.game_state = GameState.model_validate_json(content)
+        if self.world and self.game_state.current_location:
+            self.game_state.place = self.places_by_id.get(self.game_state.current_location)
+
+        return self.game_state
+
+    # =========================================================================
+    # Utilidades de Conversión de Tiempo
+    # =========================================================================
+
+    @staticmethod
+    def _parse_elapsed_minutes(formatted: str) -> int:
+        try:
+            parts = formatted.split(",")
+            day = int(parts[0].replace("Día", "").strip())
+            h, m = map(int, parts[1].strip().split(":"))
+            return (day - 1) * 1440 + h * 60 + m
+        except (ValueError, IndexError, AttributeError) as e:
+            logger.debug("Error al parsear tiempo formateado '%s': %s", formatted, e)
+            return 0
+
+    @staticmethod
+    def _format_elapsed_time(total_minutes: int) -> str:
+        days = (total_minutes // 1440) + 1
+        hours = (total_minutes // 60) % 24
+        mins = total_minutes % 60
+        return f"Día {days}, {hours:02d}:{mins:02d}"

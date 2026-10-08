@@ -1,1 +1,0 @@
-# AAdventure Game Debugger package

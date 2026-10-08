@@ -1,22 +1,10 @@
 """Modelos de dominio del mundo: localizaciones, lugares y conexiones."""
 
 from typing import Dict, List
+
 from pydantic import BaseModel, Field
+
 from domains.base import Entity
-
-
-class LocationInfo(BaseModel):
-    """Información simplificada de una localización."""
-
-    id: str
-    name: str = ""
-
-
-class PlaceInfo(BaseModel):
-    """Información simplificada de un lugar o sub-zona."""
-
-    id: str
-    name: str = ""
 
 
 class Connection(BaseModel):
@@ -30,6 +18,7 @@ class Connection(BaseModel):
 class Place(Entity):
     """Lugar o sub-zona específica dentro de una localización."""
 
+    blocked_place: bool = False
     visible_entities: List[str] = Field(default_factory=list)
     connections: Dict[str, Connection] = Field(default_factory=dict)
 
@@ -44,3 +33,4 @@ class World(Entity):
     """Mundo completo que agrupa todas las localizaciones."""
 
     locations: List[Location] = Field(default_factory=list)
+    initial_text: str = ""

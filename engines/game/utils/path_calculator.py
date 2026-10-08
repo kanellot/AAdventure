@@ -2,6 +2,7 @@
 
 import heapq
 from typing import Dict, List, Optional, Tuple
+
 from domains.world import Connection, Place
 
 
@@ -26,18 +27,14 @@ class PathCalculator:
         if identifier in places:
             return places[identifier]
         by_name, by_id = cls._build_place_lookups(places)
-        if identifier in by_name:
-            return by_name[identifier]
-        if identifier in by_id:
-            return by_id[identifier]
-        return None
+        return by_name.get(identifier) or by_id.get(identifier)
 
     @classmethod
     def find_shortest_path(
-        cls,
-        places: Dict[str, Place],
-        start_name_or_id: str,
-        end_name_or_id: str,
+            cls,
+            places: Dict[str, Place],
+            start_name_or_id: str,
+            end_name_or_id: str,
     ) -> Tuple[List[Connection], List[Place]]:
         """Encuentra la ruta con menor distancia acumulada entre dos lugares usando Dijkstra."""
         by_name, by_id = cls._build_place_lookups(places)
@@ -97,25 +94,49 @@ class PathCalculator:
 
     @classmethod
     def find_intermediate_places(
-        cls,
-        places: Dict[str, Place],
-        start_name_or_id: str,
-        end_name_or_id: str,
+            cls,
+            places: Dict[str, Place],
+            start_name_or_id: str,
+            end_name_or_id: str,
     ) -> List[Place]:
-        """Retorna los lugares intermedios entre origen y destino."""
-        _, full_places = cls.find_shortest_path(places, start_name_or_id, end_name_or_id)
-        if len(full_places) <= 2:
+        """Devuelve los lugares intermedios entre origen y destino (excluyendo ambos)."""
+        _, full_path = cls.find_shortest_path(places, start_name_or_id, end_name_or_id)
+        if len(full_path) <= 2:
             return []
-        return full_places[1:-1]
+        return full_path[1:-1]
 
     @classmethod
-    def find_full_path(
-        cls,
-        places: Dict[str, Place],
-        start_name_or_id: str,
-        end_name_or_id: str,
-    ) -> List[Place]:
-        """Retorna la lista completa de lugares desde el origen hasta el destino."""
-        _, full_places = cls.find_shortest_path(places, start_name_or_id, end_name_or_id)
-        return full_places
+    def calculate_navigation_route(
+            cls,
+            places: Dict[str, Place],
+            start_name_or_id: str,
+            end_name_or_id: str,
+    ) -> Tuple[str, List[Connection], List[Place], Optional[Place]]:
+        """Calcula la ruta teniendo en cuenta corte inmediato por lugares bloqueados (blocked_place).
+        
+        Retorna:
+            status: 'complete' (alcanza el destino),
+                    'blocked' (se detiene ante un lugar bloqueado),
+                    'unreachable' (no existe camino).
+            traversed_conns: Conexiones transitadas con éxito.
+            traversed_places: Lugares transitados con éxito (incluyendo origen).
+            blocked_place: Lugar bloqueado que impidió continuar (None si 'complete').
+        """
+        all_conns, all_places = cls.find_shortest_path(places, start_name_or_id, end_name_or_id)
+        if not all_places:
+            return "unreachable", [], [], None
 
+        if len(all_places) == 1:
+            return "complete", [], all_places, None
+
+        # Verificar cada paso sucesivo
+        traversed_conns: List[Connection] = []
+        traversed_places: List[Place] = [all_places[0]]
+
+        for idx, next_place in enumerate(all_places[1:], start=1):
+            if next_place.blocked_place:
+                return "blocked", traversed_conns, traversed_places, next_place
+            traversed_conns.append(all_conns[idx - 1])
+            traversed_places.append(next_place)
+
+        return "complete", traversed_conns, traversed_places, None

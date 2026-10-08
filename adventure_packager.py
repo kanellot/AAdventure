@@ -1,55 +1,76 @@
-import os
-import zipfile
 import json
-import tempfile
+import os
 import shutil
+import tempfile
+import zipfile
+from typing import Optional
+
 
 class AdventurePackager:
     """
     Clase de utilidad para empaquetar y desempaquetar archivos .aad (AAdventure data).
-    Un archivo .aad es un contenedor ZIP renombrado que contiene:
-    - world.json
-    - npcs.json
-    - player.json
+    Un archivo .aad es un contenedor ZIP que contiene 6 archivos JSON:
+    - world.json: Localizaciones y Lugares con conexiones.
+    - npcs.json: NPCs, afinidad y motivaciones.
+    - player.json: Datos de jugador, oro, inventario, active_block y lugar de inicio.
+    - items.json: Catálogo de ítems del mundo e inventario.
+    - loreblocks.json: Catálogo centralizado de LoreBlocks (HSM).
+    - story_config.json: Banderas de simulación (elapsed_time, fog_war, affinity).
     """
 
     @staticmethod
-    def pack(output_path: str, world_data: dict, npcs_data: dict, player_data: dict):
+    def pack(
+            output_path: str,
+            world_data: dict,
+            npcs_data: dict,
+            player_data: dict,
+            items_data: Optional[dict] = None,
+            lore_data: Optional[dict] = None,
+            config_data: Optional[dict] = None,
+            **kwargs,
+    ):
         """
-        Empaqueta los datos de mundo, npcs y jugador en un archivo .aad.
+        Empaqueta los datos de los 6 componentes en un archivo .aad.
         """
-        # Crear un directorio temporal para escribir los JSON
+        if items_data is None:
+            items_data = {"items": []}
+        if lore_data is None:
+            lore_data = {"lore_blocks": []}
+        if config_data is None:
+            config_data = {"elapsed_time": True, "fog_war": True, "affinity": True}
+
         temp_dir = tempfile.mkdtemp()
         try:
-            world_file = os.path.join(temp_dir, "world.json")
-            npcs_file = os.path.join(temp_dir, "npcs.json")
-            player_file = os.path.join(temp_dir, "player.json")
+            files_to_write = {
+                "world.json": world_data,
+                "npcs.json": npcs_data,
+                "player.json": player_data,
+                "items.json": items_data,
+                "loreblocks.json": lore_data,
+                "story_config.json": config_data,
+            }
 
-            with open(world_file, "w", encoding="utf-8") as f:
-                json.dump(world_data, f, indent=2, ensure_ascii=False)
-            with open(npcs_file, "w", encoding="utf-8") as f:
-                json.dump(npcs_data, f, indent=2, ensure_ascii=False)
-            with open(player_file, "w", encoding="utf-8") as f:
-                json.dump(player_data, f, indent=2, ensure_ascii=False)
+            for filename, data in files_to_write.items():
+                file_path = os.path.join(temp_dir, filename)
+                with open(file_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
 
-            # Comprimir en formato ZIP
+            # Comprimir en formato ZIP renombrado a .aad
             with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                zip_file.write(world_file, "world.json")
-                zip_file.write(npcs_file, "npcs.json")
-                zip_file.write(player_file, "player.json")
+                for filename in files_to_write.keys():
+                    file_path = os.path.join(temp_dir, filename)
+                    zip_file.write(file_path, filename)
         finally:
             shutil.rmtree(temp_dir)
 
     @staticmethod
     def unpack_to_temp(aad_path: str) -> str:
-        """
-        Desempaqueta un archivo .aad en un directorio temporal y devuelve su ruta.
-        La persona que llama debe encargarse de borrar este directorio al finalizar.
-        """
+        """Desempaqueta un archivo .aad en un directorio temporal y devuelve su ruta."""
         if not os.path.exists(aad_path):
             raise FileNotFoundError(f"No se encontró el archivo de aventura: {aad_path}")
 
         temp_dir = tempfile.mkdtemp(prefix="aadventure_")
         with zipfile.ZipFile(aad_path, "r") as zip_file:
             zip_file.extractall(temp_dir)
+
         return temp_dir

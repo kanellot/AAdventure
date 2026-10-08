@@ -9,11 +9,11 @@ class BaseLLMAdapter(ABC):
 
     @abstractmethod
     def generate(
-        self,
-        prompt: str,
-        profile_name: str = "narrator",
-        response_schema: Optional[dict] = None,
-        schema_name: Optional[str] = None,
+            self,
+            prompt: str,
+            profile_name: str = "narrator",
+            response_schema: Optional[dict] = None,
+            schema_name: Optional[str] = None,
     ) -> dict:
         """Genera una respuesta estructurada (JSON) a partir de un prompt."""
         pass
